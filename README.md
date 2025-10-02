@@ -1,0 +1,3 @@
+# LogicPad
+
+LogicPad is a 9-key macro keypad that puts powerful control right at your fingertips. Designed for a streamlined workflow, each of the nine keys is fully programmable to execute complex commands, shortcuts, and functions with a single press. An integrated OLED display provides instant, at-a-glance feedback for active profiles, key assignments, or system stats. The vibrant per-key RGB lighting lets you customize colors for different profiles or applications, creating a visual map that guides your fingers and enhances your productivity.
