@@ -1,0 +1,6 @@
+keyPad.c:48:6:TM_KEYPAD_Init	8	static
+keyPad.c:53:20:TM_KEYPAD_Read	16	static
+keyPad.c:66:6:TM_KEYPAD_INT_SetRow	16	static
+keyPad.c:84:5:TM_KEYPAD_INT_CheckRow	16	static
+keyPad.c:104:5:TM_KEYPAD_INT_Read	16	static
+keyPad.c:134:6:TM_KEYPAD_Update	8	static

@@ -1,0 +1,145 @@
+12-06 15:07:52 replicate_layout.action_replicate_layout 295:Replicate layout plugin version: 45 started
+12-06 15:07:52 replicate_layout.action_replicate_layout 327:Preparing replicator with D1 as a reference
+12-06 15:07:52 replicate_layout.replicatelayout 201:getting project hierarchy from schematics
+12-06 15:07:52 replicate_layout.replicatelayout 203:Project hierarchy looks like:
+{'5DEC627B': ['R0C0', u'D:\\CloudStation\\2c_ElectronicsDevelopment\\KICAD_PCB\\HotkeyBoard\\3x3\\V0.2\\SingleSwitch.sch'], '5DF4037B': ['C1R1', u'D:\\CloudStation\\2c_ElectronicsDevelopment\\KICAD_PCB\\HotkeyBoard\\3x3\\V0.2\\SingleSwitch.sch'], '5DF7ADC9': ['C2R0', u'D:\\CloudStation\\2c_ElectronicsDevelopment\\KICAD_PCB\\HotkeyBoard\\3x3\\V0.2\\SingleSwitch.sch'], '5DFD327A': ['CtrlLed', u'D:\\CloudStation\\2c_ElectronicsDevelopment\\KICAD_PCB\\HotkeyBoard\\3x3\\V0.2\\SingleSwitch.sch'], '5DFB608A': ['C2R2', u'D:\\CloudStation\\2c_ElectronicsDevelopment\\KICAD_PCB\\HotkeyBoard\\3x3\\V0.2\\SingleSwitch.sch'], '5DF5DC95': ['C1R2', u'D:\\CloudStation\\2c_ElectronicsDevelopment\\KICAD_PCB\\HotkeyBoard\\3x3\\V0.2\\SingleSwitch.sch'], '5DF015CF': ['C0R2', u'D:\\CloudStation\\2c_ElectronicsDevelopment\\KICAD_PCB\\HotkeyBoard\\3x3\\V0.2\\SingleSwitch.sch'], '5DEE4685': ['C0R1', u'D:\\CloudStation\\2c_ElectronicsDevelopment\\KICAD_PCB\\HotkeyBoard\\3x3\\V0.2\\SingleSwitch.sch'], '5DF2334E': ['C1R0', u'D:\\CloudStation\\2c_ElectronicsDevelopment\\KICAD_PCB\\HotkeyBoard\\3x3\\V0.2\\SingleSwitch.sch'], '5E5095AB': ['buck converter 3.3v', u'D:\\CloudStation\\2c_ElectronicsDevelopment\\KICAD_PCB\\HotkeyBoard\\3x3\\V0.2\\TLV62568ADRL.sch'], '5DF98EC2': ['C2R1', u'D:\\CloudStation\\2c_ElectronicsDevelopment\\KICAD_PCB\\HotkeyBoard\\3x3\\V0.2\\SingleSwitch.sch']}
+12-06 15:07:52 replicate_layout.replicatelayout 211:getting a list of all footprints on board
+12-06 15:07:52 replicate_layout.action_replicate_layout 353:Pivot footprint is u'D1'
+Located on:['R0C0']
+With filenames:[u'SingleSwitch.sch']
+With sheet_id:['R0C0']
+12-06 15:07:52 replicate_layout.action_replicate_layout 357:Corresponding footprints are 
+[(u'D10', ['CtrlLed']), (u'D9', ['C2R2']), (u'D8', ['C2R1']), (u'D7', ['C2R0']), (u'D6', ['C1R2']), (u'D5', ['C1R1']), (u'D4', ['C1R0']), (u'D3', ['C0R2']), (u'D2', ['C0R1']), (u'D1', ['R0C0'])]
+12-06 15:07:52 replicate_layout.action_replicate_layout 370:Showing dialog
+12-06 15:07:52 replicate_layout.action_replicate_layout 374:Pcbnew position: wx.Point(-8, -8)
+12-06 15:07:52 replicate_layout.action_replicate_layout 380:Display 0: wx.Rect(-1920, 0, 1920, 1080)
+12-06 15:07:52 replicate_layout.action_replicate_layout 380:Display 1: wx.Rect(1920, 0, 1920, 1080)
+12-06 15:07:52 replicate_layout.action_replicate_layout 380:Display 2: wx.Rect(0, 0, 1920, 1080)
+12-06 15:07:52 replicate_layout.action_replicate_layout 384:Toolbar position: wx.Point(1722, 115)
+12-06 15:07:52 replicate_layout.action_replicate_layout 391:Dialog position: wx.Point(1409, 115)
+12-06 15:07:56 replicate_layout.replicatelayout 238:construcing a list of sheets suitable for replication on level:'R0C0', file:u'SingleSwitch.sch'
+12-06 15:07:56 replicate_layout.replicatelayout 245:Sheet ids up to the level:['R0C0']
+12-06 15:07:56 replicate_layout.replicatelayout 249:Footprints on the sheets:
+[u'D10', u'D9', u'D8', u'D7', u'D6', u'D5', u'D4', u'D3', u'D2', u'D1']
+12-06 15:07:56 replicate_layout.replicatelayout 252:Footprints raw sheet ids:
+[u'/5DFD327A/5DECC866', u'/5DFB608A/5DECC866', u'/5DF98EC2/5DECC866', u'/5DF7ADC9/5DECC866', u'/5DF5DC95/5DECC866', u'/5DF4037B/5DECC866', u'/5DF2334E/5DECC866', u'/5DF015CF/5DECC866', u'/5DEE4685/5DECC866', u'/5DEC627B/5DECC866']
+12-06 15:07:56 replicate_layout.replicatelayout 268:All sheets to replicate:
+[['CtrlLed'], ['C2R2'], ['C2R1'], ['C2R0'], ['C1R2'], ['C1R1'], ['C1R0'], ['C0R2'], ['C0R1'], ['R0C0']]
+12-06 15:07:56 replicate_layout.replicatelayout 273:All sheets to replicate sorted:
+[['C0R1'], ['C0R2'], ['C1R0'], ['C1R1'], ['C1R2'], ['C2R0'], ['C2R1'], ['C2R2'], ['CtrlLed'], ['R0C0']]
+12-06 15:07:56 replicate_layout.replicatelayout 279:All sheets to replicate sorted and without pivot_sheet:
+[['C0R1'], ['C0R2'], ['C1R0'], ['C1R1'], ['C1R2'], ['C2R0'], ['C2R1'], ['C2R2'], ['CtrlLed']]
+12-06 15:08:02 replicate_layout.replicatelayout 238:construcing a list of sheets suitable for replication on level:'R0C0', file:u'SingleSwitch.sch'
+12-06 15:08:02 replicate_layout.replicatelayout 245:Sheet ids up to the level:['R0C0']
+12-06 15:08:02 replicate_layout.replicatelayout 249:Footprints on the sheets:
+[u'D10', u'D9', u'D8', u'D7', u'D6', u'D5', u'D4', u'D3', u'D2', u'D1']
+12-06 15:08:02 replicate_layout.replicatelayout 252:Footprints raw sheet ids:
+[u'/5DFD327A/5DECC866', u'/5DFB608A/5DECC866', u'/5DF98EC2/5DECC866', u'/5DF7ADC9/5DECC866', u'/5DF5DC95/5DECC866', u'/5DF4037B/5DECC866', u'/5DF2334E/5DECC866', u'/5DF015CF/5DECC866', u'/5DEE4685/5DECC866', u'/5DEC627B/5DECC866']
+12-06 15:08:02 replicate_layout.replicatelayout 268:All sheets to replicate:
+[['CtrlLed'], ['C2R2'], ['C2R1'], ['C2R0'], ['C1R2'], ['C1R1'], ['C1R0'], ['C0R2'], ['C0R1'], ['R0C0']]
+12-06 15:08:02 replicate_layout.replicatelayout 273:All sheets to replicate sorted:
+[['C0R1'], ['C0R2'], ['C1R0'], ['C1R1'], ['C1R2'], ['C2R0'], ['C2R1'], ['C2R2'], ['CtrlLed'], ['R0C0']]
+12-06 15:08:02 replicate_layout.replicatelayout 279:All sheets to replicate sorted and without pivot_sheet:
+[['C0R1'], ['C0R2'], ['C1R0'], ['C1R1'], ['C1R2'], ['C2R0'], ['C2R1'], ['C2R2'], ['CtrlLed']]
+12-06 15:08:02 replicate_layout.action_replicate_layout 170:Replicating layout
+12-06 15:08:02 replicate_layout.replicatelayout 959:Starting replication of sheets: [['C0R1'], ['C0R2'], ['C1R0'], ['C1R1'], ['C1R2'], ['C2R0'], ['C2R1'], ['C2R2'], ['CtrlLed']]
+on level: ['R0C0']
+with tracks=True, zone=True, text=True, containing=False, remov=True
+12-06 15:08:02 root 250:updating GUI message: 'Preparing for replication'
+12-06 15:08:02 root 255:updating GUI with: 0
+12-06 15:08:02 replicate_layout.replicatelayout 534:Getting the list of pivot footprints
+12-06 15:08:02 root 255:updating GUI with: 0
+12-06 15:08:02 replicate_layout.replicatelayout 538:Getting the list of all the remaining footprints
+12-06 15:08:02 replicate_layout.replicatelayout 542:Getting nets local to pivot footprints
+12-06 15:08:02 replicate_layout.replicatelayout 546:Getting pivot bounding box
+12-06 15:08:02 root 255:updating GUI with: 37
+12-06 15:08:02 replicate_layout.replicatelayout 550:Getting pivot tracks
+12-06 15:08:02 replicate_layout.replicatelayout 554:Getting pivot zones
+12-06 15:08:02 root 255:updating GUI with: 62
+12-06 15:08:02 replicate_layout.replicatelayout 558:Getting pivot text items
+12-06 15:08:02 replicate_layout.replicatelayout 562:Getting pivot text items
+12-06 15:08:02 replicate_layout.replicatelayout 985:Removing tracks and zones, before module placement
+12-06 15:08:02 root 250:updating GUI message: 'Removing zones and tracks'
+12-06 15:08:02 root 255:updating GUI with: 11
+12-06 15:08:02 root 255:updating GUI with: 22
+12-06 15:08:02 root 255:updating GUI with: 33
+12-06 15:08:02 root 255:updating GUI with: 55
+12-06 15:08:02 root 255:updating GUI with: 77
+12-06 15:08:02 root 250:updating GUI message: 'Replicating footprints'
+12-06 15:08:02 root 255:updating GUI with: 0
+12-06 15:08:02 replicate_layout.replicatelayout 568:Replicating footprints
+12-06 15:08:02 replicate_layout.replicatelayout 574:Replicating footprints on sheet ['C0R1']
+12-06 15:08:02 root 255:updating GUI with: 11
+12-06 15:08:02 replicate_layout.replicatelayout 574:Replicating footprints on sheet ['C0R2']
+12-06 15:08:02 root 255:updating GUI with: 20
+12-06 15:08:02 replicate_layout.replicatelayout 574:Replicating footprints on sheet ['C1R0']
+12-06 15:08:02 root 255:updating GUI with: 31
+12-06 15:08:02 replicate_layout.replicatelayout 574:Replicating footprints on sheet ['C1R1']
+12-06 15:08:02 root 255:updating GUI with: 44
+12-06 15:08:02 replicate_layout.replicatelayout 574:Replicating footprints on sheet ['C1R2']
+12-06 15:08:02 replicate_layout.replicatelayout 574:Replicating footprints on sheet ['C2R0']
+12-06 15:08:02 root 255:updating GUI with: 61
+12-06 15:08:02 root 255:updating GUI with: 66
+12-06 15:08:02 replicate_layout.replicatelayout 574:Replicating footprints on sheet ['C2R1']
+12-06 15:08:02 replicate_layout.replicatelayout 574:Replicating footprints on sheet ['C2R2']
+12-06 15:08:02 root 255:updating GUI with: 82
+12-06 15:08:02 replicate_layout.replicatelayout 574:Replicating footprints on sheet ['CtrlLed']
+12-06 15:08:02 root 255:updating GUI with: 98
+12-06 15:08:02 replicate_layout.replicatelayout 993:Removing tracks and zones, after module placement
+12-06 15:08:02 root 250:updating GUI message: 'Removing zones and tracks'
+12-06 15:08:02 root 255:updating GUI with: 22
+12-06 15:08:02 root 255:updating GUI with: 55
+12-06 15:08:02 root 255:updating GUI with: 88
+12-06 15:08:02 root 250:updating GUI message: 'Replicating tracks'
+12-06 15:08:02 replicate_layout.replicatelayout 687:Replicating tracks
+12-06 15:08:02 root 255:updating GUI with: 0
+12-06 15:08:02 replicate_layout.replicatelayout 693:Replicating tracks on sheet ['C0R1']
+12-06 15:08:02 replicate_layout.replicatelayout 693:Replicating tracks on sheet ['C0R2']
+12-06 15:08:02 replicate_layout.replicatelayout 693:Replicating tracks on sheet ['C1R0']
+12-06 15:08:02 root 255:updating GUI with: 22
+12-06 15:08:02 replicate_layout.replicatelayout 693:Replicating tracks on sheet ['C1R1']
+12-06 15:08:02 replicate_layout.replicatelayout 693:Replicating tracks on sheet ['C1R2']
+12-06 15:08:02 replicate_layout.replicatelayout 693:Replicating tracks on sheet ['C2R0']
+12-06 15:08:03 root 255:updating GUI with: 56
+12-06 15:08:03 replicate_layout.replicatelayout 693:Replicating tracks on sheet ['C2R1']
+12-06 15:08:03 replicate_layout.replicatelayout 693:Replicating tracks on sheet ['C2R2']
+12-06 15:08:03 replicate_layout.replicatelayout 693:Replicating tracks on sheet ['CtrlLed']
+12-06 15:08:03 root 255:updating GUI with: 89
+12-06 15:08:03 root 250:updating GUI message: 'Replicating zones'
+12-06 15:08:03 replicate_layout.replicatelayout 738:Replicating zones
+12-06 15:08:03 replicate_layout.replicatelayout 745:Replicating zones on sheet ['C0R1']
+12-06 15:08:03 root 255:updating GUI with: 11
+12-06 15:08:03 replicate_layout.replicatelayout 745:Replicating zones on sheet ['C0R2']
+12-06 15:08:03 replicate_layout.replicatelayout 745:Replicating zones on sheet ['C1R0']
+12-06 15:08:03 replicate_layout.replicatelayout 745:Replicating zones on sheet ['C1R1']
+12-06 15:08:03 replicate_layout.replicatelayout 745:Replicating zones on sheet ['C1R2']
+12-06 15:08:03 root 255:updating GUI with: 55
+12-06 15:08:03 replicate_layout.replicatelayout 745:Replicating zones on sheet ['C2R0']
+12-06 15:08:03 replicate_layout.replicatelayout 745:Replicating zones on sheet ['C2R1']
+12-06 15:08:03 replicate_layout.replicatelayout 745:Replicating zones on sheet ['C2R2']
+12-06 15:08:03 replicate_layout.replicatelayout 745:Replicating zones on sheet ['CtrlLed']
+12-06 15:08:03 root 250:updating GUI message: 'Replicating text'
+12-06 15:08:03 root 255:updating GUI with: 0
+12-06 15:08:03 replicate_layout.replicatelayout 804:Replicating text
+12-06 15:08:03 replicate_layout.replicatelayout 811:Replicating text on sheet ['C0R1']
+12-06 15:08:03 replicate_layout.replicatelayout 811:Replicating text on sheet ['C0R2']
+12-06 15:08:03 replicate_layout.replicatelayout 811:Replicating text on sheet ['C1R0']
+12-06 15:08:03 replicate_layout.replicatelayout 811:Replicating text on sheet ['C1R1']
+12-06 15:08:03 replicate_layout.replicatelayout 811:Replicating text on sheet ['C1R2']
+12-06 15:08:03 replicate_layout.replicatelayout 811:Replicating text on sheet ['C2R0']
+12-06 15:08:03 replicate_layout.replicatelayout 811:Replicating text on sheet ['C2R1']
+12-06 15:08:03 replicate_layout.replicatelayout 811:Replicating text on sheet ['C2R2']
+12-06 15:08:03 replicate_layout.replicatelayout 811:Replicating text on sheet ['CtrlLed']
+12-06 15:08:03 root 250:updating GUI message: 'Replicating drawings'
+12-06 15:08:03 replicate_layout.replicatelayout 834:Replicating drawings
+12-06 15:08:03 replicate_layout.replicatelayout 840:Replicating drawings on sheet ['C0R1']
+12-06 15:08:03 replicate_layout.replicatelayout 840:Replicating drawings on sheet ['C0R2']
+12-06 15:08:03 replicate_layout.replicatelayout 840:Replicating drawings on sheet ['C1R0']
+12-06 15:08:03 replicate_layout.replicatelayout 840:Replicating drawings on sheet ['C1R1']
+12-06 15:08:03 replicate_layout.replicatelayout 840:Replicating drawings on sheet ['C1R2']
+12-06 15:08:03 replicate_layout.replicatelayout 840:Replicating drawings on sheet ['C2R0']
+12-06 15:08:03 replicate_layout.replicatelayout 840:Replicating drawings on sheet ['C2R1']
+12-06 15:08:03 replicate_layout.replicatelayout 840:Replicating drawings on sheet ['C2R2']
+12-06 15:08:03 replicate_layout.replicatelayout 840:Replicating drawings on sheet ['CtrlLed']
+12-06 15:08:03 root 250:updating GUI message: 'Removing duplicates'
+12-06 15:08:03 replicate_layout.action_replicate_layout 190:Replication complete
