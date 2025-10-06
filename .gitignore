@@ -2,3 +2,16 @@
 *.sldasm
 *.SLDASM
 *.step
+
+# KiCad temporary files
+**/*-cache.lib
+**/*.pro
+**/*.log
+**/*-bak
+
+# Firmware build artifacts and IDE project files
+03 Firmware/Firmware/3x3/Debug/
+03 Firmware/Firmware/3x3/.cproject
+03 Firmware/Firmware/3x3/.mxproject
+03 Firmware/Firmware/3x3/.project
+03 Firmware/Firmware/3x3/*.launch
