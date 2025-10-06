@@ -1,3 +1,0 @@
-(fp_lib_table
-  (lib (name HotKeyBoard)(type KiCad)(uri ${KIPRJMOD}/libs/HotKeyBoard.pretty)(options "")(descr ""))
-)
