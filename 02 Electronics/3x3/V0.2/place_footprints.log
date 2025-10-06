@@ -1,9 +1,0 @@
-12-06 15:05:42 place_footprints.action_place_footprints 408:Place footprints plugin version: 33 started
-12-06 15:05:44 place_footprints.place_footprints 187:getting project hierarchy from schematics
-12-06 15:05:44 place_footprints.place_footprints 196:getting a list of all footprints on board
-12-06 15:05:44 place_footprints.action_place_footprints 454:Reference designator is: D
-12-06 15:05:44 place_footprints.action_place_footprints 455:Rerefence number is: 1
-12-06 15:05:44 place_footprints.action_place_footprints 486:Sorted and filtered list:
-[u'D1', u'D2', u'D3', u'D4', u'D5', u'D6', u'D7', u'D8', u'D9', u'D10']
-12-06 15:05:58 place_footprints.place_footprints 381:Starting placing with matrix layout
-12-06 15:05:58 place_footprints.action_place_footprints 581:Placing complete
