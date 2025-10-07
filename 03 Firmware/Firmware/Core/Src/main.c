@@ -27,6 +27,8 @@
 
 /* USER CODE END Includes */
 
+#include "LED_Test.h"
+
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
@@ -99,6 +101,8 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
+    LED_Test_All();
+    LED_Test_Individual();
 
     /* USER CODE BEGIN 3 */
   }
