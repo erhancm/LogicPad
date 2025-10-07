@@ -42,9 +42,50 @@
 void MX_GPIO_Init(void)
 {
 
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOA, C0R0_Pin|C0R1_Pin|C0R2_Pin|C1R0_Pin
+                          |C1R1_Pin|C1R2_Pin|C2R0_Pin|C2R1_Pin
+                          |C2R2_Pin|CtrlLed_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, B_Ctrl_Pin|Row_0_Pin|Row_1_Pin|Row_2_Pin
+                          |Column_2_Pin|Column_1_Pin|Column_0_Pin|R_Ctrl_Pin
+                          |G_Ctrl_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pins : C0R0_Pin C0R1_Pin C0R2_Pin C1R0_Pin
+                           C1R1_Pin C1R2_Pin C2R0_Pin C2R1_Pin
+                           C2R2_Pin CtrlLed_Pin */
+  GPIO_InitStruct.Pin = C0R0_Pin|C0R1_Pin|C0R2_Pin|C1R0_Pin
+                          |C1R1_Pin|C1R2_Pin|C2R0_Pin|C2R1_Pin
+                          |C2R2_Pin|CtrlLed_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : B_Ctrl_Pin Row_0_Pin Row_1_Pin Row_2_Pin
+                           Column_2_Pin Column_1_Pin Column_0_Pin R_Ctrl_Pin
+                           G_Ctrl_Pin */
+  GPIO_InitStruct.Pin = B_Ctrl_Pin|Row_0_Pin|Row_1_Pin|Row_2_Pin
+                          |Column_2_Pin|Column_1_Pin|Column_0_Pin|R_Ctrl_Pin
+                          |G_Ctrl_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : Selector_Pin */
+  GPIO_InitStruct.Pin = Selector_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(Selector_GPIO_Port, &GPIO_InitStruct);
 
 }
 
