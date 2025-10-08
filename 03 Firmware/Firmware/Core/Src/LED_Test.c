@@ -40,15 +40,26 @@ uint16_t Anode_Pins[] = {C0R0_Pin, C0R1_Pin, C0R2_Pin,
 #define NUM_ANODE_PINS (sizeof(Anode_Pins) / sizeof(Anode_Pins[0]))
 
 // Function to turn all LEDs of a specific color ON or OFF
-void Set_All_Color_LEDs(GPIO_TypeDef* Ctrl_Port, uint16_t Ctrl_Pin, GPIO_PinState state)
+void Set_All_Color_LEDs(GPIO_TypeDef* R_Port, uint16_t R_Pin,
+                        GPIO_TypeDef* G_Port, uint16_t G_Pin,
+                        GPIO_TypeDef* B_Port, uint16_t B_Pin,
+                        GPIO_PinState R_state, GPIO_PinState G_state, GPIO_PinState B_state)
 {
     // Set all anode pins high to enable all LEDs
     for (int i = 0; i < NUM_ANODE_PINS; i++)
     {
         HAL_GPIO_WritePin(Anode_Ports[i], Anode_Pins[i], GPIO_PIN_SET);
     }
-    // Set the cathode control pin to the desired state (GPIO_PIN_RESET for ON, GPIO_PIN_SET for OFF)
-    HAL_GPIO_WritePin(Ctrl_Port, Ctrl_Pin, state);
+    // Set the cathode control pins to the desired states
+    // Set all anode pins high to enable all LEDs
+    for (int i = 0; i < NUM_ANODE_PINS; i++)
+    {
+        HAL_GPIO_WritePin(Anode_Ports[i], Anode_Pins[i], GPIO_PIN_SET);
+    }
+    // Set the cathode control pins to the desired states
+    HAL_GPIO_WritePin(R_Port, R_Pin, R_state);
+    HAL_GPIO_WritePin(G_Port, G_Pin, G_state);
+    HAL_GPIO_WritePin(B_Port, B_Pin, B_state);
 }
 
 // Function to turn a specific LED ON or OFF
@@ -73,43 +84,25 @@ void Set_Individual_LED(GPIO_TypeDef* Anode_Port, uint16_t Anode_Pin,
 
 void LED_Test_All(void)
 {
-    // Test all Red LEDs
-    Set_All_Color_LEDs(R_Ctrl_GPIO_Port, R_Ctrl_Pin, GPIO_PIN_RESET); // All Red ON
-    HAL_Delay(500);
-    Set_All_Color_LEDs(R_Ctrl_GPIO_Port, R_Ctrl_Pin, GPIO_PIN_SET);  // All Red OFF
-    HAL_Delay(200);
+    // Turn all Red LEDs on
+    // Turn all Red LEDs on
+    Set_All_Color_LEDs(R_Ctrl_GPIO_Port, R_Ctrl_Pin, G_Ctrl_GPIO_Port, G_Ctrl_Pin, B_Ctrl_GPIO_Port, B_Ctrl_Pin,
+                       GPIO_PIN_SET, GPIO_PIN_RESET, GPIO_PIN_RESET);
+    HAL_Delay(1000); // Display Red for 1 second
 
-    // Test all Green LEDs
-    Set_All_Color_LEDs(G_Ctrl_GPIO_Port, G_Ctrl_Pin, GPIO_PIN_RESET); // All Green ON
-    HAL_Delay(500);
-    Set_All_Color_LEDs(G_Ctrl_GPIO_Port, G_Ctrl_Pin, GPIO_PIN_SET);  // All Green OFF
-    HAL_Delay(200);
+    // Turn all Green LEDs on
+    Set_All_Color_LEDs(R_Ctrl_GPIO_Port, R_Ctrl_Pin, G_Ctrl_GPIO_Port, G_Ctrl_Pin, B_Ctrl_GPIO_Port, B_Ctrl_Pin,
+                       GPIO_PIN_RESET, GPIO_PIN_SET, GPIO_PIN_RESET);
+    HAL_Delay(1000); // Display Green for 1 second
 
-    // Test all Blue LEDs
-    Set_All_Color_LEDs(B_Ctrl_GPIO_Port, B_Ctrl_Pin, GPIO_PIN_RESET); // All Blue ON
-    HAL_Delay(500);
-    Set_All_Color_LEDs(B_Ctrl_GPIO_Port, B_Ctrl_Pin, GPIO_PIN_SET);  // All Blue OFF
-    HAL_Delay(200);
-
-    // Turn all LEDs on (all colors)
-    for (int i = 0; i < NUM_ANODE_PINS; i++)
-    {
-        HAL_GPIO_WritePin(Anode_Ports[i], Anode_Pins[i], GPIO_PIN_SET);
-    }
-    HAL_GPIO_WritePin(R_Ctrl_GPIO_Port, R_Ctrl_Pin, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(G_Ctrl_GPIO_Port, G_Ctrl_Pin, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(B_Ctrl_GPIO_Port, B_Ctrl_Pin, GPIO_PIN_RESET);
-    HAL_Delay(1000);
+    // Turn all Blue LEDs on
+    Set_All_Color_LEDs(R_Ctrl_GPIO_Port, R_Ctrl_Pin, G_Ctrl_GPIO_Port, G_Ctrl_Pin, B_Ctrl_GPIO_Port, B_Ctrl_Pin,
+                       GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_SET);
+    HAL_Delay(1000); // Display Blue for 1 second
 
     // Turn all LEDs off
-    for (int i = 0; i < NUM_ANODE_PINS; i++)
-    {
-        HAL_GPIO_WritePin(Anode_Ports[i], Anode_Pins[i], GPIO_PIN_RESET);
-    }
-    HAL_GPIO_WritePin(R_Ctrl_GPIO_Port, R_Ctrl_Pin, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(G_Ctrl_GPIO_Port, G_Ctrl_Pin, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(B_Ctrl_GPIO_Port, B_Ctrl_Pin, GPIO_PIN_SET);
-    HAL_Delay(500);
+    Set_All_Color_LEDs(R_Ctrl_GPIO_Port, R_Ctrl_Pin, G_Ctrl_GPIO_Port, G_Ctrl_Pin, B_Ctrl_GPIO_Port, B_Ctrl_Pin,
+                       GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_RESET);
 }
 
 void LED_Test_Individual(void)

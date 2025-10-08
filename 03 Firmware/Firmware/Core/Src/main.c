@@ -102,7 +102,7 @@ int main(void)
   {
     /* USER CODE END WHILE */
     LED_Test_All();
-    LED_Test_Individual();
+    // LED_Test_Individual(); // Commented out as per request
 
     /* USER CODE BEGIN 3 */
   }
