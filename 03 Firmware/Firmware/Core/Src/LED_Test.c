@@ -85,7 +85,6 @@ void Set_Individual_LED(GPIO_TypeDef* Anode_Port, uint16_t Anode_Pin,
 void LED_Test_All(void)
 {
     // Turn all Red LEDs on
-    // Turn all Red LEDs on
     Set_All_Color_LEDs(R_Ctrl_GPIO_Port, R_Ctrl_Pin, G_Ctrl_GPIO_Port, G_Ctrl_Pin, B_Ctrl_GPIO_Port, B_Ctrl_Pin,
                        GPIO_PIN_SET, GPIO_PIN_RESET, GPIO_PIN_RESET);
     HAL_Delay(1000); // Display Red for 1 second
@@ -103,6 +102,7 @@ void LED_Test_All(void)
     // Turn all LEDs off
     Set_All_Color_LEDs(R_Ctrl_GPIO_Port, R_Ctrl_Pin, G_Ctrl_GPIO_Port, G_Ctrl_Pin, B_Ctrl_GPIO_Port, B_Ctrl_Pin,
                        GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_RESET);
+    HAL_Delay(1000); // Display nothing for 1 second
 }
 
 void LED_Test_Individual(void)

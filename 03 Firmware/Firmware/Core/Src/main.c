@@ -95,6 +95,8 @@ int main(void)
   /* USER CODE END 2 */
 
   /* Infinite loop */
+    while (1)
+  {
   /* USER CODE BEGIN WHILE */
     LED_Test_All();
     // LED_Test_Individual(); // Commented out as per request
