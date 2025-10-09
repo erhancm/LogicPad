@@ -33,10 +33,12 @@
 // Array of anode pins for easier iteration
 GPIO_TypeDef* Anode_Ports[] = {C0R0_GPIO_Port, C0R1_GPIO_Port, C0R2_GPIO_Port,
                                C1R0_GPIO_Port, C1R1_GPIO_Port, C1R2_GPIO_Port,
-                               C2R0_GPIO_Port, C2R1_GPIO_Port, C2R2_GPIO_Port};
+                               C2R0_GPIO_Port, C2R1_GPIO_Port, C2R2_GPIO_Port,
+                               CtrlLed_GPIO_Port};
 uint16_t Anode_Pins[] = {C0R0_Pin, C0R1_Pin, C0R2_Pin,
                          C1R0_Pin, C1R1_Pin, C1R2_Pin,
-                         C2R0_Pin, C2R1_Pin, C2R2_Pin};
+                         C2R0_Pin, C2R1_Pin, C2R2_Pin,
+                         CtrlLed_Pin};
 #define NUM_ANODE_PINS (sizeof(Anode_Pins) / sizeof(Anode_Pins[0]))
 
 // Function to turn all LEDs of a specific color ON or OFF
@@ -44,17 +46,17 @@ void Set_All_Color_LEDs(GPIO_TypeDef* R_Port, uint16_t R_Pin,
                         GPIO_TypeDef* G_Port, uint16_t G_Pin,
                         GPIO_TypeDef* B_Port, uint16_t B_Pin,
                         GPIO_PinState R_state, GPIO_PinState G_state, GPIO_PinState B_state)
-{
+{  
     // Set all anode pins high to enable all LEDs
     for (int i = 0; i < NUM_ANODE_PINS; i++)
     {
-        HAL_GPIO_WritePin(Anode_Ports[i], Anode_Pins[i], GPIO_PIN_SET);
+        HAL_GPIO_WritePin(Anode_Ports[i], Anode_Pins[i], GPIO_PIN_RESET);
     }
     // Set the cathode control pins to the desired states
     // Set all anode pins high to enable all LEDs
     for (int i = 0; i < NUM_ANODE_PINS; i++)
     {
-        HAL_GPIO_WritePin(Anode_Ports[i], Anode_Pins[i], GPIO_PIN_SET);
+        HAL_GPIO_WritePin(Anode_Ports[i], Anode_Pins[i], GPIO_PIN_RESET);
     }
     // Set the cathode control pins to the desired states
     HAL_GPIO_WritePin(R_Port, R_Pin, R_state);

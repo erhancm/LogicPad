@@ -61,12 +61,12 @@ void MX_GPIO_Init(void)
 
   /*Configure GPIO pins : C0R0_Pin C0R1_Pin C0R2_Pin C1R0_Pin
                            C1R1_Pin C1R2_Pin C2R0_Pin C2R1_Pin
-                           C2R2_Pin CtrlLed_Pin */
+                           C2R2_Pin */
   GPIO_InitStruct.Pin = C0R0_Pin|C0R1_Pin|C0R2_Pin|C1R0_Pin
                           |C1R1_Pin|C1R2_Pin|C2R0_Pin|C2R1_Pin
-                          |C2R2_Pin|CtrlLed_Pin;
+                          |C2R2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
@@ -89,6 +89,13 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(Selector_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : CtrlLed_Pin */
+  GPIO_InitStruct.Pin = CtrlLed_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(CtrlLed_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : Column_2_Pin Column_1_Pin Column_0_Pin */
   GPIO_InitStruct.Pin = Column_2_Pin|Column_1_Pin|Column_0_Pin;
