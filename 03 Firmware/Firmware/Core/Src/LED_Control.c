@@ -1,4 +1,4 @@
-#include "LED_Test.h"
+#include "LED_Control.h"
 #include "gpio.h" // Assuming GPIO_PIN_x and HAL_GPIO_WritePin are defined here
 
 // Define LED pins based on PIN_CONFIGURATION.md
@@ -105,49 +105,4 @@ void LED_Test_All(void)
     Set_All_Color_LEDs(R_Ctrl_GPIO_Port, R_Ctrl_Pin, G_Ctrl_GPIO_Port, G_Ctrl_Pin, B_Ctrl_GPIO_Port, B_Ctrl_Pin,
                        GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_RESET);
     HAL_Delay(1000); // Display nothing for 1 second
-}
-
-void LED_Test_Individual(void)
-{
-    // Cycle through each anode pin with Red color
-    for (int i = 0; i < NUM_ANODE_PINS; i++)
-    {
-        Set_Individual_LED(Anode_Ports[i], Anode_Pins[i], R_Ctrl_GPIO_Port, R_Ctrl_Pin, GPIO_PIN_SET);
-        HAL_Delay(100);
-    }
-    // Turn off all LEDs
-    for (int i = 0; i < NUM_ANODE_PINS; i++)
-    {
-        HAL_GPIO_WritePin(Anode_Ports[i], Anode_Pins[i], GPIO_PIN_RESET);
-    }
-    HAL_GPIO_WritePin(R_Ctrl_GPIO_Port, R_Ctrl_Pin, GPIO_PIN_SET);
-    HAL_Delay(200);
-
-    // Cycle through each anode pin with Green color
-    for (int i = 0; i < NUM_ANODE_PINS; i++)
-    {
-        Set_Individual_LED(Anode_Ports[i], Anode_Pins[i], G_Ctrl_GPIO_Port, G_Ctrl_Pin, GPIO_PIN_SET);
-        HAL_Delay(100);
-    }
-    // Turn off all LEDs
-    for (int i = 0; i < NUM_ANODE_PINS; i++)
-    {
-        HAL_GPIO_WritePin(Anode_Ports[i], Anode_Pins[i], GPIO_PIN_RESET);
-    }
-    HAL_GPIO_WritePin(G_Ctrl_GPIO_Port, G_Ctrl_Pin, GPIO_PIN_SET);
-    HAL_Delay(200);
-
-    // Cycle through each anode pin with Blue color
-    for (int i = 0; i < NUM_ANODE_PINS; i++)
-    {
-        Set_Individual_LED(Anode_Ports[i], Anode_Pins[i], B_Ctrl_GPIO_Port, B_Ctrl_Pin, GPIO_PIN_SET);
-        HAL_Delay(100);
-    }
-    // Turn off all LEDs
-    for (int i = 0; i < NUM_ANODE_PINS; i++)
-    {
-        HAL_GPIO_WritePin(Anode_Ports[i], Anode_Pins[i], GPIO_PIN_RESET);
-    }
-    HAL_GPIO_WritePin(B_Ctrl_GPIO_Port, B_Ctrl_Pin, GPIO_PIN_SET);
-    HAL_Delay(200);
 }

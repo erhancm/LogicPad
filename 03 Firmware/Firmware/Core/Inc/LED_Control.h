@@ -8,7 +8,6 @@ extern "C" {
 #include "main.h"
 
 void LED_Test_All(void);
-void LED_Test_Individual(void);
 
 #ifdef __cplusplus
 }

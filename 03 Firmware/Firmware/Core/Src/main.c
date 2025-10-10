@@ -24,7 +24,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "LED_Test.h"
+#include "LED_Control.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -99,7 +99,6 @@ int main(void)
   {
   /* USER CODE BEGIN WHILE */
     LED_Test_All();
-    // LED_Test_Individual(); // Commented out as per request
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
