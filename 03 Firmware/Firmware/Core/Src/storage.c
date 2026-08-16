@@ -95,7 +95,8 @@ static int store_sane(const lp_store_t *s) {
     if (c < 32 || c > 126) {
       return 0;
     }
-    if (s->profiles[p].light_mode > 2 || s->profiles[p].bright > 10 || s->profiles[p].dim > 10) {
+    if (s->profiles[p].light_mode >= LP_N_LIGHT_MODES || s->profiles[p].bright > 10 ||
+        s->profiles[p].dim > 10) {
       return 0;
     }
   }

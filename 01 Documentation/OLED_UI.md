@@ -38,6 +38,8 @@ Key picker: the nine keys select themselves.
 
 Main menu is Profiles / Keys / Setup. Setup is Lights / Screen / About. One setting per value screen.
 
+Lights → Mode: Off, Solid, React, Breathe, Wave, Ring, Ripple, Rain, Heart, Cross, Twinkle. Shows paint their own colors (they do not need per-key LED assignments). Bright caps show intensity. Ripple reacts to live key presses.
+
 ## Timing
 
 SEL long 500 ms. Hold-repeat 400 ms then 12 Hz. Boot 900 ms. Toast 700 ms. Menu idle default 30 s. Live sleep default 1 minute (first wake key is consumed).

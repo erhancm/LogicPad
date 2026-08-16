@@ -137,7 +137,7 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
     lp_profile_t *pr = &g_store.profiles[idx];
     memcpy(pr->name, &p[1], LP_NAME_LEN);
     pr->name[LP_NAME_LEN] = 0;
-    pr->light_mode = p[14];
+    pr->light_mode = (p[14] >= LP_N_LIGHT_MODES) ? 0 : p[14];
     pr->bright = p[15];
     pr->dim = p[16];
     g_store.dirty = 1;

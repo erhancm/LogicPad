@@ -5,6 +5,7 @@
 
 #define LP_N_PROFILES 4
 #define LP_N_KEYS 9
+#define LP_N_LIGHT_MODES 11 /* Off, Solid, React, then 8 shows */
 #define LP_MAX_ACTIONS 16
 #define LP_NAME_LEN 12
 #define LP_LABEL_LEN 6

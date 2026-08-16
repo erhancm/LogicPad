@@ -56,7 +56,8 @@ static uint8_t toast_key;
 static char name_buf[13];
 
 static const char *const COLORS[] = {"Off", "White", "Red", "Green", "Blue"};
-static const char *const MODES[] = {"Off", "Solid", "React"};
+static const char *const MODES[] = {"Off",    "Solid", "React", "Breathe", "Wave",  "Ring",
+                                    "Ripple", "Rain",  "Heart", "Cross",   "Twinkle"};
 static const char *const SLEEP_L[] = {"Never", "15s", "30s", "1m", "5m"};
 static const uint32_t SLEEP_MS[] = {0, 15000, 30000, 60000, 300000};
 static const uint32_t IDLE_MS[] = {15000, 30000, 60000};
@@ -207,7 +208,7 @@ static uint8_t list_max(void) {
   case SCR_ADD_WAIT:
     return 20;
   case SCR_LMODE:
-    return 2;
+    return LP_N_LIGHT_MODES - 1;
   case SCR_LBRIGHT:
   case SCR_LDIM:
   case SCR_CONTRAST:
@@ -611,6 +612,10 @@ static void nav(int dir) {
     return;
   }
   i = clampi((int16_t)(i + dir), 0, list_max());
+  if (scr == SCR_LMODE) {
+    ap()->light_mode = (uint8_t)i;
+    dirty();
+  }
   need_draw = 1;
 }
 
@@ -857,7 +862,7 @@ static void draw(void) {
     break;
   }
   case SCR_LMODE:
-    value_screen("MODE", MODES[clampi(i, 0, 2)]);
+    value_screen("MODE", MODES[clampi(i, 0, LP_N_LIGHT_MODES - 1)]);
     break;
   case SCR_LBRIGHT:
     snprintf(tmp, sizeof(tmp), "%d", (int)i);
