@@ -18,13 +18,13 @@ void ssd1306_Init(void) {
   ssd1306_WriteCommand(0x20);
   ssd1306_WriteCommand(0x00);
   ssd1306_WriteCommand(0xB0);
-  ssd1306_WriteCommand(0xC8);
+  ssd1306_WriteCommand(0xC0); /* upright for enclosure; yellow glass stays at bottom */
   ssd1306_WriteCommand(0x00);
   ssd1306_WriteCommand(0x10);
   ssd1306_WriteCommand(0x40);
   ssd1306_WriteCommand(0x81);
   ssd1306_WriteCommand(0x7F);
-  ssd1306_WriteCommand(0xA1);
+  ssd1306_WriteCommand(0xA0);
   ssd1306_WriteCommand(0xA6);
   ssd1306_WriteCommand(0xA8);
   ssd1306_WriteCommand(0x3F);
@@ -149,11 +149,12 @@ void ssd1306_SetContrast(uint8_t value) {
 
 void ssd1306_SetFlip(uint8_t flip180) {
   if (flip180) {
-    ssd1306_WriteCommand(0xA0);
-    ssd1306_WriteCommand(0xC0);
-  } else {
     ssd1306_WriteCommand(0xA1);
     ssd1306_WriteCommand(0xC8);
+  } else {
+    /* Default enclosure: content upright, yellow strip at physical bottom. */
+    ssd1306_WriteCommand(0xA0);
+    ssd1306_WriteCommand(0xC0);
   }
 }
 

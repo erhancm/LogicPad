@@ -119,7 +119,6 @@ int main(void)
       last_ms++;
       keypad_tick();
       macro_tick();
-      led_mux_tick();
       ui_tick();
       now = HAL_GetTick();
     }

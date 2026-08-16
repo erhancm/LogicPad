@@ -39,7 +39,7 @@ I2C speed: 400 kHz.
 
 ## Per-key RGB
 
-Anodes on PA0–PA8 (`C0R0` … `C2R2`). Common color enables: `R_Ctrl` PB8, `G_Ctrl` PB9, `B_Ctrl` PB10. LED on = anode high and color enable **high** (active-high on V0.2). Time-sliced mux in firmware. `CtrlLed` PA9 unused in v1.
+Anodes on PA0–PA8 (`C0R0` … `C2R2`) via **BSS84 P-FET** high-side switches: GPIO **low = LED on**, GPIO **high = off**. Color sinks `R_Ctrl` PB8, `G_Ctrl` PB9, `B_Ctrl` PB10 via **2N7002 N-FET**: GPIO **high = on**. Soft-PWM mux in TIM2. `CtrlLed` PA9 is the same P-FET polarity (unused in v1 — hold high).
 
 ## USB
 

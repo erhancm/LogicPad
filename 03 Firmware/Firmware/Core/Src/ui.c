@@ -61,6 +61,13 @@ static const char *const SLEEP_L[] = {"Never", "15s", "30s", "1m", "5m"};
 static const uint32_t SLEEP_MS[] = {0, 15000, 30000, 60000, 300000};
 static const uint32_t IDLE_MS[] = {15000, 30000, 60000};
 
+/* Dual-color 0.96" panel (yellow glass fixed at physical bottom):
+ * blue content y=0..47, yellow status y=48..63. */
+#define UI_BLUE_H 48
+#define UI_YELLOW_Y 48
+#define UI_YELLOW_H 16
+#define UI_ROW_H 16
+
 static int16_t clampi(int16_t v, int16_t lo, int16_t hi) {
   if (v < lo) {
     return lo;
@@ -89,11 +96,12 @@ static void go(screen_t s) {
 }
 
 static void header(const char *title) {
-  ssd1306_FillRect(0, 0, 128, 10, White);
-  ssd1306_SetCursor(2, 1);
+  /* Yellow band at bottom — titles / status only. */
+  ssd1306_FillRect(0, UI_YELLOW_Y, 128, UI_YELLOW_H, White);
+  ssd1306_SetCursor(2, (uint8_t)(UI_YELLOW_Y + 4));
   ssd1306_WriteString(title, Font_6x8, Black);
   if (g_store.dirty) {
-    ssd1306_SetCursor(110, 1);
+    ssd1306_SetCursor(104, (uint8_t)(UI_YELLOW_Y + 4));
     ssd1306_WriteString("*", Font_6x8, Black);
   }
   if (hid_configured()) {
@@ -102,13 +110,27 @@ static void header(const char *title) {
       on = (HAL_GetTick() / 400) & 1;
     }
     if (on) {
-      ssd1306_FillRect(122, 3, 3, 3, Black);
+      ssd1306_FillRect(118, (uint8_t)(UI_YELLOW_Y + 5), 6, 6, Black);
     }
   }
 }
 
+static void header_hint(const char *title, const char *hint) {
+  header(title);
+  if (hint && hint[0]) {
+    uint8_t n = (uint8_t)strlen(hint);
+    uint8_t x = (uint8_t)(128 - 14 - n * 6);
+    if (x < 40) {
+      x = 40;
+    }
+    ssd1306_SetCursor(x, (uint8_t)(UI_YELLOW_Y + 4));
+    ssd1306_WriteString(hint, Font_6x8, Black);
+  }
+}
+
 static void footer(const char *s) {
-  ssd1306_SetCursor(0, 56);
+  /* Extra hint line sits just above the yellow band in blue. */
+  ssd1306_SetCursor(0, 40);
   ssd1306_WriteString(s, Font_6x8, White);
 }
 
@@ -133,28 +155,28 @@ static void big_menu(const char *const *items, uint8_t n, int16_t sel) {
   }
   for (uint8_t r = 0; r < 3 && (start + r) < n; r++) {
     uint8_t idx = (uint8_t)(start + r);
-    uint8_t y = (uint8_t)(12 + r * 14);
+    uint8_t y = (uint8_t)(r * UI_ROW_H);
     uint8_t hi = (idx == sel);
     if (hi) {
-      ssd1306_FillRect(0, y, 128, 14, White);
+      ssd1306_FillRect(0, y, 128, UI_ROW_H, White);
     }
-    ssd1306_SetCursor(2, (uint8_t)(y + 1));
+    ssd1306_SetCursor(2, y);
     ssd1306_WriteString2x(items[idx], hi ? Black : White);
   }
 }
 
 static void value_screen(const char *title, const char *val) {
-  header(title);
-  text2x_center(22, val);
-  footer("U/D change");
+  header_hint(title, "U/D");
+  text2x_center(16, val);
 }
 
 static void confirm_screen(const char *msg) {
-  ssd1306_FillRect(8, 16, 112, 32, White);
-  ssd1306_SetCursor(16, 22);
+  header("CONFIRM");
+  ssd1306_FillRect(4, 4, 120, 40, White);
+  ssd1306_SetCursor(10, 12);
   ssd1306_WriteString(msg, Font_6x8, Black);
-  ssd1306_SetCursor(16, 34);
-  ssd1306_WriteString("OK yes  SEL no", Font_6x8, Black);
+  ssd1306_SetCursor(10, 28);
+  ssd1306_WriteString("OK yes   SEL no", Font_6x8, Black);
 }
 
 static uint8_t list_max(void) {
@@ -708,26 +730,23 @@ static void draw(void) {
 
   switch (scr) {
   case SCR_BOOT:
-    text2x_center(16, "LogicPad");
-    ssd1306_SetCursor(52, 44);
-    ssd1306_WriteString("v0.1", Font_6x8, White);
+    text2x_center(8, "LogicPad");
+    header("v0.1");
     break;
   case SCR_HOME:
-    header(p->name);
-    text2x_center(22, p->name);
-    footer("SEL menu");
+    text2x_center(8, p->name);
+    header_hint(p->name, "SEL");
     break;
   case SCR_TOAST:
-    header(p->name);
-    text2x_center(18, p->name);
-    ssd1306_FillRect(0, 44, 128, 20, White);
-    ssd1306_SetCursor((uint8_t)((128 - strlen(p->keys[toast_key].label) * 12) / 2), 46);
+    ssd1306_FillRect(0, 0, 128, UI_BLUE_H, White);
+    ssd1306_SetCursor((uint8_t)((128 - strlen(p->keys[toast_key].label) * 12) / 2), 16);
     ssd1306_WriteString2x(p->keys[toast_key].label, Black);
+    header(p->name);
     break;
   case SCR_MENU: {
     const char *it[] = {"Profiles", "Keys", "Setup"};
-    header("MENU");
     big_menu(it, 3, i);
+    header("MENU");
     break;
   }
   case SCR_PROF_LIST: {
@@ -737,39 +756,39 @@ static void draw(void) {
     snprintf(n2, 16, "%s%s", g_store.profiles[2].name, g_store.active == 2 ? "*" : "");
     snprintf(n3, 16, "%s%s", g_store.profiles[3].name, g_store.active == 3 ? "*" : "");
     const char *it[] = {n0, n1, n2, n3};
-    header("PROFILE");
     big_menu(it, 4, i);
+    header("PROFILE");
     break;
   }
   case SCR_PROF_ACTS: {
     const char *it[] = {"Use", "Rename", "Reset"};
-    header(g_store.profiles[edit_prof].name);
     big_menu(it, 3, i);
+    header(g_store.profiles[edit_prof].name);
     break;
   }
   case SCR_PROF_NAME:
-    header("NAME");
-    text2x_center(22, name_buf);
-    footer("U/D letter OK");
+    text2x_center(8, name_buf);
+    footer("U/D letter");
+    header_hint("NAME", "OK");
     break;
   case SCR_PROF_RESET:
     confirm_screen("Reset?");
     break;
   case SCR_KEY_PICK:
+    text2x_center(4, "Press");
+    text2x_center(24, "a key");
     header("KEYS");
-    text2x_center(18, "Press");
-    text2x_center(36, "a key");
     break;
   case SCR_KEY_EDIT: {
     const char *it[] = {"Name", "Light", "Macro"};
-    header(p->keys[edit_key].label);
     big_menu(it, 3, i);
+    header(p->keys[edit_key].label);
     break;
   }
   case SCR_KEY_NAME:
-    header("NAME");
-    text2x_center(22, name_buf);
-    footer("U/D letter OK");
+    text2x_center(8, name_buf);
+    footer("U/D letter");
+    header_hint("NAME", "OK");
     break;
   case SCR_KEY_LIGHT:
     value_screen("LIGHT", COLORS[clampi(i, 0, 4)]);
@@ -784,15 +803,14 @@ static void draw(void) {
     if (p->keys[edit_key].n < 3) {
       strncpy(rows[p->keys[edit_key].n], "+ Add", 16);
     }
-    header("MACRO");
     big_menu((const char *const *)rows, n > 3 ? 3 : n, i < 3 ? i : 2);
-    footer("+ add  - del");
+    header_hint("MACRO", "+/-");
     break;
   }
   case SCR_ADD_KIND: {
     const char *it[] = {"Key", "Mouse", "Wait"};
-    header("ADD");
     big_menu(it, 3, i);
+    header("ADD");
     break;
   }
   case SCR_ADD_LETTER:
@@ -803,14 +821,14 @@ static void draw(void) {
     break;
   case SCR_ADD_SEND: {
     const char *it[] = {"Tap", "Hold", "Release"};
-    header("SEND");
     big_menu(it, 3, i);
+    header("SEND");
     break;
   }
   case SCR_ADD_MOUSE: {
     const char *it[] = {"Button", "Move", "Wheel"};
-    header("MOUSE");
     big_menu(it, 3, i);
+    header("MOUSE");
     break;
   }
   case SCR_ADD_WAIT:
@@ -819,20 +837,20 @@ static void draw(void) {
     break;
   case SCR_SETUP: {
     const char *it[] = {"Lights", "Screen", "About"};
-    header("SETUP");
     big_menu(it, 3, i);
+    header("SETUP");
     break;
   }
   case SCR_LIGHTS: {
     const char *it[] = {"Mode", "Bright", "Dim"};
-    header("LIGHTS");
     big_menu(it, 3, i);
+    header("LIGHTS");
     break;
   }
   case SCR_SCREEN: {
     const char *it[] = {"Contrast", "Flip", "Sleep"};
-    header("SCREEN");
     big_menu(it, 3, i);
+    header("SCREEN");
     break;
   }
   case SCR_LMODE:
@@ -858,13 +876,13 @@ static void draw(void) {
     break;
   case SCR_ABOUT: {
     const char *it[] = {hid_configured() ? "USB OK" : "USB --", "Save", "Reset"};
-    header("ABOUT");
     big_menu(it, 3, i);
+    header("ABOUT");
     break;
   }
   case SCR_SAVED:
+    text2x_center(16, "Saved");
     header("ABOUT");
-    text2x_center(24, "Saved");
     break;
   case SCR_RESET_ALL:
     confirm_screen("Erase?");

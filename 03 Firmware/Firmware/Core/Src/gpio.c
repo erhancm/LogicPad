@@ -49,12 +49,12 @@ void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
-  /*Configure GPIO pin Output Level */
+  /*Configure GPIO pin Output Level — P-FET anodes idle high (off). */
   HAL_GPIO_WritePin(GPIOA, C0R0_Pin|C0R1_Pin|C0R2_Pin|C1R0_Pin
                           |C1R1_Pin|C1R2_Pin|C2R0_Pin|C2R1_Pin
-                          |C2R2_Pin|CtrlLed_Pin, GPIO_PIN_RESET);
+                          |C2R2_Pin|CtrlLed_Pin, GPIO_PIN_SET);
 
-  /*Configure GPIO pin Output Level */
+  /*Configure GPIO pin Output Level — N-FET color sinks idle low (off). */
   HAL_GPIO_WritePin(GPIOB, B_Ctrl_Pin|R_Ctrl_Pin|G_Ctrl_Pin, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(GPIOB, Column_2_Pin|Column_1_Pin|Column_0_Pin, GPIO_PIN_SET);
 

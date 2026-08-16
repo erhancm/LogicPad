@@ -1,8 +1,19 @@
 # OLED UI
 
-Pixel-true review mockup: `oled-ui-mockup.canvas.tsx` in the Cursor project canvases folder. Firmware `ui.c` implements the same screens.
+Firmware `ui.c` is the in-repo look-and-feel source of truth.
 
-Display: SSD1306 128×64, Font_6x8, 12×16 (2×) for list rows. Yellow-on-black look is the panel; framebuffer is 1-bit.
+## Panel
+
+0.96" SSD1306 128×64 **dual-color** glass. The yellow strip is **physically fixed at the bottom** of the enclosure (not movable in software).
+
+| Band | Framebuffer rows | Use |
+|------|------------------|-----|
+| Blue | 0–47 | Menus, values, main content |
+| Yellow | 48–63 | Titles, status (`*`, USB), short hints |
+
+Default orientation (`SEG A0` + `COM C0`) keeps text upright relative to the keys. Screen → Flip adds an extra 180°.
+
+Fonts: Font_6x8 in yellow; 12×16 (2×) list rows in blue (three rows × 16 px = full blue band).
 
 ## Controls
 
@@ -17,7 +28,7 @@ Menus:
      [SEL Back / hold Home]
 ```
 
-Left (key 3) = Back. Lists do not wrap. At most three large rows; highlight stays center while scrolling. Value screens: one value, Up/Down change, Left/SEL back.
+Left (key 3) = Back. Lists do not wrap. At most three large rows in the blue band; highlight stays center while scrolling. Value screens: value in blue, title/hint in yellow.
 
 Key picker: the nine keys select themselves.
 
