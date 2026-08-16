@@ -880,6 +880,7 @@ static void draw(void) {
 void ui_init(void) {
   ssd1306_Init();
   apply_screen_hw();
+  ssd1306_DisplayOn(1);
   go(SCR_BOOT);
 }
 

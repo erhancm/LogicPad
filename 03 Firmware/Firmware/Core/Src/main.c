@@ -109,7 +109,12 @@ int main(void)
   {
   /* USER CODE BEGIN WHILE */
     static uint32_t last_ms;
+    static uint8_t tick_synced;
     uint32_t now = HAL_GetTick();
+    if (!tick_synced) {
+      last_ms = now;
+      tick_synced = 1;
+    }
     while (last_ms != now) {
       last_ms++;
       keypad_tick();
