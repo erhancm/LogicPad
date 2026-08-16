@@ -649,6 +649,7 @@ static void on_event(keypad_event_t e) {
       return;
     }
     if (e.type == KP_DOWN && e.key < 9) {
+      hid_notify_key(g_store.active, e.key, 1);
       toast_key = e.key;
       macro_play(e.key);
       go(SCR_TOAST);

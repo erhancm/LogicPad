@@ -3,6 +3,8 @@
 #include "ui.h"
 #include "usbd_customhid.h"
 #include "usb_device.h"
+#include "lp_memmap.h"
+#include "main.h"
 #include <string.h>
 
 extern USBD_HandleTypeDef hUsbDeviceFS;
@@ -11,6 +13,10 @@ static uint32_t vendor_last_ms;
 static uint8_t kbd[9];
 static uint8_t mouse[5];
 static uint8_t cons[3];
+static uint8_t key_evt_pending;
+static uint8_t key_evt_profile;
+static uint8_t key_evt_key;
+static uint8_t key_evt_down;
 
 static int hid_send(uint8_t *r, uint16_t n) {
   if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED || hUsbDeviceFS.pClassData == NULL) {
@@ -31,6 +37,30 @@ void hid_init(void) {
 }
 
 void hid_tick(void) {
+  if (!key_evt_pending) {
+    return;
+  }
+  if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED) {
+    key_evt_pending = 0;
+    return;
+  }
+  uint8_t r[64];
+  memset(r, 0, sizeof(r));
+  r[0] = HID_RID_VENDOR;
+  r[1] = CMD_KEY_EVENT;
+  r[2] = key_evt_profile;
+  r[3] = key_evt_key;
+  r[4] = key_evt_down;
+  if (hid_send(r, 64) == 0) {
+    key_evt_pending = 0;
+  }
+}
+
+void hid_notify_key(uint8_t profile, uint8_t key, uint8_t down) {
+  key_evt_profile = profile;
+  key_evt_key = key;
+  key_evt_down = down ? 1 : 0;
+  key_evt_pending = 1;
 }
 
 int hid_configured(void) {
@@ -189,6 +219,12 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
     storage_save();
     ui_mark_dirty();
     vendor_reply(cmd, NULL, 0);
+    break;
+  case CMD_ENTER_BOOTLOADER:
+    vendor_reply(cmd, NULL, 0);
+    *(volatile uint32_t *)LP_BL_MAGIC_ADDR = LP_BL_MAGIC;
+    HAL_Delay(40);
+    NVIC_SystemReset();
     break;
   default:
     break;

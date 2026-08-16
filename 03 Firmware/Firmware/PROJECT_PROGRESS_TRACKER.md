@@ -8,11 +8,11 @@ Agent continuation (locks + next steps): [`AGENTS.md`](../../AGENTS.md) at repo 
 - [x] 1 ms keypad scan, debounce, SEL short/long, hold-repeat
 - [x] SSD1306 I2C UI (all planned screens, Font_6x8 + 2× lists)
 - [x] USB Custom HID: keyboard + mouse + consumer + vendor (report IDs 1–4)
-- [x] Macro engine + CRC ping-pong flash (last 8 KB, linker FLASH = 56 KB)
+- [x] Macro engine + CRC ping-pong flash (last 8 KB at `0x0800E000`; app FLASH = 52 KB at `0x08001000`)
 - [x] Per-key RGB mux from Lights / key LED color
-- [ ] Own VID/PID (still ST test IDs 1155/22352)
-- [ ] Tauri configurator (`04 Software/` not started)
-- [ ] Field DFU (out of scope)
+- [x] Tauri configurator (`04 Software/logicpad-app/` — connect, profiles, keys, save, firmware update)
+- [x] HID field update (`03 Firmware/bootloader/`, PID `0x5751`; first flash `LogicPad_factory.hex`, then app `LogicPad.bin`)
+- [ ] Own VID/PID (still ST test IDs 1155/22352 app, 22353 boot)
 
 ## How to use
 
@@ -22,4 +22,4 @@ SEL opens the OLED menu. Configure profiles, keys, macros, lights, and screen on
 
 ## Build
 
-STM32CubeIDE or CMake preset `Debug` in `03 Firmware/Firmware/` (arm-none-eabi-gcc + Ninja). Flash with ST-Link. Do not regenerate CubeMX over USER CODE; rows must stay inputs.
+STM32CubeIDE or CMake preset `Release` in `03 Firmware/Firmware/` (arm-none-eabi-gcc + Ninja), after building `03 Firmware/bootloader` Release. First flash: `LogicPad_factory.hex` with ST-Link. Later: Tauri **Update firmware** + `LogicPad.bin`. Do not regenerate CubeMX over USER CODE; rows must stay inputs.

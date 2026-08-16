@@ -39,7 +39,7 @@ I2C speed: 400 kHz.
 
 ## Per-key RGB
 
-Anodes on PA0–PA8 (`C0R0` … `C2R2`) via **BSS84 P-FET** high-side switches: GPIO **low = LED on**, GPIO **high = off**. Color sinks `R_Ctrl` PB8, `G_Ctrl` PB9, `B_Ctrl` PB10 via **2N7002 N-FET**: GPIO **high = on**. Soft-PWM mux in TIM2. `CtrlLed` PA9 is the same P-FET polarity (unused in v1 — hold high).
+Anodes on PA0–PA8 (`C0R0` … `C2R2`) via **BSS84 P-FET** high-side switches: GPIO **low = LED on**, GPIO **high = off**. Net order on PA0–PA8 matches keypad index (row-major): C0R0, C0R1, C0R2, C1R0, … (not C0R0, C1R0, C2R0). Color sinks `R_Ctrl` PB8, `G_Ctrl` PB9, `B_Ctrl` PB10 via **2N7002 N-FET**: GPIO **high = on**. Soft-PWM mux in TIM2. `CtrlLed` PA9 is the same P-FET polarity (unused in v1 — hold high).
 
 ## USB
 

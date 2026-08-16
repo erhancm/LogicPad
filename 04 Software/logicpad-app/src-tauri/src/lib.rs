@@ -1,0 +1,156 @@
+mod hid;
+mod launch;
+
+use hid::{Pad, PadKey, ProfileHdr, Snapshot};
+use launch::{LaunchEntry, LaunchStore};
+use std::sync::{Arc, Mutex};
+use tauri::{Emitter, Manager, State};
+
+struct AppPad(Mutex<Pad>);
+
+#[tauri::command]
+fn connect(pad: State<AppPad>) -> Result<(), String> {
+    pad.0.lock().map_err(|e| e.to_string())?.connect().map_err(Into::into)
+}
+
+#[tauri::command]
+fn disconnect(pad: State<AppPad>) {
+    if let Ok(g) = pad.0.lock() {
+        g.disconnect();
+    }
+}
+
+#[tauri::command]
+fn is_connected(pad: State<AppPad>) -> bool {
+    pad.0.lock().map(|g| g.connected()).unwrap_or(false)
+}
+
+#[tauri::command]
+fn ping(pad: State<AppPad>) -> Result<(u8, u8), String> {
+    pad.0.lock().map_err(|e| e.to_string())?.ping().map_err(Into::into)
+}
+
+#[tauri::command]
+fn load_pad(pad: State<AppPad>) -> Result<Snapshot, String> {
+    pad.0.lock().map_err(|e| e.to_string())?.load_all().map_err(Into::into)
+}
+
+#[tauri::command]
+fn apply_key(pad: State<AppPad>, key: PadKey) -> Result<(), String> {
+    pad.0.lock().map_err(|e| e.to_string())?.set_key(&key).map_err(Into::into)
+}
+
+#[tauri::command]
+fn apply_profile(pad: State<AppPad>, hdr: ProfileHdr) -> Result<(), String> {
+    pad.0.lock().map_err(|e| e.to_string())?.set_profile(&hdr).map_err(Into::into)
+}
+
+#[tauri::command]
+fn set_active(pad: State<AppPad>, profile: u8) -> Result<(), String> {
+    pad.0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .set_active(profile)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn save_store(pad: State<AppPad>) -> Result<(), String> {
+    pad.0.lock().map_err(|e| e.to_string())?.save().map_err(Into::into)
+}
+
+#[tauri::command]
+fn reload_store(pad: State<AppPad>) -> Result<Snapshot, String> {
+    let g = pad.0.lock().map_err(|e| e.to_string())?;
+    g.reload().map_err(Into::<String>::into)?;
+    g.load_all().map_err(Into::into)
+}
+
+#[tauri::command]
+fn factory_reset(pad: State<AppPad>) -> Result<Snapshot, String> {
+    let g = pad.0.lock().map_err(|e| e.to_string())?;
+    g.factory().map_err(Into::<String>::into)?;
+    g.load_all().map_err(Into::into)
+}
+
+#[tauri::command]
+fn flash_firmware(pad: State<AppPad>, data: Vec<u8>) -> Result<(), String> {
+    pad.0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .flash_firmware(&data)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn get_launches(store: State<Arc<LaunchStore>>) -> Vec<LaunchEntry> {
+    store.list()
+}
+
+#[tauri::command]
+fn set_launch(store: State<Arc<LaunchStore>>, entry: LaunchEntry) -> Result<(), String> {
+    store.set(entry)
+}
+
+#[tauri::command]
+fn pick_program() -> Option<String> {
+    launch::pick_program()
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct KeyEvt {
+    profile: u8,
+    key: u8,
+    down: bool,
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    let pad = Pad::new().expect("hidapi");
+    tauri::Builder::default()
+        .manage(AppPad(Mutex::new(pad)))
+        .invoke_handler(tauri::generate_handler![
+            connect,
+            disconnect,
+            is_connected,
+            ping,
+            load_pad,
+            apply_key,
+            apply_profile,
+            set_active,
+            save_store,
+            reload_store,
+            factory_reset,
+            flash_firmware,
+            get_launches,
+            set_launch,
+            pick_program
+        ])
+        .setup(|app| {
+            let dir = app.path().app_config_dir().unwrap_or_else(|_| std::env::temp_dir());
+            let store = Arc::new(LaunchStore::load(dir.join("launches.json")));
+            app.manage(store.clone());
+
+            let handle = app.handle().clone();
+            let pad = app.state::<AppPad>();
+            pad.0.lock().expect("pad").set_on_key(Arc::new(move |profile, key, down| {
+                if down {
+                    if let Err(e) = store.launch(profile, key) {
+                        let _ = handle.emit("launch-error", e);
+                    }
+                }
+                let _ = handle.emit(
+                    "pad-key",
+                    KeyEvt {
+                        profile,
+                        key,
+                        down,
+                    },
+                );
+            }));
+            Ok(())
+        })
+        .run(tauri::generate_context!())
+        .expect("error while running LogicPad");
+}

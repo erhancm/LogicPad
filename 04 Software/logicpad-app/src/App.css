@@ -1,0 +1,252 @@
+:root {
+  color: #e8e4d8;
+  background: #12141a;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+.app {
+  min-height: 100vh;
+  padding: 20px 24px 32px;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  border-bottom: 1px solid #2a2e38;
+  padding-bottom: 14px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: 0.04em;
+  color: #f0d060;
+}
+
+h2 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #8aa0b8;
+}
+
+h3 {
+  margin: 16px 0 8px;
+  font-size: 13px;
+  color: #8aa0b8;
+}
+
+.sub {
+  margin: 4px 0 0;
+  color: #8b8f9a;
+}
+
+.hint {
+  margin: 0 0 8px;
+  color: #6b7380;
+  font-size: 12px;
+}
+
+.key .run {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #f0d060;
+}
+
+.bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.bar button,
+.add button,
+.profiles button,
+.key,
+.letters button,
+.acts button {
+  background: #1c212c;
+  border: 1px solid #3a4150;
+  border-radius: 6px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.bar button:hover,
+.add button:hover,
+.profiles button:hover,
+.letters button:hover {
+  border-color: #f0d060;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+button.on,
+.profiles button.on,
+.letters button.on,
+.key.on {
+  background: #2a2618;
+  border-color: #f0d060;
+  color: #f0d060;
+}
+
+.danger {
+  border-color: #8a3a3a !important;
+}
+
+.dirty {
+  color: #f0d060;
+  font-size: 12px;
+}
+
+.err {
+  margin-top: 12px;
+  padding: 8px 10px;
+  background: #3a1c1c;
+  border-radius: 6px;
+  color: #f0b0b0;
+}
+
+.hero {
+  max-width: 480px;
+  margin-top: 48px;
+  color: #9aa3b0;
+  line-height: 1.5;
+}
+
+.hero .primary {
+  margin-top: 16px;
+  background: #f0d060;
+  color: #12141a;
+  border: none;
+  font-weight: 600;
+  padding: 10px 18px;
+}
+
+main {
+  display: grid;
+  grid-template-columns: 220px 1fr 280px;
+  gap: 22px;
+  margin-top: 20px;
+}
+
+aside,
+.pad,
+.edit {
+  background: #181b22;
+  border: 1px solid #2a2e38;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.profiles,
+.add,
+.letters,
+.mods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.profiles {
+  flex-direction: column;
+  margin-bottom: 12px;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+  color: #9aa3b0;
+  font-size: 12px;
+}
+
+input,
+select {
+  background: #12141a;
+  border: 1px solid #3a4150;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.key {
+  height: 84px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.key .idx {
+  font-size: 11px;
+  color: #6b7380;
+}
+
+.key .lab {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.acts {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 10px;
+}
+
+.acts li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid #2a2e38;
+}
+
+.acts .empty {
+  color: #6b7380;
+}
+
+.chk {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.letters button {
+  min-width: 36px;
+  padding: 5px 7px;
+}
+
+.add {
+  margin-top: 10px;
+}

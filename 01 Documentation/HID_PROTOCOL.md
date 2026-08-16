@@ -30,10 +30,32 @@ Byte 0 = report ID `4`. Byte 1 = command. Bytes 2–63 = payload.
 | 0x09 | GET_PROFILE_HDR | profile | name + lighting |
 | 0x0A | SET_PROFILE_HDR | profile + name + lighting | echo |
 | 0x0B | GET_STATUS | — | same as GET_META |
+| 0x0C | ENTER_BOOTLOADER | — | ack, then reset into the 4 KB HID updater |
+| 0x0D | KEY_EVENT | — | unsolicited IN: profile, key, down (1/0). Live keys only. |
 
 Structs are in `03 Firmware/Firmware/Core/Inc/storage.h`. OLED USB dot blinks while a vendor command was seen in the last 2 s.
 
-The pad keeps sending keyboard/mouse/media while the app holds report 4.
+The pad keeps sending keyboard/mouse/media while the app holds report 4. KEY_EVENT lets the Tauri app launch host programs; that mapping lives on the PC, not in flash.
+
+## Field firmware update
+
+The STM32F103C8 ROM bootloader is USART-only. Updates go through a 4 KB HID bootloader at `0x08000000` (product **LogicPad Boot**, PID `0x5751`). The app stays at `0x08001000` (52 KB). Config store is unchanged at `0x0800E000`.
+
+**Once:** flash `LogicPad_factory.hex` with ST-Link (bootloader + app). After that, the Tauri app **Update firmware** writes `LogicPad.bin` (app only) over vendor report 4.
+
+Recovery: hold **SEL** while plugging USB. The pad stays in LogicPad Boot.
+
+| Cmd | Name | Host → boot | Boot → host |
+|-----|------|-------------|-------------|
+| 0x01 | PING | — | `0x01, 0x00, 0x42` |
+| 0x40 | BL_START | size u32le, CRC-32 IEEE u32le | status |
+| 0x41 | BL_DATA | up to 62 payload bytes | status, bytes written |
+| 0x42 | BL_FINISH | — | status (CRC + vector check), then jump to app |
+| 0x43 | BL_ABORT | — | status, jump if app valid |
+
+Status `0` = ok. `1` bad size, `2` bad vectors, `3` flash, `4` CRC, `5` wrong state.
+
+Do not send `LogicPad_factory.bin` through the updater — that image includes the bootloader and would be rejected.
 
 ## Keyboard usages
 

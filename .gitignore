@@ -15,3 +15,13 @@
 03 Firmware/Firmware/3x3/.mxproject
 03 Firmware/Firmware/3x3/.project
 03 Firmware/Firmware/3x3/*.launch
+
+# Tauri app
+04 Software/logicpad-app/node_modules/
+04 Software/logicpad-app/dist/
+04 Software/logicpad-app/src-tauri/target/
+04 Software/logicpad-app/src-tauri/gen/
+
+# Firmware CMake output
+03 Firmware/Firmware/build/
+03 Firmware/bootloader/build/

@@ -73,3 +73,23 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 
     # Add user defined libraries
 )
+
+add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:${CMAKE_PROJECT_NAME}> ${CMAKE_CURRENT_BINARY_DIR}/LogicPad.bin
+    COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:${CMAKE_PROJECT_NAME}> ${CMAKE_CURRENT_BINARY_DIR}/LogicPad.hex
+    COMMENT "LogicPad.bin is the app image for the Tauri updater (origin 0x08001000)"
+)
+
+set(LP_BOOTLOADER_BIN "${CMAKE_CURRENT_SOURCE_DIR}/../bootloader/build/Release/bootloader.bin")
+set(LP_PACK "${CMAKE_CURRENT_SOURCE_DIR}/../pack_factory.ps1")
+if(EXISTS "${LP_PACK}")
+  add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
+      COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File "${LP_PACK}"
+          -Bl "${LP_BOOTLOADER_BIN}"
+          -App "${CMAKE_CURRENT_BINARY_DIR}/LogicPad.bin"
+          -OutBin "${CMAKE_CURRENT_BINARY_DIR}/LogicPad_factory.bin"
+          -OutHex "${CMAKE_CURRENT_BINARY_DIR}/LogicPad_factory.hex"
+          -ObjCopy "${CMAKE_OBJCOPY}"
+      COMMENT "LogicPad_factory.hex = bootloader + app (first ST-Link flash)"
+  )
+endif()

@@ -72,7 +72,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+  SCB->VTOR = 0x08001000U;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -119,6 +119,7 @@ int main(void)
       last_ms++;
       keypad_tick();
       macro_tick();
+      hid_tick();
       ui_tick();
       now = HAL_GetTick();
     }

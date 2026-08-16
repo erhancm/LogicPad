@@ -4,9 +4,9 @@ Read this first on a new machine or new chat. Conversation history does not trav
 
 ## Where we are (2026-08-16, `development`)
 
-Firmware v0.1 is in `03 Firmware/Firmware/` and builds (`CMake` preset `Debug`, `LogicPad.elf`). It is a plug-and-use USB HID macro pad with a full OLED editor. Hardware and enclosure are **done** (`02 Electronics/V0.2`) — do not respin the board.
+Firmware v0.1 is in `03 Firmware/Firmware/` and builds (`CMake` preset `Release`, `LogicPad.elf` at `0x08001000`). It is a plug-and-use USB HID macro pad with a full OLED editor. Hardware and enclosure are **done** (`02 Electronics/V0.2`) — do not respin the board.
 
-**Next:** Tauri 2 configurator (`04 Software/logicpad-app/`, not created yet), then own VID/PID / branding.
+**Next:** own VID/PID / branding. Firmware field update is in (`03 Firmware/bootloader/` + Tauri **Update firmware**).
 
 Tracker: [`03 Firmware/Firmware/PROJECT_PROGRESS_TRACKER.md`](03%20Firmware/Firmware/PROJECT_PROGRESS_TRACKER.md).
 
@@ -15,15 +15,15 @@ Tracker: [`03 Firmware/Firmware/PROJECT_PROGRESS_TRACKER.md`](03%20Firmware/Firm
 - **Daily use:** plug USB in. Inbox OS HID keyboard/mouse/media. No installer, no driver, no Python, no app required.
 - **On-device config:** 0.96" SSD1306 128×64. Profiles, keys, macros, lights, screen.
 - **Optional PC/Mac/Linux app:** one codebase — **Tauri 2 + React (or similar) + Rust hidapi**. Not Python, not Electron, not browser-only WebHID (WKWebView has no WebHID).
-- App-only extra: live-record of **host** keys, backup/restore, big-screen editor.
+- App-only extra: live-record of **host** keys, backup/restore, big-screen editor, **launch a PC program** from a pad key (app must be running; mapping is local JSON, not flash).
 - All nine pad keys are macros. Selector is **not** a 10th macro. Factory: empty labels and empty actions (no assigned keys). Flash magic `LP_MAGIC` `0x4C504146` so older WORK-profile stores are discarded on boot.
 - Live: SEL short = menu, SEL long = home. Keys 0–8 fire their macros (empty = no-op toast).
 - Menus: d-pad — key 1 up, key 7 down, key 3 left, key 5 right, key 4 OK. SEL short = Back. SEL long = Home. Corners unused except macro list: key 2 add, key 8 delete. Save prompt: OK = yes, SEL = no.
-- Out of v1: QMK/VIA, kernel drivers, DFU/field firmware update, Python GUI, Electron.
+- Out of v1: QMK/VIA, kernel drivers, Python GUI, Electron.
 
 ## Hardware truth
 
-MCU STM32F103C8, 64 KB flash / 20 KB RAM (linker FLASH is **56 KB**; last 8 KB is ping-pong store at `0x0800E000`).
+MCU STM32F103C8, 64 KB flash / 20 KB RAM. **4 KB HID bootloader** at `0x08000000`. App linker FLASH is **52 KB** at `0x08001000`. Last 8 KB ping-pong store at `0x0800E000`. Debug is `-Os -g3` so the app still fits beside the bootloader.
 
 Pinout: [`01 Documentation/Pinout.md`](01%20Documentation/Pinout.md) and `Pinout.pdf`. Columns PB3/4/5 **outputs** (idle high, drive low to scan). Rows PB12/13/14 **inputs pull-up**. Selector PB15 pull-up. OLED I2C1 PB6/PB7 addr `0x78`. SWJ is already `NOJTAG`.
 
@@ -42,14 +42,16 @@ Do **not** regenerate CubeMX over USER CODE. Rows must stay inputs.
 | Flash | `Core/Src/storage.c` (`storage.h` schema) |
 | HID | `Core/Src/hid_reports.c`, `USB_DEVICE/App/usbd_custom_hid_if.c` |
 | RGB mux | `Core/Src/led_mux.c` |
+| HID bootloader | `03 Firmware/bootloader/` (4 KB, PID `0x5751`) |
+| Flash map | `Core/Inc/lp_memmap.h` |
 
 HID reports: 1 keyboard, 2 mouse, 3 consumer, 4 vendor (64-byte). Protocol: [`01 Documentation/HID_PROTOCOL.md`](01%20Documentation/HID_PROTOCOL.md). OLED screens/nav: [`01 Documentation/OLED_UI.md`](01%20Documentation/OLED_UI.md). `ui.c` is the look-and-feel source of truth in-repo (the Cursor canvas mockup is local-only and not in git).
 
-USB still uses ST test VID/PID 1155/22352. Product string is LogicPad.
+USB still uses ST test VID/PID 1155/22352 (app). Bootloader is the same VID, PID 22353 (`0x5751`), product string LogicPad Boot. First ST-Link flash is `LogicPad_factory.hex`. Later updates are `LogicPad.bin` via the Tauri app. Recovery: hold SEL on plug-in.
 
 ## App (when you start it)
 
-Path: `04 Software/logicpad-app/`. Same `lp_store_t` / key structs as flash. HID via Rust hidapi filtered to vendor report 4 so the pad keeps typing. Linux: udev rule in README, not a custom driver.
+Path: `04 Software/logicpad-app/`. Same `lp_store_t` / key structs as flash. HID via Rust hidapi filtered to vendor report 4 (Windows skips the keyboard/mouse collections) so the pad keeps typing. **Update firmware** sends the app `.bin` to the HID bootloader. Linux: udev rule in the app README (include PID `5751`), not a custom driver.
 
 ## Do not
 
@@ -57,5 +59,4 @@ Path: `04 Software/logicpad-app/`. Same `lp_store_t` / key structs as flash. HID
 - Add Python/PySide or Electron.
 - Treat the nine pad keys as anything other than macros (Selector is the only non-macro).
 - Assign factory default chords (Copy/Paste/etc.); keys start empty.
-- Put a bootloader/DFU in v1.
 - Commit `.vscode`, `.clangd`, `.mxproject`, Cube `.settings` unless the user asks.

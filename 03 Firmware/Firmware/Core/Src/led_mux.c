@@ -14,10 +14,16 @@
 #define LED_KEYS 9u
 #define LED_MS_TICKS (LED_IRQ_HZ / 1000u)
 
+/* Key index is row-major (same as the keypad). CubeMX CxRy nets walk
+ * down each MCU column on PA0–PA8, which is the transpose of that grid:
+ *   C0R0 C0R1 C0R2     keys 0 1 2
+ *   C1R0 C1R1 C1R2         3 4 5
+ *   C2R0 C2R1 C2R2         6 7 8
+ */
 static const uint16_t anode_pin[LED_KEYS] = {
-    C0R0_Pin, C1R0_Pin, C2R0_Pin,
-    C0R1_Pin, C1R1_Pin, C2R1_Pin,
-    C0R2_Pin, C1R2_Pin, C2R2_Pin,
+    C0R0_Pin, C0R1_Pin, C0R2_Pin,
+    C1R0_Pin, C1R1_Pin, C1R2_Pin,
+    C2R0_Pin, C2R1_Pin, C2R2_Pin,
 };
 
 static TIM_HandleTypeDef htim_led;

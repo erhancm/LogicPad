@@ -21,11 +21,14 @@
 #define CMD_GET_PROFILE_HDR 0x09
 #define CMD_SET_PROFILE_HDR 0x0A
 #define CMD_GET_STATUS 0x0B
+#define CMD_ENTER_BOOTLOADER 0x0C
+#define CMD_KEY_EVENT 0x0D
 
 void hid_init(void);
 void hid_tick(void);
 int hid_configured(void);
 int hid_vendor_session(void);
+void hid_notify_key(uint8_t profile, uint8_t key, uint8_t down);
 void hid_kbd_send(uint8_t mods, const uint8_t keys[6]);
 void hid_kbd_release(void);
 void hid_mouse_send(uint8_t buttons, int8_t x, int8_t y, int8_t wheel);
