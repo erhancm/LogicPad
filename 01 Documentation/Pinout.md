@@ -39,7 +39,7 @@ I2C speed: 400 kHz.
 
 ## Per-key RGB
 
-Anodes on PA0–PA8 (`C0R0` … `C2R2`). Common cathodes: `R_Ctrl` PB8, `G_Ctrl` PB9, `B_Ctrl` PB10. LED on = anode high and cathode low. Time-sliced mux in firmware. `CtrlLed` PA9 unused in v1.
+Anodes on PA0–PA8 (`C0R0` … `C2R2`). Common color enables: `R_Ctrl` PB8, `G_Ctrl` PB9, `B_Ctrl` PB10. LED on = anode high and color enable **high** (active-high on V0.2). Time-sliced mux in firmware. `CtrlLed` PA9 unused in v1.
 
 ## USB
 

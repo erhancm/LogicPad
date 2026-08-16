@@ -8,7 +8,7 @@ static const uint16_t anode_pin[9] = {
     C0R2_Pin, C1R2_Pin, C2R2_Pin,
 };
 
-static uint8_t slice;
+static uint8_t pwm_phase;
 static uint8_t flash_key = 0xFF;
 static uint16_t flash_ms;
 static uint16_t idle_ms;
@@ -20,7 +20,30 @@ static void anodes_off(void) {
 }
 
 static void cathodes_off(void) {
-  HAL_GPIO_WritePin(GPIOB, R_Ctrl_Pin | G_Ctrl_Pin | B_Ctrl_Pin, GPIO_PIN_SET);
+  /* Color enables are active-high on this PCB. */
+  HAL_GPIO_WritePin(GPIOB, R_Ctrl_Pin | G_Ctrl_Pin | B_Ctrl_Pin, GPIO_PIN_RESET);
+}
+
+/* ~50 us at 72 MHz — enough on-time per key inside a 1 ms frame. */
+static void led_dwell(void) {
+  for (uint32_t i = 0; i < 3600u; i++) {
+    __NOP();
+  }
+}
+
+static void drive_key(uint8_t color) {
+  if (color == LED_OFF || color > LED_BLUE) {
+    return;
+  }
+  if (color == LED_RED || color == LED_WHITE) {
+    HAL_GPIO_WritePin(GPIOB, R_Ctrl_Pin, GPIO_PIN_SET);
+  }
+  if (color == LED_GREEN || color == LED_WHITE) {
+    HAL_GPIO_WritePin(GPIOB, G_Ctrl_Pin, GPIO_PIN_SET);
+  }
+  if (color == LED_BLUE || color == LED_WHITE) {
+    HAL_GPIO_WritePin(GPIOB, B_Ctrl_Pin, GPIO_PIN_SET);
+  }
 }
 
 void led_mux_init(void) {
@@ -50,38 +73,36 @@ void led_mux_tick(void) {
   }
 
   uint8_t level = (idle_ms > 2000) ? dim : bright;
-  uint8_t pwm = (slice % 10) < level;
+  uint8_t pwm_on = (pwm_phase < level);
+  pwm_phase++;
+  if (pwm_phase >= 10) {
+    pwm_phase = 0;
+  }
 
   anodes_off();
   cathodes_off();
 
-  if (!pwm || mode == 0) {
-    slice++;
+  if (!pwm_on || mode == 0) {
     return;
   }
 
-  uint8_t k = slice % 9;
-  uint8_t color = pr->keys[k].led;
-  if (mode == 2 && flash_key == k) {
-    color = LED_WHITE;
-  } else if (mode == 2 && flash_key != k) {
-    color = LED_OFF;
+  /* One full key scan per 1 ms tick so each LED holds a steady color. */
+  for (uint8_t k = 0; k < 9; k++) {
+    uint8_t color = pr->keys[k].led;
+    if (mode == 2) {
+      color = (flash_key == k) ? (uint8_t)LED_WHITE : (uint8_t)LED_OFF;
+    }
+    if (color == LED_OFF || color > LED_BLUE) {
+      continue;
+    }
+
+    anodes_off();
+    cathodes_off();
+    drive_key(color);
+    HAL_GPIO_WritePin(GPIOA, anode_pin[k], GPIO_PIN_SET);
+    led_dwell();
   }
 
-  if (color == LED_OFF) {
-    slice++;
-    return;
-  }
-
-  HAL_GPIO_WritePin(GPIOA, anode_pin[k], GPIO_PIN_SET);
-  if (color == LED_RED || color == LED_WHITE) {
-    HAL_GPIO_WritePin(GPIOB, R_Ctrl_Pin, GPIO_PIN_RESET);
-  }
-  if (color == LED_GREEN || color == LED_WHITE) {
-    HAL_GPIO_WritePin(GPIOB, G_Ctrl_Pin, GPIO_PIN_RESET);
-  }
-  if (color == LED_BLUE || color == LED_WHITE) {
-    HAL_GPIO_WritePin(GPIOB, B_Ctrl_Pin, GPIO_PIN_RESET);
-  }
-  slice++;
+  anodes_off();
+  cathodes_off();
 }

@@ -121,6 +121,23 @@ static int flash_write_slot(uint32_t addr, const lp_store_t *s) {
   return 0;
 }
 
+static int store_sane(const lp_store_t *s) {
+  if (s->active >= LP_N_PROFILES || s->contrast > 10 || s->flip > 1 || s->sleep > 4 ||
+      s->menu_idle > 2) {
+    return 0;
+  }
+  for (int p = 0; p < LP_N_PROFILES; p++) {
+    unsigned char c = (unsigned char)s->profiles[p].name[0];
+    if (c < 32 || c > 126) {
+      return 0;
+    }
+    if (s->profiles[p].light_mode > 2 || s->profiles[p].bright > 10 || s->profiles[p].dim > 10) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
 void storage_init(void) {
   const lp_store_t *a = (const lp_store_t *)SLOT0;
   const lp_store_t *b = (const lp_store_t *)SLOT1;
@@ -129,8 +146,12 @@ void storage_init(void) {
   if (bo) {
     memcpy(&g_store, b, sizeof(g_store));
   } else if (ao) {
-    memcpy(&g_store, b, sizeof(g_store));
+    memcpy(&g_store, a, sizeof(g_store));
   } else {
+    storage_factory();
+    storage_save();
+  }
+  if (!store_sane(&g_store)) {
     storage_factory();
     storage_save();
   }
