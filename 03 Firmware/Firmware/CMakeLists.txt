@@ -44,7 +44,14 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
-    Core/Src/LED_Control.c
+    Core/Src/ssd1306.c
+    Core/Src/ssd1306_fonts.c
+    Core/Src/keypad.c
+    Core/Src/storage.c
+    Core/Src/hid_reports.c
+    Core/Src/macro.c
+    Core/Src/led_mux.c
+    Core/Src/ui.c
 )
 
 # Add include paths

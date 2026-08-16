@@ -55,9 +55,8 @@ void MX_GPIO_Init(void)
                           |C2R2_Pin|CtrlLed_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, B_Ctrl_Pin|Row_0_Pin|Row_1_Pin|Row_2_Pin
-                          |Column_2_Pin|Column_1_Pin|Column_0_Pin|R_Ctrl_Pin
-                          |G_Ctrl_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, B_Ctrl_Pin|R_Ctrl_Pin|G_Ctrl_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOB, Column_2_Pin|Column_1_Pin|Column_0_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pins : C0R0_Pin C0R1_Pin C0R2_Pin C1R0_Pin
                            C1R1_Pin C1R2_Pin C2R0_Pin C2R1_Pin
@@ -79,9 +78,8 @@ void MX_GPIO_Init(void)
 
   /*Configure GPIO pins : Row_0_Pin Row_1_Pin Row_2_Pin */
   GPIO_InitStruct.Pin = Row_0_Pin|Row_1_Pin|Row_2_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pin : Selector_Pin */

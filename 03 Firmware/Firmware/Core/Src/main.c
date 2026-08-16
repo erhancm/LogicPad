@@ -24,7 +24,12 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "LED_Control.h"
+#include "keypad.h"
+#include "storage.h"
+#include "hid_reports.h"
+#include "macro.h"
+#include "led_mux.h"
+#include "ui.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -91,14 +96,29 @@ int main(void)
   MX_I2C1_Init();
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
-
+  keypad_init();
+  storage_init();
+  hid_init();
+  led_mux_init();
+  macro_init();
+  ui_init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
       while (1)
   {
   /* USER CODE BEGIN WHILE */
-    LED_Test_All();
+    static uint32_t last_ms;
+    uint32_t now = HAL_GetTick();
+    while (last_ms != now) {
+      last_ms++;
+      keypad_tick();
+      macro_tick();
+      led_mux_tick();
+      ui_tick();
+      now = HAL_GetTick();
+    }
+    ui_draw_if_needed();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
