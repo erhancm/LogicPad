@@ -35,6 +35,6 @@ Structs are in `03 Firmware/Firmware/Core/Inc/storage.h`. OLED USB dot blinks wh
 
 The pad keeps sending keyboard/mouse/media while the app holds report 4.
 
-## Keyboard usages (factory)
+## Keyboard usages
 
-A=0x04 … Z=0x1D. LCtrl modifier bit 0. Consumer: Prev `0xB6`, Next `0xB5`, Play/Pause `0xCD`.
+Factory keys are empty. When assigning: A=0x04 … Z=0x1D. LCtrl modifier bit 0. Consumer: Prev `0xB6`, Next `0xB5`, Play/Pause `0xCD`.

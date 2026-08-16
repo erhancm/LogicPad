@@ -82,6 +82,10 @@ static lp_profile_t *ap(void) {
   return storage_active();
 }
 
+static const char *or_dash(const char *s) {
+  return (s && s[0]) ? s : "--";
+}
+
 static void dirty(void) {
   g_store.dirty = 1;
   need_draw = 1;
@@ -580,11 +584,7 @@ static void ok(void) {
 }
 
 static void nav(int dir) {
-  /* dir: -1 down/minus, +1 up/plus/right */
-  if (scr == SCR_MACRO && dir > 0 && i == (int16_t)ap()->keys[edit_key].n) {
-    go(SCR_ADD_KIND);
-    return;
-  }
+  /* dir: -1 up/left, +1 down/right. Lists do not wrap. */
   if (scr == SCR_PROF_NAME || scr == SCR_KEY_NAME) {
     size_t n = strlen(name_buf);
     if (n == 0) {
@@ -627,7 +627,7 @@ static void on_event(keypad_event_t e) {
     if (e.type == KP_DOWN && e.key == 4) {
       storage_save();
       go(SCR_HOME);
-    } else if (e.type == KP_SEL_SHORT || (e.type == KP_DOWN && e.key == 3)) {
+    } else if (e.type == KP_SEL_SHORT) {
       g_store.dirty = 0;
       go(SCR_HOME);
     }
@@ -663,7 +663,7 @@ static void on_event(keypad_event_t e) {
     go_home_clean();
     return;
   }
-  if (e.type == KP_SEL_SHORT || (e.type == KP_DOWN && e.key == 3)) {
+  if (e.type == KP_SEL_SHORT) {
     back();
     return;
   }
@@ -672,14 +672,15 @@ static void on_event(keypad_event_t e) {
     return;
   }
   if (e.type == KP_DOWN || e.type == KP_REPEAT) {
-    if (e.key == 1) {
-      nav(1);
-    }
-    if (e.key == 7 || e.key == 8) {
+    /* D-pad: 1 up, 7 down, 3 left, 5 right. Center 4 is OK. */
+    if (e.key == 1 || e.key == 3) {
       nav(-1);
     }
-    if (e.key == 5 || e.key == 2) {
+    if (e.key == 7 || e.key == 5) {
       nav(1);
+    }
+    if (scr == SCR_MACRO && e.key == 2 && e.type == KP_DOWN) {
+      go(SCR_ADD_KIND);
     }
     if (scr == SCR_MACRO && e.key == 8 && e.type == KP_DOWN) {
       lp_key_t *k = &ap()->keys[edit_key];
@@ -737,12 +738,14 @@ static void draw(void) {
     text2x_center(8, p->name);
     header_hint(p->name, "SEL");
     break;
-  case SCR_TOAST:
+  case SCR_TOAST: {
+    const char *lab = or_dash(p->keys[toast_key].label);
     ssd1306_FillRect(0, 0, 128, UI_BLUE_H, White);
-    ssd1306_SetCursor((uint8_t)((128 - strlen(p->keys[toast_key].label) * 12) / 2), 16);
-    ssd1306_WriteString2x(p->keys[toast_key].label, Black);
+    ssd1306_SetCursor((uint8_t)((128 - strlen(lab) * 12) / 2), 16);
+    ssd1306_WriteString2x(lab, Black);
     header(p->name);
     break;
+  }
   case SCR_MENU: {
     const char *it[] = {"Profiles", "Keys", "Setup"};
     big_menu(it, 3, i);
@@ -782,7 +785,7 @@ static void draw(void) {
   case SCR_KEY_EDIT: {
     const char *it[] = {"Name", "Light", "Macro"};
     big_menu(it, 3, i);
-    header(p->keys[edit_key].label);
+    header(or_dash(p->keys[edit_key].label));
     break;
   }
   case SCR_KEY_NAME:

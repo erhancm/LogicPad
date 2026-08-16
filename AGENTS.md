@@ -16,7 +16,9 @@ Tracker: [`03 Firmware/Firmware/PROJECT_PROGRESS_TRACKER.md`](03%20Firmware/Firm
 - **On-device config:** 0.96" SSD1306 128×64. Profiles, keys, macros, lights, screen.
 - **Optional PC/Mac/Linux app:** one codebase — **Tauri 2 + React (or similar) + Rust hidapi**. Not Python, not Electron, not browser-only WebHID (WKWebView has no WebHID).
 - App-only extra: live-record of **host** keys, backup/restore, big-screen editor.
-- Selector is **not** a 10th macro. Live: SEL short = menu, SEL long = home. Menus: **Left = Back** (same as SEL short).
+- All nine pad keys are macros. Selector is **not** a 10th macro. Factory: empty labels and empty actions (no assigned keys). Flash magic `LP_MAGIC` `0x4C504146` so older WORK-profile stores are discarded on boot.
+- Live: SEL short = menu, SEL long = home. Keys 0–8 fire their macros (empty = no-op toast).
+- Menus: d-pad — key 1 up, key 7 down, key 3 left, key 5 right, key 4 OK. SEL short = Back. SEL long = Home. Corners unused except macro list: key 2 add, key 8 delete. Save prompt: OK = yes, SEL = no.
 - Out of v1: QMK/VIA, kernel drivers, DFU/field firmware update, Python GUI, Electron.
 
 ## Hardware truth
@@ -53,6 +55,7 @@ Path: `04 Software/logicpad-app/`. Same `lp_store_t` / key structs as flash. HID
 
 - Treat `PROJECT_PROGRESS_TRACKER.md` as stale if it conflicts with this file — this file wins on product locks; the tracker wins on checklist ticks.
 - Add Python/PySide or Electron.
-- Make Left move the list highlight.
+- Treat the nine pad keys as anything other than macros (Selector is the only non-macro).
+- Assign factory default chords (Copy/Paste/etc.); keys start empty.
 - Put a bootloader/DFU in v1.
 - Commit `.vscode`, `.clangd`, `.mxproject`, Cube `.settings` unless the user asks.

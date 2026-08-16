@@ -4,7 +4,7 @@ LogicPad is a 9-key macro keypad. Each key is programmable (keyboard, mouse, med
 
 **Using it:** plug in USB. No driver, no app. The OS inbox HID stack treats it as a keyboard (and mouse/media when those actions run).
 
-**Changing it:** Selector short opens the menu. Left/SEL go back. Hold SEL for home. Optional later: a Tauri app on Windows/macOS/Linux talks vendor HID report 4.
+**Changing it:** Selector short opens the menu. In menus the pad is a d-pad (up / down / left / right, center = OK). SEL goes back. Hold SEL for home. Keys start with no macros assigned. Optional later: a Tauri app on Windows/macOS/Linux talks vendor HID report 4.
 
 ## Firmware
 

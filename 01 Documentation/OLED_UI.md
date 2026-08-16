@@ -17,18 +17,18 @@ Fonts: Font_6x8 in yellow; 12×16 (2×) list rows in blue (three rows × 16 px =
 
 ## Controls
 
-Live: keys 0–8 fire macros. SEL short = menu. SEL long = home.
+Live: keys 0–8 fire macros (factory: none assigned). SEL short = menu. SEL long = home.
 
-Menus:
+Menus (d-pad; corners unused except +/− on the macro list):
 
 ```
-[ ] [Up] [+]
-[Back] [OK] [Right]
+[ ] [Up]   [+]
+[L] [OK]   [R]
 [ ] [Down] [-]
      [SEL Back / hold Home]
 ```
 
-Left (key 3) = Back. Lists do not wrap. At most three large rows in the blue band; highlight stays center while scrolling. Value screens: value in blue, title/hint in yellow.
+Key 1 up, key 7 down, key 3 left, key 5 right, key 4 OK. SEL short = Back (not Left). Lists do not wrap. At most three large rows in the blue band; highlight stays center while scrolling. Value screens: value in blue, title/hint in yellow. Save prompt: OK = save, SEL = discard.
 
 Key picker: the nine keys select themselves.
 

@@ -14,7 +14,7 @@ MCU: STM32F103C8. USB-B. OLED 0.96" SSD1306 128×64 on I2C1.
 | Row_0 | PB12 | Input pull-up | Top row. Pressed = low when its column is low |
 | Row_1 | PB13 | Input pull-up | |
 | Row_2 | PB14 | Input pull-up | Bottom row |
-| Selector | PB15 | Input pull-up | Short = menu/back, long = home. Not a 10th macro |
+| Selector | PB15 | Input pull-up | Short = menu (live) / Back (menus), long = home. Not a 10th macro |
 
 Key index is row-major:
 

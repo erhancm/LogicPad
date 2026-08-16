@@ -16,7 +16,7 @@ Agent continuation (locks + next steps): [`AGENTS.md`](../../AGENTS.md) at repo 
 
 ## How to use
 
-Plug USB in. Windows/macOS/Linux see a keyboard. Default profile WORK: Copy/Paste/Cut, Undo/Save/Find, media prev/play/next.
+Plug USB in. Windows/macOS/Linux see a keyboard. Factory profiles P1–P4 have no macros assigned; configure them on the OLED.
 
 SEL opens the OLED menu. Configure profiles, keys, macros, lights, and screen on the device. No PC app required.
 

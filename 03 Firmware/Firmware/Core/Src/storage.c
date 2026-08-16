@@ -3,7 +3,7 @@
 #include "main.h"
 #include <string.h>
 
-#define LP_MAGIC 0x4C504144u
+#define LP_MAGIC 0x4C504146u /* LPAF: empty factory keys */
 #define STORE_PAGES 4
 #define STORE_BYTES (STORE_PAGES * 1024u)
 #define SLOT0 ((uint32_t)(FLASH_BASE + 0xE000u))
@@ -31,25 +31,6 @@ static int slot_ok(const lp_store_t *s) {
   return s->magic == LP_MAGIC && s->crc == store_crc(s);
 }
 
-/* ACT_KEY: mods = USB modifier bits, code = hid | (send_mode << 8). */
-static void set_key_chord(lp_key_t *k, const char *label, uint8_t hid, uint8_t led) {
-  memset(k, 0, sizeof(*k));
-  strncpy(k->label, label, LP_LABEL_LEN);
-  k->led = led;
-  k->n = 3;
-  k->acts[0] = (lp_action_t){.type = ACT_KEY, .mods = 0x01, .code = (uint16_t)SEND_DOWN << 8};
-  k->acts[1] = (lp_action_t){.type = ACT_KEY, .mods = 0x00, .code = (uint16_t)hid | ((uint16_t)SEND_TAP << 8)};
-  k->acts[2] = (lp_action_t){.type = ACT_KEY, .mods = 0x01, .code = (uint16_t)SEND_UP << 8};
-}
-
-static void set_media(lp_key_t *k, const char *label, uint16_t usage, uint8_t led) {
-  memset(k, 0, sizeof(*k));
-  strncpy(k->label, label, LP_LABEL_LEN);
-  k->led = led;
-  k->n = 1;
-  k->acts[0] = (lp_action_t){.type = ACT_CONSUMER, .mods = SEND_TAP, .code = usage};
-}
-
 void storage_factory(void) {
   memset(&g_store, 0, sizeof(g_store));
   g_store.magic = LP_MAGIC;
@@ -60,30 +41,13 @@ void storage_factory(void) {
   g_store.menu_idle = 1; /* 30s */
   g_store.dirty = 0;
 
-  strncpy(g_store.profiles[0].name, "WORK", LP_NAME_LEN);
-  g_store.profiles[0].light_mode = 1;
-  g_store.profiles[0].bright = 6;
-  g_store.profiles[0].dim = 2;
-  set_key_chord(&g_store.profiles[0].keys[0], "COPY", 0x06, LED_RED);
-  set_key_chord(&g_store.profiles[0].keys[1], "PASTE", 0x19, LED_GREEN);
-  set_key_chord(&g_store.profiles[0].keys[2], "CUT", 0x1B, LED_BLUE);
-  set_key_chord(&g_store.profiles[0].keys[3], "UNDO", 0x1D, LED_WHITE);
-  set_key_chord(&g_store.profiles[0].keys[4], "SAVE", 0x16, LED_RED);
-  set_key_chord(&g_store.profiles[0].keys[5], "FIND", 0x09, LED_GREEN);
-  set_media(&g_store.profiles[0].keys[6], "PREV", 0x00B6, LED_BLUE);
-  set_media(&g_store.profiles[0].keys[7], "PLAY", 0x00CD, LED_WHITE);
-  set_media(&g_store.profiles[0].keys[8], "NEXT", 0x00B5, LED_RED);
-
-  strncpy(g_store.profiles[1].name, "P2", LP_NAME_LEN);
-  strncpy(g_store.profiles[2].name, "P3", LP_NAME_LEN);
-  strncpy(g_store.profiles[3].name, "P4", LP_NAME_LEN);
-  for (int p = 1; p < LP_N_PROFILES; p++) {
+  static const char *const names[LP_N_PROFILES] = {"P1", "P2", "P3", "P4"};
+  for (int p = 0; p < LP_N_PROFILES; p++) {
+    strncpy(g_store.profiles[p].name, names[p], LP_NAME_LEN);
     g_store.profiles[p].light_mode = 1;
     g_store.profiles[p].bright = 6;
     g_store.profiles[p].dim = 2;
-    for (int k = 0; k < LP_N_KEYS; k++) {
-      strncpy(g_store.profiles[p].keys[k].label, "KEY", LP_LABEL_LEN);
-    }
+    /* Nine keys are macros; factory has no actions or labels. */
   }
   g_store.crc = store_crc(&g_store);
 }
