@@ -1,5 +1,7 @@
 # LogicPad firmware progress
 
+Agent continuation (locks + next steps): [`AGENTS.md`](../../AGENTS.md) at repo root.
+
 ## Done in code (v0.1)
 
 - [x] GPIO: columns PB3/4/5 outputs (idle high), rows PB12/13/14 input pull-up, Selector PB15 pull-up

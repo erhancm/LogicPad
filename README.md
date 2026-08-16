@@ -11,3 +11,5 @@ LogicPad is a 9-key macro keypad. Each key is programmable (keyboard, mouse, med
 Project: [`03 Firmware/Firmware/`](03%20Firmware/Firmware/). MCU STM32F103C8. Docs: [Pinout.md](01%20Documentation/Pinout.md), [OLED_UI.md](01%20Documentation/OLED_UI.md), [HID_PROTOCOL.md](01%20Documentation/HID_PROTOCOL.md).
 
 Build with the CMake `Debug` preset (arm-none-eabi-gcc) or STM32CubeIDE. Flash over ST-Link. That is a developer step, not product use.
+
+New clone / new chat: read [`AGENTS.md`](AGENTS.md) first (status, locked decisions, next work).
