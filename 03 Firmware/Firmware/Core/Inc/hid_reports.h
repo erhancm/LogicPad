@@ -26,17 +26,19 @@
 #define CMD_SET_TIME 0x0E
 #define CMD_GET_TEXT 0x0F
 #define CMD_SET_TEXT 0x10
+#define CMD_ADD_PROFILE 0x11
+#define CMD_DEL_PROFILE 0x12
 
 void hid_init(void);
 void hid_tick(void);
 int hid_configured(void);
 int hid_vendor_session(void);
 void hid_notify_key(uint8_t profile, uint8_t key, uint8_t down);
-void hid_kbd_send(uint8_t mods, const uint8_t keys[6]);
-void hid_kbd_release(void);
-void hid_mouse_send(uint8_t buttons, int8_t x, int8_t y, int8_t wheel);
-void hid_consumer_send(uint16_t usage);
-void hid_consumer_release(void);
+int hid_kbd_send(uint8_t mods, const uint8_t keys[6]);
+int hid_kbd_release(void);
+int hid_mouse_send(uint8_t buttons, int8_t x, int8_t y, int8_t wheel);
+int hid_consumer_send(uint16_t usage);
+int hid_consumer_release(void);
 void hid_vendor_on_out(const uint8_t *buf, uint16_t len);
 
 #endif

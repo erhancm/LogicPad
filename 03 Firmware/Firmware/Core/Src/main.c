@@ -118,13 +118,19 @@ int main(void)
       last_ms = now;
       tick_synced = 1;
     }
+    uint16_t steps = 0;
     while (last_ms != now) {
       last_ms++;
       keypad_tick();
-      macro_tick();
-      hid_tick();
       ui_tick();
+      if (steps < 1000) {
+        steps++;
+      }
       now = HAL_GetTick();
+    }
+    if (steps) {
+      macro_tick(steps);
+      hid_tick();
     }
     ui_draw_if_needed();
     /* USER CODE END WHILE */

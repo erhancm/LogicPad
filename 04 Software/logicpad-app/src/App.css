@@ -1,6 +1,7 @@
 :root {
   color: #e8e4d8;
   background: #12141a;
+  color-scheme: dark;
   font-family: "Segoe UI", system-ui, sans-serif;
   font-size: 14px;
 }
@@ -15,7 +16,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
   color: inherit;
 }
@@ -331,6 +333,9 @@ textarea {
   resize: vertical;
   min-height: 84px;
   background: #12141a;
+  color: #e8e4d8;
+  caret-color: #e8e4d8;
+  -webkit-text-fill-color: #e8e4d8;
   border: 1px solid #3a4150;
   border-radius: 6px;
   padding: 8px;

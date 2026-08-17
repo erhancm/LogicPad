@@ -24,6 +24,7 @@ import {
   stemName,
   typedDisplay,
   utf8Len,
+  PROFILE_MAX,
 } from "./text";
 
 function hidName(hid: number): string {
@@ -338,6 +339,26 @@ export default function App() {
     }
   }
 
+  async function onAddProfile() {
+    await run("Profile added", async () => {
+      setSnap(await api.addProfile());
+      setSel(0);
+    });
+  }
+
+  async function onDeleteProfile() {
+    if (!snap) return;
+    const name = hdr?.name || `P${profile + 1}`;
+    if (!confirm(`Delete profile “${name}”? Its keys and typed text are removed.`)) {
+      return;
+    }
+    await run("Profile deleted", async () => {
+      setSnap(await api.deleteProfile(profile));
+      setLaunches(await api.getLaunches());
+      setSel(0);
+    });
+  }
+
   async function onFlashFile(file: File) {
     if (!confirm("Update firmware? The pad will reboot. Do not unplug until it reconnects.")) {
       return;
@@ -484,6 +505,28 @@ export default function App() {
                 </button>
               ))}
             </div>
+            {snap.canMutateProfiles ? (
+              <div className="add">
+                <button
+                  disabled={busy || snap.profiles.length >= PROFILE_MAX}
+                  onClick={() => void onAddProfile()}
+                >
+                  New profile
+                </button>
+                <button
+                  className="danger"
+                  disabled={busy || snap.profiles.length <= 1}
+                  onClick={() => void onDeleteProfile()}
+                >
+                  Delete
+                </button>
+              </div>
+            ) : (
+              <p className="hint">Update firmware to add or delete profiles.</p>
+            )}
+            <p className="hint">
+              {snap.profiles.length} / {PROFILE_MAX} profiles on the pad.
+            </p>
             {hdr ? (
               <>
                 <label>
@@ -571,7 +614,7 @@ export default function App() {
                 <MemBar label="Macros" used={mem.acts} max={mem.actMax} unit="slots" />
                 <p className="hint">
                   Drop a program onto a key to launch it from this PC. Type-text memory is shared by
-                  all 36 keys.
+                  all keys.
                 </p>
               </div>
             ) : null}

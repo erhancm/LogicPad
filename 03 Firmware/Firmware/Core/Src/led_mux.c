@@ -68,14 +68,8 @@ static void anode_on(uint8_t key) {
   HAL_GPIO_WritePin(GPIOA, anode_pin[key], GPIO_PIN_RESET);
 }
 
-/* N-FET color sinks: high = on. Green/White appears swapped on V0.2 LEDs. */
+/* N-FET color sinks: high = on. White is R+G+B. */
 static void drive_color(uint8_t color) {
-  if (color == LED_GREEN) {
-    color = LED_WHITE;
-  } else if (color == LED_WHITE) {
-    color = LED_GREEN;
-  }
-
   GPIO_PinState r = GPIO_PIN_RESET;
   GPIO_PinState g = GPIO_PIN_RESET;
   GPIO_PinState b = GPIO_PIN_RESET;

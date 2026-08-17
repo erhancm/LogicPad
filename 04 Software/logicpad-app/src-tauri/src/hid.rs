@@ -33,6 +33,8 @@ const CMD_KEY_EVENT: u8 = 0x0D;
 const CMD_SET_TIME: u8 = 0x0E;
 const CMD_GET_TEXT: u8 = 0x0F;
 const CMD_SET_TEXT: u8 = 0x10;
+const CMD_ADD_PROFILE: u8 = 0x11;
+const CMD_DEL_PROFILE: u8 = 0x12;
 const CMD_BL_START: u8 = 0x40;
 const CMD_BL_DATA: u8 = 0x41;
 const CMD_BL_FINISH: u8 = 0x42;
@@ -211,6 +213,7 @@ impl Pad {
             sleep: p.get(4).copied().unwrap_or(0),
             in_menu: p.get(5).copied().unwrap_or(0) != 0,
             usb: p.get(6).copied().unwrap_or(0) != 0,
+            n_profiles: p.get(7).copied().unwrap_or(0),
         })
     }
 
@@ -317,6 +320,31 @@ impl Pad {
         Ok(())
     }
 
+    pub fn add_profile(&self) -> Result<u8, PadError> {
+        let p = self.rpc(CMD_ADD_PROFILE, &[])?;
+        let st = p.get(2).copied().unwrap_or(0xFF);
+        if st == 1 {
+            return Err(PadError::Msg(
+                "The pad already has 4 profiles. Delete one first.".into(),
+            ));
+        }
+        if st != 0 {
+            return Err(PadError::Msg("Could not add a profile".into()));
+        }
+        Ok(p.first().copied().unwrap_or(0))
+    }
+
+    pub fn del_profile(&self, idx: u8) -> Result<u8, PadError> {
+        let p = self.rpc(CMD_DEL_PROFILE, &[idx])?;
+        let st = p.get(3).copied().unwrap_or(0xFF);
+        match st {
+            0 => Ok(p.get(2).copied().unwrap_or(0)),
+            2 => Err(PadError::Msg("Keep at least one profile.".into())),
+            3 => Err(PadError::Msg("No such profile.".into())),
+            _ => Err(PadError::Msg("Could not delete that profile".into())),
+        }
+    }
+
     pub fn save(&self) -> Result<(), PadError> {
         self.rpc(CMD_SAVE, &[])?;
         Ok(())
@@ -352,10 +380,19 @@ impl Pad {
             *g = has_text;
         }
         let meta = self.get_meta()?;
+        let can_mutate_profiles = min >= 2;
+        let n = if can_mutate_profiles {
+            match meta.n_profiles {
+                1..=4 => meta.n_profiles,
+                _ => 4,
+            }
+        } else {
+            4
+        };
         let mut profiles = Vec::new();
         let mut keys = Vec::new();
         let mut text_used = 0u16;
-        for p in 0..4u8 {
+        for p in 0..n {
             profiles.push(self.get_profile(p)?);
             let mut row = Vec::new();
             for k in 0..9u8 {
@@ -377,6 +414,7 @@ impl Pad {
                 used: text_used,
                 max: TEXT_POOL,
             },
+            can_mutate_profiles,
         })
     }
 
@@ -806,6 +844,8 @@ pub struct Meta {
     pub sleep: u8,
     pub in_menu: bool,
     pub usb: bool,
+    #[serde(default)]
+    pub n_profiles: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -855,6 +895,8 @@ pub struct Snapshot {
     pub keys: Vec<Vec<PadKey>>,
     #[serde(default)]
     pub text_pool: TextPool,
+    #[serde(default)]
+    pub can_mutate_profiles: bool,
 }
 
 impl Default for TextPool {

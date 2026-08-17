@@ -68,6 +68,22 @@ impl LaunchStore {
         self.persist(&g)
     }
 
+    pub fn shift_after_delete(&self, idx: u8) -> Result<(), String> {
+        let mut g = self.map.lock().map_err(|_| "lock".to_string())?;
+        let mut next = HashMap::new();
+        for ((p, k), e) in g.drain() {
+            if p == idx {
+                continue;
+            }
+            let np = if p > idx { p - 1 } else { p };
+            let mut e = e;
+            e.profile = np;
+            next.insert((np, k), e);
+        }
+        *g = next;
+        self.persist(&g)
+    }
+
     pub fn launch(&self, profile: u8, key: u8) -> Result<(), String> {
         let g = self.map.lock().map_err(|_| "lock".to_string())?;
         let Some(e) = g.get(&(profile, key)) else {

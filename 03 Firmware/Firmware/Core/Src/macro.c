@@ -17,6 +17,9 @@ static uint8_t text_len;
 static const uint8_t *text_p;
 static uint8_t text_phase;
 
+#define TEXT_DOWN_MS 16u
+#define TEXT_UP_MS 16u
+
 void macro_init(void) {
   playing = 0;
 }
@@ -132,18 +135,22 @@ void macro_play(uint8_t key_idx) {
 
 static int tick_text(void) {
   if (text_i >= text_len) {
-    hid_kbd_release();
+    if (hid_kbd_release() != 0) {
+      return 1;
+    }
     playing = 0;
     in_text = 0;
     return 1;
   }
   if (text_phase == 1) {
-    hid_kbd_release();
+    if (hid_kbd_release() != 0) {
+      return 1;
+    }
     live_mods = 0;
     memset(live_keys, 0, 6);
     text_i++;
     text_phase = 0;
-    wait_ms = 8;
+    wait_ms = TEXT_UP_MS;
     return 1;
   }
   uint8_t mods = 0;
@@ -155,19 +162,24 @@ static int tick_text(void) {
   live_mods = mods;
   memset(live_keys, 0, 6);
   keys_add(hid);
-  hid_kbd_send(live_mods, live_keys);
-  wait_ms = 12;
+  if (hid_kbd_send(live_mods, live_keys) != 0) {
+    return 1;
+  }
+  wait_ms = TEXT_DOWN_MS;
   text_phase = 1;
   return 1;
 }
 
-void macro_tick(void) {
+void macro_tick(uint16_t elapsed_ms) {
   if (!playing) {
     return;
   }
   if (wait_ms) {
-    wait_ms--;
-    return;
+    if (elapsed_ms < wait_ms) {
+      wait_ms = (uint16_t)(wait_ms - elapsed_ms);
+      return;
+    }
+    wait_ms = 0;
   }
   if (in_text) {
     while (!tick_text()) {
@@ -177,7 +189,9 @@ void macro_tick(void) {
   }
   lp_key_t *k = &storage_active()->keys[key_i];
   if (act_i >= k->n) {
-    hid_kbd_release();
+    if (hid_kbd_release() != 0) {
+      return;
+    }
     hid_consumer_release();
     live_mods = 0;
     memset(live_keys, 0, 6);
@@ -201,11 +215,17 @@ void macro_tick(void) {
       } else {
         live_mods = (uint8_t)(live_mods & (uint8_t)~a.mods);
       }
-      hid_kbd_send(live_mods, live_keys);
+      if (hid_kbd_send(live_mods, live_keys) != 0) {
+        return;
+      }
     } else if (a.type == ACT_CONSUMER) {
-      hid_consumer_release();
+      if (hid_consumer_release() != 0) {
+        return;
+      }
     } else if (a.type == ACT_MOUSE_BTN && send == SEND_TAP) {
-      hid_mouse_send(0, 0, 0, 0);
+      if (hid_mouse_send(0, 0, 0, 0) != 0) {
+        return;
+      }
     }
     phase = 0;
     act_i++;
@@ -220,31 +240,41 @@ void macro_tick(void) {
   case ACT_RELEASE:
     live_mods = 0;
     memset(live_keys, 0, 6);
-    hid_kbd_release();
+    if (hid_kbd_release() != 0) {
+      return;
+    }
     hid_consumer_release();
     hid_mouse_send(0, 0, 0, 0);
     act_i++;
     break;
   case ACT_CONSUMER:
-    hid_consumer_send(a.code);
-    wait_ms = 12;
+    if (hid_consumer_send(a.code) != 0) {
+      return;
+    }
+    wait_ms = 16;
     phase = 1;
     break;
   case ACT_MOUSE_BTN:
-    hid_mouse_send(a.mods, 0, 0, 0);
+    if (hid_mouse_send(a.mods, 0, 0, 0) != 0) {
+      return;
+    }
     if (send == SEND_TAP) {
-      wait_ms = 12;
+      wait_ms = 16;
       phase = 1;
     } else {
       act_i++;
     }
     break;
   case ACT_MOUSE_MOVE:
-    hid_mouse_send(0, (int8_t)(a.code & 0xFF), (int8_t)(a.code >> 8), 0);
+    if (hid_mouse_send(0, (int8_t)(a.code & 0xFF), (int8_t)(a.code >> 8), 0) != 0) {
+      return;
+    }
     act_i++;
     break;
   case ACT_WHEEL:
-    hid_mouse_send(0, 0, 0, (int8_t)a.code);
+    if (hid_mouse_send(0, 0, 0, (int8_t)a.code) != 0) {
+      return;
+    }
     act_i++;
     break;
   case ACT_KEY:
@@ -254,18 +284,24 @@ void macro_tick(void) {
         keys_del(hid);
       }
       live_mods = (uint8_t)(live_mods & (uint8_t)~a.mods);
-      hid_kbd_send(live_mods, live_keys);
+      if (hid_kbd_send(live_mods, live_keys) != 0) {
+        return;
+      }
       act_i++;
     } else if (send == SEND_DOWN) {
       live_mods |= a.mods;
       keys_add(hid);
-      hid_kbd_send(live_mods, live_keys);
+      if (hid_kbd_send(live_mods, live_keys) != 0) {
+        return;
+      }
       act_i++;
     } else {
       live_mods |= a.mods;
       keys_add(hid);
-      hid_kbd_send(live_mods, live_keys);
-      wait_ms = 12;
+      if (hid_kbd_send(live_mods, live_keys) != 0) {
+        return;
+      }
+      wait_ms = 16;
       phase = 1;
     }
     break;

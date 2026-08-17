@@ -17,6 +17,7 @@ typedef enum {
   SCR_PROF_ACTS,
   SCR_PROF_NAME,
   SCR_PROF_RESET,
+  SCR_PROF_DEL,
   SCR_KEY_PICK,
   SCR_KEY_EDIT,
   SCR_KEY_NAME,
@@ -290,7 +291,6 @@ static void confirm_screen(const char *msg) {
 static uint8_t list_max(void) {
   switch (scr) {
   case SCR_MENU:
-  case SCR_PROF_ACTS:
   case SCR_KEY_EDIT:
   case SCR_ADD_KIND:
   case SCR_ADD_SEND:
@@ -300,8 +300,12 @@ static uint8_t list_max(void) {
   case SCR_SCREEN:
   case SCR_ABOUT:
     return 2;
-  case SCR_PROF_LIST:
-    return 3;
+  case SCR_PROF_ACTS:
+    return storage_n_profiles() > 1 ? 3 : 2;
+  case SCR_PROF_LIST: {
+    uint8_t n = storage_n_profiles();
+    return (uint8_t)(n < LP_N_PROFILES ? n : (uint8_t)(n - 1));
+  }
   case SCR_KEY_LIGHT:
     return 4;
   case SCR_MACRO:
@@ -402,6 +406,7 @@ static void back(void) {
     break;
   case SCR_PROF_NAME:
   case SCR_PROF_RESET:
+  case SCR_PROF_DEL:
     go(SCR_PROF_ACTS);
     break;
   case SCR_KEY_EDIT:
@@ -528,6 +533,17 @@ static void ok(void) {
     go(SCR_HOME);
     return;
   }
+  if (scr == SCR_PROF_DEL) {
+    if (storage_del_profile(edit_prof) == 0) {
+      dirty();
+    }
+    go(SCR_PROF_LIST);
+    {
+      uint8_t n = storage_n_profiles();
+      i = (int16_t)((edit_prof < n) ? edit_prof : (uint8_t)(n - 1));
+    }
+    return;
+  }
   if (scr == SCR_RESET_ALL) {
     storage_factory();
     storage_save();
@@ -552,6 +568,18 @@ static void ok(void) {
     return;
   }
   if (scr == SCR_PROF_LIST) {
+    uint8_t n = storage_n_profiles();
+    if ((uint8_t)i == n && n < LP_N_PROFILES) {
+      int idx = storage_add_profile();
+      if (idx >= 0) {
+        edit_prof = (uint8_t)idx;
+        dirty();
+        strncpy(name_buf, g_store.profiles[edit_prof].name, sizeof(name_buf));
+        name_buf[sizeof(name_buf) - 1] = 0;
+        go(SCR_PROF_NAME);
+      }
+      return;
+    }
     edit_prof = (uint8_t)i;
     go(SCR_PROF_ACTS);
     return;
@@ -565,8 +593,10 @@ static void ok(void) {
       strncpy(name_buf, g_store.profiles[edit_prof].name, sizeof(name_buf));
       i = 0;
       go(SCR_PROF_NAME);
-    } else {
+    } else if (i == 2) {
       go(SCR_PROF_RESET);
+    } else {
+      go(SCR_PROF_DEL);
     }
     return;
   }
@@ -635,6 +665,12 @@ static void ok(void) {
     go(enter_menu[i]);
     if (enter_menu[i] == SCR_PROF_LIST) {
       i = g_store.active;
+      {
+        uint8_t n = storage_n_profiles();
+        if (i >= n && n) {
+          i = (int16_t)(n - 1);
+        }
+      }
     }
     return;
   }
@@ -861,19 +897,26 @@ static void draw(void) {
     break;
   }
   case SCR_PROF_LIST: {
-    char n0[16], n1[16], n2[16], n3[16];
-    snprintf(n0, 16, "%s%s", g_store.profiles[0].name, g_store.active == 0 ? "*" : "");
-    snprintf(n1, 16, "%s%s", g_store.profiles[1].name, g_store.active == 1 ? "*" : "");
-    snprintf(n2, 16, "%s%s", g_store.profiles[2].name, g_store.active == 2 ? "*" : "");
-    snprintf(n3, 16, "%s%s", g_store.profiles[3].name, g_store.active == 3 ? "*" : "");
-    const char *it[] = {n0, n1, n2, n3};
-    big_menu(it, 4, i);
+    char nbuf[LP_N_PROFILES][16];
+    const char *it[LP_N_PROFILES + 1];
+    uint8_t n = storage_n_profiles();
+    uint8_t m = n;
+    uint8_t p;
+    for (p = 0; p < n; p++) {
+      snprintf(nbuf[p], 16, "%s%s", g_store.profiles[p].name, g_store.active == p ? "*" : "");
+      it[p] = nbuf[p];
+    }
+    if (n < LP_N_PROFILES) {
+      it[m++] = "+ New";
+    }
+    big_menu(it, m, i);
     header("PROFILE");
     break;
   }
   case SCR_PROF_ACTS: {
-    const char *it[] = {"Use", "Rename", "Reset"};
-    big_menu(it, 3, i);
+    const char *it[] = {"Use", "Rename", "Reset", "Delete"};
+    uint8_t n = storage_n_profiles() > 1 ? 4 : 3;
+    big_menu(it, n, i);
     header(g_store.profiles[edit_prof].name);
     break;
   }
@@ -884,6 +927,9 @@ static void draw(void) {
     break;
   case SCR_PROF_RESET:
     confirm_screen("Reset?");
+    break;
+  case SCR_PROF_DEL:
+    confirm_screen("Delete?");
     break;
   case SCR_KEY_PICK:
     text2x_center(4, "Press");

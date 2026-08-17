@@ -54,6 +54,7 @@ export type Meta = {
   sleep: number;
   inMenu: boolean;
   usb: boolean;
+  nProfiles?: number;
 };
 
 export type Snapshot = {
@@ -61,6 +62,7 @@ export type Snapshot = {
   profiles: ProfileHdr[];
   keys: PadKey[][];
   textPool?: { enabled: boolean; used: number; max: number };
+  canMutateProfiles?: boolean;
 };
 
 export type LaunchEntry = {

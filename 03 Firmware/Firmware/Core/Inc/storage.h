@@ -62,7 +62,8 @@ typedef struct __attribute__((packed)) {
   uint8_t sleep;
   uint8_t menu_idle;
   uint8_t dirty;
-  uint8_t _pad[2];
+  uint8_t n_profiles; /* 0 = legacy (all 4); else 1..LP_N_PROFILES */
+  uint8_t _pad;
   lp_profile_t profiles[LP_N_PROFILES];
   lp_text_ref_t texts[LP_TEXT_SLOTS];
   uint16_t pool_n;
@@ -76,6 +77,9 @@ void storage_factory(void);
 int storage_save(void);
 void storage_reload(void);
 lp_profile_t *storage_active(void);
+uint8_t storage_n_profiles(void);
+int storage_add_profile(void);
+int storage_del_profile(uint8_t idx);
 int storage_set_text(uint8_t profile, uint8_t key, const uint8_t *data, uint8_t len);
 const uint8_t *storage_text(uint8_t profile, uint8_t key, uint8_t *len);
 uint16_t storage_pool_used(void);

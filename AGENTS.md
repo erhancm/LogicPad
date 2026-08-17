@@ -55,6 +55,8 @@ Path: `04 Software/logicpad-app/`. Same `lp_store_t` / key structs as flash. HID
 
 Daily Windows use: installed **LogicPad** (`%LOCALAPPDATA%\LogicPad\LogicPad.exe`) — Start menu or desktop shortcut, no terminal. Rebuild with `npm run build:app` or double-click `Build LogicPad.bat`. `npm run tauri dev` is only for live development.
 
+**After app or HID/firmware-protocol changes, also reinstall that Start-menu copy** (close `LogicPad.exe`, `npm run build:app`, then `LogicPad_0.1.0_x64-setup.exe /S`). Do not leave the installed program stale.
+
 ## Do not
 
 - Treat `PROJECT_PROGRESS_TRACKER.md` as stale if it conflicts with this file — this file wins on product locks; the tracker wins on checklist ticks.

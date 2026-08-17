@@ -1,6 +1,7 @@
 #include "storage.h"
 #include "led_mux.h"
 #include "main.h"
+#include <stddef.h>
 #include <string.h>
 
 #define LP_MAGIC 0x4C504147u /* LPAG: shared type-text pool */
@@ -33,6 +34,8 @@ static int slot_ok(const lp_store_t *s) {
   return s->magic == LP_MAGIC && s->crc == store_crc(s);
 }
 
+static void pool_remove(uint8_t profile, uint8_t key);
+
 void storage_factory(void) {
   memset(&g_store, 0, sizeof(g_store));
   g_store.magic = LP_MAGIC;
@@ -42,6 +45,7 @@ void storage_factory(void) {
   g_store.sleep = 3; /* 1m */
   g_store.menu_idle = 1; /* 30s */
   g_store.dirty = 0;
+  g_store.n_profiles = LP_N_PROFILES;
 
   static const char *const names[LP_N_PROFILES] = {"P1", "P2", "P3", "P4"};
   for (int p = 0; p < LP_N_PROFILES; p++) {
@@ -87,12 +91,39 @@ static int flash_write_slot(uint32_t addr, const lp_store_t *s) {
   return 0;
 }
 
+uint8_t storage_n_profiles(void) {
+  uint8_t n = g_store.n_profiles;
+  if (n < 1 || n > LP_N_PROFILES) {
+    return LP_N_PROFILES;
+  }
+  return n;
+}
+
+static uint8_t n_from(const lp_store_t *s) {
+  uint8_t n = s->n_profiles;
+  if (n < 1 || n > LP_N_PROFILES) {
+    return LP_N_PROFILES;
+  }
+  return n;
+}
+
+static void profile_defaults(lp_profile_t *pr, uint8_t idx) {
+  memset(pr, 0, sizeof(*pr));
+  pr->name[0] = 'P';
+  pr->name[1] = (char)('1' + idx);
+  pr->name[2] = 0;
+  pr->light_mode = 1;
+  pr->bright = 6;
+  pr->dim = 2;
+}
+
 static int store_sane(const lp_store_t *s) {
-  if (s->active >= LP_N_PROFILES || s->contrast > 10 || s->flip > 1 || s->sleep > 4 ||
-      s->menu_idle > 2) {
+  uint8_t n = n_from(s);
+  if (s->n_profiles > LP_N_PROFILES || s->active >= n || s->contrast > 10 || s->flip > 1 ||
+      s->sleep > 4 || s->menu_idle > 2) {
     return 0;
   }
-  for (int p = 0; p < LP_N_PROFILES; p++) {
+  for (uint8_t p = 0; p < n; p++) {
     unsigned char c = (unsigned char)s->profiles[p].name[0];
     if (c < 32 || c > 126) {
       return 0;
@@ -139,10 +170,56 @@ void storage_reload(void) {
 }
 
 lp_profile_t *storage_active(void) {
-  if (g_store.active >= LP_N_PROFILES) {
+  uint8_t n = storage_n_profiles();
+  if (g_store.active >= n) {
     g_store.active = 0;
   }
   return &g_store.profiles[g_store.active];
+}
+
+int storage_add_profile(void) {
+  uint8_t n = storage_n_profiles();
+  uint8_t k;
+  if (n >= LP_N_PROFILES) {
+    return -1;
+  }
+  profile_defaults(&g_store.profiles[n], n);
+  for (k = 0; k < LP_N_KEYS; k++) {
+    storage_set_text(n, k, NULL, 0);
+  }
+  g_store.n_profiles = (uint8_t)(n + 1);
+  g_store.dirty = 1;
+  return (int)n;
+}
+
+int storage_del_profile(uint8_t idx) {
+  uint8_t n = storage_n_profiles();
+  uint8_t k;
+  if (n <= 1) {
+    return -1;
+  }
+  if (idx >= n) {
+    return -2;
+  }
+  for (k = 0; k < LP_N_KEYS; k++) {
+    pool_remove(idx, k);
+  }
+  if ((uint8_t)(idx + 1) < n) {
+    memmove(&g_store.profiles[idx], &g_store.profiles[idx + 1],
+            (size_t)(n - idx - 1) * sizeof(lp_profile_t));
+    memmove(&g_store.texts[(unsigned)idx * LP_N_KEYS], &g_store.texts[(unsigned)(idx + 1) * LP_N_KEYS],
+            (size_t)(n - idx - 1) * LP_N_KEYS * sizeof(lp_text_ref_t));
+  }
+  memset(&g_store.profiles[n - 1], 0, sizeof(lp_profile_t));
+  memset(&g_store.texts[(unsigned)(n - 1) * LP_N_KEYS], 0, LP_N_KEYS * sizeof(lp_text_ref_t));
+  g_store.n_profiles = (uint8_t)(n - 1);
+  if (g_store.active == idx) {
+    g_store.active = (idx < g_store.n_profiles) ? idx : (uint8_t)(g_store.n_profiles - 1);
+  } else if (g_store.active > idx) {
+    g_store.active--;
+  }
+  g_store.dirty = 1;
+  return 0;
 }
 
 static lp_text_ref_t *tref(uint8_t profile, uint8_t key) {

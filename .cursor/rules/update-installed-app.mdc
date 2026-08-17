@@ -1,0 +1,15 @@
+---
+description: Rebuild and reinstall the daily LogicPad Windows app after app or firmware-protocol changes
+alwaysApply: true
+---
+
+# Update the installed LogicPad app
+
+When you change the Tauri app (`04 Software/logicpad-app/`) or firmware the app talks to (HID protocol, vendor commands, store schema), also refresh the installed Windows program. Do not leave the user on an old Start-menu copy.
+
+Daily use is `%LOCALAPPDATA%\LogicPad\LogicPad.exe` (Start menu / desktop shortcut), not `npm run tauri dev`.
+
+1. If `LogicPad.exe` is running, close it (`taskkill /IM LogicPad.exe /F`) so NSIS can overwrite.
+2. From `04 Software/logicpad-app`, put Cargo on PATH (`%USERPROFILE%\.cargo\bin`) and run `npm run build:app` (or `Build LogicPad.bat` without the trailing `pause`).
+3. Silent-install the NSIS setup: `src-tauri\target\release\bundle\nsis\LogicPad_0.1.0_x64-setup.exe /S`
+4. Tell the user to reopen LogicPad from the Start menu. If firmware changed, they still need **Update firmware** with `LogicPad.bin`.

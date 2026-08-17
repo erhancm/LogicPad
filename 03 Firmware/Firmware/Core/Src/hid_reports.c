@@ -96,37 +96,37 @@ int hid_vendor_session(void) {
   return (HAL_GetTick() - vendor_last_ms) < 2000u && vendor_last_ms != 0;
 }
 
-void hid_kbd_send(uint8_t mods, const uint8_t keys[6]) {
+int hid_kbd_send(uint8_t mods, const uint8_t keys[6]) {
   kbd[0] = HID_RID_KBD;
   kbd[1] = mods;
   kbd[2] = 0;
   memcpy(&kbd[3], keys, 6);
-  hid_send(kbd, 9);
+  return hid_send(kbd, 9);
 }
 
-void hid_kbd_release(void) {
+int hid_kbd_release(void) {
   uint8_t z[6] = {0};
-  hid_kbd_send(0, z);
+  return hid_kbd_send(0, z);
 }
 
-void hid_mouse_send(uint8_t buttons, int8_t x, int8_t y, int8_t wheel) {
+int hid_mouse_send(uint8_t buttons, int8_t x, int8_t y, int8_t wheel) {
   mouse[0] = HID_RID_MOUSE;
   mouse[1] = buttons;
   mouse[2] = (uint8_t)x;
   mouse[3] = (uint8_t)y;
   mouse[4] = (uint8_t)wheel;
-  hid_send(mouse, 5);
+  return hid_send(mouse, 5);
 }
 
-void hid_consumer_send(uint16_t usage) {
+int hid_consumer_send(uint16_t usage) {
   cons[0] = HID_RID_CONS;
   cons[1] = (uint8_t)usage;
   cons[2] = (uint8_t)(usage >> 8);
-  hid_send(cons, 3);
+  return hid_send(cons, 3);
 }
 
-void hid_consumer_release(void) {
-  hid_consumer_send(0);
+int hid_consumer_release(void) {
+  return hid_consumer_send(0);
 }
 
 static void vendor_reply(uint8_t cmd, const uint8_t *payload, uint8_t n) {
@@ -156,7 +156,7 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
   switch (cmd) {
   case CMD_PING:
     out[0] = 0x01;
-    out[1] = 0x01; /* minor: type-text pool */
+    out[1] = 0x02; /* minor: type-text pool + add/delete profiles */
     vendor_reply(CMD_PING, out, 2);
     break;
   case CMD_GET_META:
@@ -168,11 +168,12 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
     out[4] = g_store.sleep;
     out[5] = (uint8_t)(ui_is_live() ? 0 : 1);
     out[6] = hid_configured() ? 1 : 0;
-    vendor_reply(cmd, out, 7);
+    out[7] = storage_n_profiles();
+    vendor_reply(cmd, out, 8);
     break;
   case CMD_GET_PROFILE_HDR: {
     uint8_t idx = p[0];
-    if (idx >= LP_N_PROFILES) {
+    if (idx >= storage_n_profiles()) {
       break;
     }
     lp_profile_t *pr = &g_store.profiles[idx];
@@ -186,7 +187,7 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
   }
   case CMD_SET_PROFILE_HDR: {
     uint8_t idx = p[0];
-    if (idx >= LP_N_PROFILES) {
+    if (idx >= storage_n_profiles()) {
       break;
     }
     lp_profile_t *pr = &g_store.profiles[idx];
@@ -202,7 +203,7 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
   }
   case CMD_GET_KEY: {
     uint8_t pi = p[0], ki = p[1];
-    if (pi >= LP_N_PROFILES || ki >= LP_N_KEYS) {
+    if (pi >= storage_n_profiles() || ki >= LP_N_KEYS) {
       break;
     }
     out[0] = pi;
@@ -213,7 +214,7 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
   }
   case CMD_SET_KEY: {
     uint8_t pi = p[0], ki = p[1];
-    if (pi >= LP_N_PROFILES || ki >= LP_N_KEYS) {
+    if (pi >= storage_n_profiles() || ki >= LP_N_KEYS) {
       break;
     }
     memcpy(&g_store.profiles[pi].keys[ki], &p[2], 60);
@@ -223,13 +224,46 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
     break;
   }
   case CMD_SET_ACTIVE:
-    if (p[0] < LP_N_PROFILES) {
+    if (p[0] < storage_n_profiles()) {
       g_store.active = p[0];
       g_store.dirty = 1;
       ui_mark_dirty();
     }
     vendor_reply(cmd, p, 1);
     break;
+  case CMD_ADD_PROFILE: {
+    int idx = storage_add_profile();
+    uint8_t st = 0;
+    if (idx < 0) {
+      st = 1;
+      idx = 0;
+    } else {
+      ui_mark_dirty();
+    }
+    out[0] = (uint8_t)idx;
+    out[1] = storage_n_profiles();
+    out[2] = st;
+    vendor_reply(cmd, out, 3);
+    break;
+  }
+  case CMD_DEL_PROFILE: {
+    uint8_t idx = p[0];
+    int rc = storage_del_profile(idx);
+    uint8_t st = 0;
+    if (rc == -1) {
+      st = 2;
+    } else if (rc != 0) {
+      st = 3;
+    } else {
+      ui_mark_dirty();
+    }
+    out[0] = idx;
+    out[1] = storage_n_profiles();
+    out[2] = g_store.active;
+    out[3] = st;
+    vendor_reply(cmd, out, 4);
+    break;
+  }
   case CMD_SAVE:
     storage_save();
     vendor_reply(cmd, NULL, 0);
@@ -281,7 +315,7 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
     static uint8_t acc_pi, acc_ki, acc_len, acc_have;
     uint8_t pi = p[0], ki = p[1], off = p[2], total = p[3];
     uint8_t st = 0;
-    if (pi >= LP_N_PROFILES || ki >= LP_N_KEYS) {
+    if (pi >= storage_n_profiles() || ki >= LP_N_KEYS) {
       st = 3;
     } else if (total > LP_TEXT_MAX) {
       st = 2;

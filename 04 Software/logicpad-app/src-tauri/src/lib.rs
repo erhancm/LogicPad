@@ -55,6 +55,31 @@ fn set_active(pad: State<AppPad>, profile: u8) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn add_profile(pad: State<AppPad>) -> Result<Snapshot, String> {
+    let g = pad.0.lock().map_err(|e| e.to_string())?;
+    let idx = g.add_profile().map_err(Into::<String>::into)?;
+    g.set_active(idx).map_err(Into::<String>::into)?;
+    g.load_all().map_err(Into::into)
+}
+
+#[tauri::command]
+fn delete_profile(
+    pad: State<AppPad>,
+    store: State<Arc<LaunchStore>>,
+    profile: u8,
+) -> Result<Snapshot, String> {
+    let g = pad.0.lock().map_err(|e| e.to_string())?;
+    g.del_profile(profile).map_err(Into::<String>::into)?;
+    drop(g);
+    store.shift_after_delete(profile)?;
+    pad.0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .load_all()
+        .map_err(Into::into)
+}
+
+#[tauri::command]
 fn save_store(pad: State<AppPad>) -> Result<(), String> {
     pad.0.lock().map_err(|e| e.to_string())?.save().map_err(Into::into)
 }
@@ -153,6 +178,8 @@ pub fn run() {
             apply_key,
             apply_profile,
             set_active,
+            add_profile,
+            delete_profile,
             save_store,
             reload_store,
             factory_reset,

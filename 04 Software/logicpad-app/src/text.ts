@@ -3,7 +3,7 @@ import { ACT, SEND, type Action, type PadKey, type Snapshot } from "./types";
 export const TEXT_POOL = 1200;
 export const TEXT_MAX = 240;
 export const ACT_SLOTS = 12;
-export const ACT_TOTAL = 4 * 9 * ACT_SLOTS;
+export const PROFILE_MAX = 4;
 
 type HidCh = { hid: number; mods: number; ch: string };
 
@@ -155,7 +155,7 @@ export function memoryOf(snap: Snapshot): {
     text,
     textMax: snap.textPool?.max ?? TEXT_POOL,
     acts,
-    actMax: ACT_TOTAL,
+    actMax: (snap.keys.length || PROFILE_MAX) * 9 * ACT_SLOTS,
     poolEnabled,
   };
 }

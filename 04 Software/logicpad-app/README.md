@@ -32,7 +32,7 @@ npm install
 npm run tauri dev
 ```
 
-Connect with the pad plugged in. Edit profiles, the 3×3 keys, macros, and lights. **Save** writes flash on the device. **Update firmware** takes the app `LogicPad.bin` (not the factory hex).
+Connect with the pad plugged in. Edit profiles, the 3×3 keys, macros, and lights. **New profile** / **Delete** add or remove a profile (1–4 on the pad). **Save** writes flash on the device. **Update firmware** takes the app `LogicPad.bin` (not the factory hex).
 
 Drop an `.exe` or shortcut onto a key to launch it from this PC (stored locally, not on the pad). The **Type text** box is what the pad types over USB; a live bar shows the shared 1200-byte pool and the 12-slot macro lists. Flash firmware that includes `GET_TEXT` / `SET_TEXT` (`0x0F` / `0x10`) for strings longer than 12 characters. That firmware uses store magic `LPAG` and resets older config.
 

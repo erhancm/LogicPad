@@ -34,11 +34,13 @@ Key picker: the nine keys select themselves.
 
 ## Screens
 
-`boot`, `home`, `toast`, `menu`, `profList`, `profActs`, `profName`, `profReset`, `keyPick`, `keyEdit`, `keyName`, `keyLight`, `macroView`, `addKind`, `addLetter`, `addSend`, `addMouse`, `addWait`, `setup`, `lightsHub`, `lightMode`, `lightBright`, `lightDim`, `screenHub`, `scrContrast`, `scrFlip`, `scrSleep`, `about`, `saved`, `resetAll`, `sleeping`, `savePrompt`.
+`boot`, `home`, `toast`, `menu`, `profList`, `profActs`, `profName`, `profReset`, `profDel`, `keyPick`, `keyEdit`, `keyName`, `keyLight`, `macroView`, `addKind`, `addLetter`, `addSend`, `addMouse`, `addWait`, `setup`, `lightsHub`, `lightMode`, `lightBright`, `lightDim`, `screenHub`, `scrContrast`, `scrFlip`, `scrSleep`, `about`, `saved`, `resetAll`, `sleeping`, `savePrompt`.
 
 In-app firmware update draws **FLASH** (blue) and **BOOT MODE** (yellow) then resets. The 4 KB HID bootloader has its own screens: **BOOT** / **USB FLASH**, a progress bar, then **OK** or **FAIL**. Those bootloader screens ship in `LogicPad_factory.hex` (ST-Link), not in the app `.bin`.
 
 Main menu is Profiles / Keys / Setup. Setup is Lights / Screen / About. One setting per value screen.
+
+Profiles: current list, then **+ New** if fewer than 4. Actions are Use / Rename / Reset, plus Delete when more than one profile remains (confirm like Reset).
 
 Lights → Mode: Off, Solid, React, Breathe, Wave, Ring, Ripple, Rain, Heart, Cross, Twinkle. Shows paint their own colors (they do not need per-key LED assignments). Bright caps show intensity. Ripple reacts to live key presses.
 
