@@ -35,6 +35,7 @@ export type PadKey = {
   label: string;
   led: number;
   acts: Action[];
+  text: string;
 };
 
 export type ProfileHdr = {
@@ -59,6 +60,7 @@ export type Snapshot = {
   meta: Meta;
   profiles: ProfileHdr[];
   keys: PadKey[][];
+  textPool?: { enabled: boolean; used: number; max: number };
 };
 
 export type LaunchEntry = {

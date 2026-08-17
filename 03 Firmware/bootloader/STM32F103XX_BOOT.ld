@@ -6,7 +6,7 @@ MEMORY
   FLASH (rx) : ORIGIN = 0x08000000, LENGTH = 4K
 }
 
-_estack = ORIGIN(RAM) + LENGTH(RAM);
+_estack = ORIGIN(RAM) + LENGTH(RAM) - 8; /* 8-byte SP; 0x20004FFC is LP_BL_MAGIC */
 
 SECTIONS
 {

@@ -71,7 +71,19 @@ void HAL_PCD_MspInit(PCD_HandleTypeDef* pcdHandle)
   if(pcdHandle->Instance==USB)
   {
   /* USER CODE BEGIN USB_MspInit 0 */
-
+    /* F103 USB DP pull-up is internal and turns on with the transceiver.
+     * Hold PA12 low first so the host sees a disconnect, then re-enumerate. */
+    {
+      GPIO_InitTypeDef dp = {0};
+      __HAL_RCC_GPIOA_CLK_ENABLE();
+      dp.Pin = GPIO_PIN_12;
+      dp.Mode = GPIO_MODE_OUTPUT_PP;
+      dp.Speed = GPIO_SPEED_FREQ_LOW;
+      HAL_GPIO_Init(GPIOA, &dp);
+      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_12, GPIO_PIN_RESET);
+      HAL_Delay(8);
+      HAL_GPIO_DeInit(GPIOA, GPIO_PIN_12);
+    }
   /* USER CODE END USB_MspInit 0 */
     /* Peripheral clock enable */
     __HAL_RCC_USB_CLK_ENABLE();

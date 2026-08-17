@@ -17,7 +17,7 @@ Fonts: Font_6x8 in yellow; 12×16 (2×) list rows in blue (three rows × 16 px =
 
 ## Controls
 
-Live: keys 0–8 fire macros (factory: none assigned). SEL short = menu. SEL long = home.
+Live: keys 0–8 fire macros (factory: none assigned). SEL short = menu. SEL long = home. Home is the clock: 24-hour `HH:MM:SS`, date `16 Aug 2026`, bouncing block in the yellow band. Sleep timeout keeps that clock on (display stays on); the first wake key is consumed.
 
 Menus (d-pad; corners unused except +/− on the macro list):
 
@@ -36,10 +36,12 @@ Key picker: the nine keys select themselves.
 
 `boot`, `home`, `toast`, `menu`, `profList`, `profActs`, `profName`, `profReset`, `keyPick`, `keyEdit`, `keyName`, `keyLight`, `macroView`, `addKind`, `addLetter`, `addSend`, `addMouse`, `addWait`, `setup`, `lightsHub`, `lightMode`, `lightBright`, `lightDim`, `screenHub`, `scrContrast`, `scrFlip`, `scrSleep`, `about`, `saved`, `resetAll`, `sleeping`, `savePrompt`.
 
+In-app firmware update draws **FLASH** (blue) and **BOOT MODE** (yellow) then resets. The 4 KB HID bootloader has its own screens: **BOOT** / **USB FLASH**, a progress bar, then **OK** or **FAIL**. Those bootloader screens ship in `LogicPad_factory.hex` (ST-Link), not in the app `.bin`.
+
 Main menu is Profiles / Keys / Setup. Setup is Lights / Screen / About. One setting per value screen.
 
 Lights → Mode: Off, Solid, React, Breathe, Wave, Ring, Ripple, Rain, Heart, Cross, Twinkle. Shows paint their own colors (they do not need per-key LED assignments). Bright caps show intensity. Ripple reacts to live key presses.
 
 ## Timing
 
-SEL long 500 ms. Hold-repeat 400 ms then 12 Hz. Boot 900 ms. Toast 700 ms. Menu idle default 30 s. Live sleep default 1 minute (first wake key is consumed).
+SEL long 500 ms. Hold-repeat 400 ms then 12 Hz. Boot 900 ms. Toast 700 ms. Menu idle default 30 s. Live sleep default 1 minute (clock screensaver; first wake key is consumed).

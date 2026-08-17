@@ -30,10 +30,17 @@ const CMD_GET_PROFILE_HDR: u8 = 0x09;
 const CMD_SET_PROFILE_HDR: u8 = 0x0A;
 const CMD_ENTER_BOOTLOADER: u8 = 0x0C;
 const CMD_KEY_EVENT: u8 = 0x0D;
+const CMD_SET_TIME: u8 = 0x0E;
+const CMD_GET_TEXT: u8 = 0x0F;
+const CMD_SET_TEXT: u8 = 0x10;
 const CMD_BL_START: u8 = 0x40;
 const CMD_BL_DATA: u8 = 0x41;
 const CMD_BL_FINISH: u8 = 0x42;
 const APP_MAX: usize = 52 * 1024;
+pub const TEXT_POOL: u16 = 1200;
+pub const TEXT_MAX: usize = 240;
+const TEXT_SET_CHUNK: usize = 58;
+const TEXT_GET_CHUNK: usize = 56;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PadError {
@@ -64,6 +71,7 @@ pub struct Pad {
     tx: Mutex<Option<Sender<HidReq>>>,
     worker: Mutex<Option<JoinHandle<()>>>,
     on_key: Mutex<Option<KeyCallback>>,
+    has_text: Mutex<bool>,
 }
 
 impl Pad {
@@ -74,6 +82,7 @@ impl Pad {
             tx: Mutex::new(None),
             worker: Mutex::new(None),
             on_key: Mutex::new(None),
+            has_text: Mutex::new(false),
         })
     }
 
@@ -232,6 +241,74 @@ impl Pad {
         p[1] = key.index;
         pack_key(key, &mut p[2..2 + KEY_BYTES]);
         self.rpc(CMD_SET_KEY, &p)?;
+        if self.has_text_pool() {
+            self.set_text(key.profile, key.index, &key.text)?;
+        }
+        Ok(())
+    }
+
+    fn has_text_pool(&self) -> bool {
+        self.has_text.lock().map(|g| *g).unwrap_or(false)
+    }
+
+    fn get_text(&self, profile: u8, key: u8) -> Result<String, PadError> {
+        let mut raw = Vec::new();
+        let mut offset = 0u8;
+        loop {
+            let p = self.rpc(CMD_GET_TEXT, &[profile, key, offset])?;
+            if p.len() < 6 {
+                return Err(PadError::Msg("short text".into()));
+            }
+            let total = p[2];
+            if total == 0 {
+                return Ok(String::new());
+            }
+            let chunk = p.get(6..).unwrap_or(&[]);
+            let need = total.saturating_sub(offset) as usize;
+            let n = need.min(chunk.len()).min(TEXT_GET_CHUNK);
+            raw.extend_from_slice(&chunk[..n]);
+            let next = offset.saturating_add(n as u8);
+            if next >= total || n == 0 {
+                raw.truncate(total as usize);
+                break;
+            }
+            offset = next;
+        }
+        Ok(String::from_utf8_lossy(&raw).into_owned())
+    }
+
+    fn set_text(&self, profile: u8, key: u8, text: &str) -> Result<(), PadError> {
+        let mut bytes = text.as_bytes().to_vec();
+        if bytes.len() > TEXT_MAX {
+            bytes.truncate(TEXT_MAX);
+            while bytes.last().is_some_and(|b| (*b & 0xC0) == 0x80) {
+                bytes.pop();
+            }
+        }
+        let total = bytes.len() as u8;
+        let mut offset = 0usize;
+        loop {
+            let mut p = vec![profile, key, offset as u8, total];
+            let n = (bytes.len() - offset).min(TEXT_SET_CHUNK);
+            p.extend_from_slice(&bytes[offset..offset + n]);
+            let rep = self.rpc(CMD_SET_TEXT, &p)?;
+            let st = *rep.get(3).unwrap_or(&0xFF);
+            if st == 1 {
+                return Err(PadError::Msg(
+                    "Not enough type-text memory on the pad. Shorten a key's text.".into(),
+                ));
+            }
+            if st == 2 {
+                return Err(PadError::Msg("Text is too long for one key (240 bytes).".into()));
+            }
+            if st != 0 {
+                return Err(PadError::Msg("Could not store typed text".into()));
+            }
+            offset += n;
+            if offset >= bytes.len() {
+                break;
+            }
+        }
         Ok(())
     }
 
@@ -255,15 +332,39 @@ impl Pad {
         Ok(())
     }
 
+    pub fn set_time(&self, year: u16, month: u8, day: u8, hour: u8, min: u8, sec: u8) -> Result<(), PadError> {
+        let mut p = [0u8; 7];
+        p[0] = year as u8;
+        p[1] = (year >> 8) as u8;
+        p[2] = month;
+        p[3] = day;
+        p[4] = hour;
+        p[5] = min;
+        p[6] = sec;
+        self.rpc(CMD_SET_TIME, &p)?;
+        Ok(())
+    }
+
     pub fn load_all(&self) -> Result<Snapshot, PadError> {
+        let (_maj, min) = self.ping()?;
+        let has_text = min >= 1;
+        if let Ok(mut g) = self.has_text.lock() {
+            *g = has_text;
+        }
         let meta = self.get_meta()?;
         let mut profiles = Vec::new();
         let mut keys = Vec::new();
+        let mut text_used = 0u16;
         for p in 0..4u8 {
             profiles.push(self.get_profile(p)?);
             let mut row = Vec::new();
             for k in 0..9u8 {
-                row.push(self.get_key(p, k)?);
+                let mut key = self.get_key(p, k)?;
+                if has_text {
+                    key.text = self.get_text(p, k)?;
+                    text_used = text_used.saturating_add(key.text.len() as u16);
+                }
+                row.push(key);
             }
             keys.push(row);
         }
@@ -271,10 +372,19 @@ impl Pad {
             meta,
             profiles,
             keys,
+            text_pool: TextPool {
+                enabled: has_text,
+                used: text_used,
+                max: TEXT_POOL,
+            },
         })
     }
 
-    pub fn flash_firmware(&self, image: &[u8]) -> Result<(), PadError> {
+    pub fn flash_firmware(
+        &self,
+        image: &[u8],
+        mut progress: impl FnMut(&str, u32, u32),
+    ) -> Result<(), PadError> {
         if image.len() < 16 || image.len() > APP_MAX {
             return Err(PadError::Msg(
                 "Not a LogicPad app image. Use LogicPad.bin from the firmware Release build (not the factory hex)."
@@ -294,37 +404,43 @@ impl Pad {
             ));
         }
 
+        progress("reboot", 0, 1);
         if self.connected() {
-            let _ = self.rpc_to(CMD_ENTER_BOOTLOADER, &[], 200);
+            let _ = self.rpc_to(CMD_ENTER_BOOTLOADER, &[], 300);
         }
         self.disconnect();
-        thread::sleep(Duration::from_millis(400));
+        thread::sleep(Duration::from_millis(900));
 
+        progress("wait", 0, 1);
         let mut api = self.api.lock().map_err(|_| PadError::Msg("lock".into()))?;
-        let boot = match wait_open(&mut api, VID, PID_BOOT, 2500) {
-            Ok(d) => d,
-            Err(_) => {
-                let app = wait_open(&mut api, VID, PID, 2500)?;
-                let _ = xfer_to(&app, CMD_ENTER_BOOTLOADER, &[], 200);
-                drop(app);
-                thread::sleep(Duration::from_millis(400));
-                wait_open(&mut api, VID, PID_BOOT, 8000)?
-            }
-        };
+        *api = HidApi::new().map_err(|e| PadError::Msg(e.to_string()))?;
+        let boot = wait_boot(&mut api)?;
 
         let crc = crc32_ieee(image);
         let mut start = [0u8; 8];
         start[0..4].copy_from_slice(&(image.len() as u32).to_le_bytes());
         start[4..8].copy_from_slice(&crc.to_le_bytes());
+        progress("start", 0, image.len() as u32);
         let st = xfer_to(&boot, CMD_BL_START, &start, 800)?;
         bl_ok(&st, "start")?;
+        let total = image.len() as u32;
+        let mut sent = 0u32;
+        let mut last_pct = 255u8;
         for chunk in image.chunks(62) {
             let st = xfer_to(&boot, CMD_BL_DATA, chunk, 800)?;
             bl_ok(&st, "write")?;
+            sent += chunk.len() as u32;
+            let pct = ((sent * 100) / total.max(1)) as u8;
+            if pct != last_pct {
+                last_pct = pct;
+                progress("write", sent, total);
+            }
         }
+        progress("verify", total, total);
         let st = xfer_to(&boot, CMD_BL_FINISH, &[], 1500)?;
         bl_ok(&st, "verify")?;
         drop(boot);
+        progress("done", total, total);
         thread::sleep(Duration::from_millis(600));
         Ok(())
     }
@@ -426,6 +542,10 @@ fn xfer_to(dev: &HidDevice, cmd: u8, payload: &[u8], timeout_ms: i32) -> Result<
             Ok(_) if buf[0] == REPORT_ID && buf[1] == cmd => {
                 return Ok(buf[2..].to_vec());
             }
+            Ok(_) if buf[0] == cmd => {
+                /* Some Windows HID stacks omit the report ID on read. */
+                return Ok(buf[1..].to_vec());
+            }
             Ok(_) => continue,
             Err(e) => return Err(PadError::Msg(format!("read: {e}"))),
         }
@@ -464,6 +584,46 @@ fn bl_ok(payload: &[u8], step: &str) -> Result<(), PadError> {
     Err(PadError::Msg(format!("firmware {step} failed ({why})")))
 }
 
+fn wait_boot(api: &mut HidApi) -> Result<HidDevice, PadError> {
+    let start = Instant::now();
+    let mut last = PadError::Msg(
+        "LogicPad Boot not found. ST-Link LogicPad_factory.hex once, or hold SEL while plugging USB."
+            .into(),
+    );
+    let mut last_kick = Instant::now() - Duration::from_secs(10);
+    let mut n = 0u32;
+    while start.elapsed() < Duration::from_millis(30000) {
+        if n % 5 == 0 {
+            if let Ok(fresh) = HidApi::new() {
+                *api = fresh;
+            }
+        } else {
+            let _ = api.refresh_devices();
+        }
+        n += 1;
+
+        match open_vid_pid_to(api, VID, PID_BOOT, 800) {
+            Ok(d) => return Ok(d),
+            Err(e) => last = e,
+        }
+        if last_kick.elapsed() >= Duration::from_millis(2500) {
+            if let Ok(app) = open_vid_pid_to(api, VID, PID, 250) {
+                let _ = xfer_to(&app, CMD_ENTER_BOOTLOADER, &[], 400);
+                drop(app);
+                last_kick = Instant::now();
+                thread::sleep(Duration::from_millis(900));
+                continue;
+            }
+        }
+        thread::sleep(Duration::from_millis(200));
+    }
+    let seen = hid_snapshot(api);
+    Err(PadError::Msg(format!(
+        "LogicPad Boot (PID 5751) not found ({last}). Seen: {seen}. Hold SEL while plugging USB. If Windows never shows “LogicPad Boot”, ST-Link LogicPad_factory.hex once."
+    )))
+}
+
+#[allow(dead_code)]
 fn wait_open(api: &mut HidApi, vid: u16, pid: u16, ms: u64) -> Result<HidDevice, PadError> {
     let start = Instant::now();
     let mut last = PadError::Msg(format!("LogicPad {vid:04x}:{pid:04x} not found"));
@@ -482,6 +642,45 @@ fn wait_open(api: &mut HidApi, vid: u16, pid: u16, ms: u64) -> Result<HidDevice,
 }
 
 fn open_vid_pid(api: &HidApi, vid: u16, pid: u16) -> Result<HidDevice, PadError> {
+    open_vid_pid_to(api, vid, pid, 80)
+}
+
+fn hid_snapshot(api: &HidApi) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for info in api.device_list() {
+        if info.vendor_id() != VID {
+            continue;
+        }
+        let name = info.product_string().unwrap_or("");
+        parts.push(format!(
+            "{:04x}:{:04x} page={:04x} {name}",
+            info.vendor_id(),
+            info.product_id(),
+            info.usage_page()
+        ));
+    }
+    if parts.is_empty() {
+        "no ST HID devices".into()
+    } else {
+        parts.join("; ")
+    }
+}
+
+fn ping_ok(payload: &[u8]) -> bool {
+    payload.first().copied() == Some(0x01)
+}
+
+fn open_and_ping(dev: HidDevice, ping_ms: i32) -> Result<HidDevice, PadError> {
+    let _ = dev.set_blocking_mode(true);
+    match xfer_to(&dev, CMD_PING, &[], ping_ms) {
+        Ok(rep) if ping_ok(&rep) => Ok(dev),
+        Ok(_) => Err(PadError::Msg("unexpected ping reply".into())),
+        Err(e) => Err(e),
+    }
+}
+
+fn open_vid_pid_to(api: &HidApi, vid: u16, pid: u16, ping_ms: i32) -> Result<HidDevice, PadError> {
+    let skip_iface_filter = pid == PID_BOOT;
     let mut found: Vec<(u8, hidapi::DeviceInfo)> = Vec::new();
     for info in api.device_list() {
         if info.vendor_id() != vid || info.product_id() != pid {
@@ -492,11 +691,13 @@ fn open_vid_pid(api: &HidApi, vid: u16, pid: u16) -> Result<HidDevice, PadError>
         let usage = info.usage();
         #[cfg(windows)]
         {
-            if page == USAGE_PAGE_DESKTOP && (usage == 6 || usage == 2) {
-                continue;
-            }
-            if page == USAGE_PAGE_CONSUMER {
-                continue;
+            if !skip_iface_filter {
+                if page == USAGE_PAGE_DESKTOP && (usage == 6 || usage == 2) {
+                    continue;
+                }
+                if page == USAGE_PAGE_CONSUMER {
+                    continue;
+                }
             }
         }
         let rank = if page == USAGE_PAGE_VENDOR {
@@ -512,18 +713,23 @@ fn open_vid_pid(api: &HidApi, vid: u16, pid: u16) -> Result<HidDevice, PadError>
     let mut last = PadError::Msg("HID interface not found".into());
     for (_, info) in found {
         match info.open_device(api) {
-            Ok(dev) => {
-                let _ = dev.set_blocking_mode(true);
-                match xfer_to(&dev, CMD_PING, &[], 300) {
-                    Ok(rep) if rep.first().copied() == Some(0x01) => return Ok(dev),
-                    Ok(_) => last = PadError::Msg("unexpected ping reply".into()),
-                    Err(e) => last = e,
-                }
-            }
+            Ok(dev) => match open_and_ping(dev, ping_ms) {
+                Ok(dev) => return Ok(dev),
+                Err(e) => last = e,
+            },
             Err(e) => last = PadError::Msg(e.to_string()),
         }
     }
-    Err(last)
+    match api.open(vid, pid) {
+        Ok(dev) => open_and_ping(dev, ping_ms),
+        Err(e) => {
+            if matches!(&last, PadError::Msg(s) if s == "HID interface not found") {
+                Err(PadError::Msg(e.to_string()))
+            } else {
+                Err(last)
+            }
+        }
+    }
 }
 
 fn cstr(bytes: &[u8]) -> String {
@@ -568,6 +774,7 @@ fn parse_key(p: &[u8]) -> Result<PadKey, PadError> {
         label: cstr(&body[0..7]),
         led: body[7],
         acts,
+        text: String::new(),
     })
 }
 
@@ -628,6 +835,16 @@ pub struct PadKey {
     pub label: String,
     pub led: u8,
     pub acts: Vec<Action>,
+    #[serde(default)]
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextPool {
+    pub enabled: bool,
+    pub used: u16,
+    pub max: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -636,4 +853,16 @@ pub struct Snapshot {
     pub meta: Meta,
     pub profiles: Vec<ProfileHdr>,
     pub keys: Vec<Vec<PadKey>>,
+    #[serde(default)]
+    pub text_pool: TextPool,
+}
+
+impl Default for TextPool {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            used: 0,
+            max: TEXT_POOL,
+        }
+    }
 }

@@ -60,7 +60,7 @@ FLASH (rx)      : ORIGIN = 0x08001000, LENGTH = 52K
 }
 
 /* Highest address of the user mode stack */
-_estack = ORIGIN(RAM) + LENGTH(RAM);    /* end of RAM */
+_estack = ORIGIN(RAM) + LENGTH(RAM) - 8;    /* 8-byte SP; 0x20004FFC is LP_BL_MAGIC */
 /* Generate a link error if heap and stack don't fit into RAM */
 _Min_Heap_Size = 0x400;      /* required amount of heap  */
 _Min_Stack_Size = 0x400; /* required amount of stack */

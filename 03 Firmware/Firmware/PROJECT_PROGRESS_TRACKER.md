@@ -10,8 +10,9 @@ Agent continuation (locks + next steps): [`AGENTS.md`](../../AGENTS.md) at repo 
 - [x] USB Custom HID: keyboard + mouse + consumer + vendor (report IDs 1–4)
 - [x] Macro engine + CRC ping-pong flash (last 8 KB at `0x0800E000`; app FLASH = 52 KB at `0x08001000`)
 - [x] Per-key RGB mux from Lights / key LED color
-- [x] Tauri configurator (`04 Software/logicpad-app/` — connect, profiles, keys, save, firmware update)
-- [x] HID field update (`03 Firmware/bootloader/`, PID `0x5751`; first flash `LogicPad_factory.hex`, then app `LogicPad.bin`)
+- [x] Tauri configurator (`04 Software/logicpad-app/` — connect, profiles, keys, save, firmware update, drag-drop launch, type-text, memory meter)
+- [x] HID field update (`03 Firmware/bootloader/`, PID `0x5751`; first flash `LogicPad_factory.hex`, then app `LogicPad.bin`; OLED boot screens + in-app reset from main loop)
+- [x] Idle OLED clock (24h `HH:MM:SS`, date `16 Aug 2026`; SET_TIME `0x0E` from the app)
 - [ ] Own VID/PID (still ST test IDs 1155/22352 app, 22353 boot)
 
 ## How to use

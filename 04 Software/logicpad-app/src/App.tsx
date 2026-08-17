@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { api } from "./api";
 import {
   ACT,
@@ -14,6 +15,16 @@ import {
   type ProfileHdr,
   type Snapshot,
 } from "./types";
+import {
+  ACT_SLOTS,
+  TEXT_MAX,
+  applyTypedText,
+  memoryOf,
+  roomForText,
+  stemName,
+  typedDisplay,
+  utf8Len,
+} from "./text";
 
 function hidName(hid: number): string {
   return HID_LETTERS.find((h) => h.hid === hid)?.name ?? `0x${hid.toString(16)}`;
@@ -54,7 +65,7 @@ function fmtAct(a: Action): string {
 }
 
 function emptyKey(profile: number, index: number): PadKey {
-  return { profile, index, label: "", led: 0, acts: [] };
+  return { profile, index, label: "", led: 0, acts: [], text: "" };
 }
 
 function launchOf(list: LaunchEntry[], profile: number, key: number): LaunchEntry {
@@ -68,10 +79,51 @@ function launchOf(list: LaunchEntry[], profile: number, key: number): LaunchEntr
   );
 }
 
+function MemBar({
+  label,
+  used,
+  max,
+  unit,
+  warn,
+}: {
+  label: string;
+  used: number;
+  max: number;
+  unit: string;
+  warn?: string;
+}) {
+  const pct = max > 0 ? Math.min(100, Math.round((used / max) * 100)) : 0;
+  const tone = pct >= 90 ? "hot" : pct >= 70 ? "warn" : "ok";
+  return (
+    <div className="mem-row">
+      <div className="mem-lab">
+        <span>{label}</span>
+        <span>
+          {used} / {max} {unit}
+        </span>
+      </div>
+      <div className="mem-track">
+        <div className={`mem-fill ${tone}`} style={{ width: `${pct}%` }} />
+      </div>
+      {warn ? <p className="mem-warn">{warn}</p> : null}
+    </div>
+  );
+}
+
 function baseName(path: string): string {
   const p = path.replaceAll("\\", "/");
   const i = p.lastIndexOf("/");
   return i >= 0 ? p.slice(i + 1) : p;
+}
+
+function keyAtPoint(pos: { x: number; y: number }): number | null {
+  const x = pos.x / (window.devicePixelRatio || 1);
+  const y = pos.y / (window.devicePixelRatio || 1);
+  const el = document.elementFromPoint(x, y);
+  const node = el?.closest("[data-key]") as HTMLElement | null;
+  if (!node) return null;
+  const n = Number(node.dataset.key);
+  return Number.isInteger(n) && n >= 0 && n < 9 ? n : null;
 }
 
 export default function App() {
@@ -83,7 +135,13 @@ export default function App() {
   const [mods, setMods] = useState(0);
   const [status, setStatus] = useState("Looking for LogicPad…");
   const [launches, setLaunches] = useState<LaunchEntry[]>([]);
+  const [flash, setFlash] = useState<{ phase: string; done: number; total: number } | null>(null);
+  const [dropHover, setDropHover] = useState<number | null>(null);
   const fwInput = useRef<HTMLInputElement>(null);
+  const snapRef = useRef(snap);
+  const launchesRef = useRef(launches);
+  snapRef.current = snap;
+  launchesRef.current = launches;
 
   const profile = snap?.meta.active ?? 0;
   const hdr = snap?.profiles[profile];
@@ -104,9 +162,26 @@ export default function App() {
     }
   }
 
+  async function syncPadTime() {
+    const n = new Date();
+    await api.setTime({
+      year: n.getFullYear(),
+      month: n.getMonth() + 1,
+      day: n.getDate(),
+      hour: n.getHours(),
+      minute: n.getMinutes(),
+      second: n.getSeconds(),
+    });
+  }
+
   async function onConnect() {
     await run("Connected", async () => {
       await api.connect();
+      try {
+        await syncPadTime();
+      } catch {
+        /* old firmware / app without SET_TIME */
+      }
       setSnap(await api.loadPad());
     });
   }
@@ -138,10 +213,74 @@ export default function App() {
         };
       }
     });
+    void listen<{ phase: string; done: number; total: number }>("flash-progress", (e) => {
+      const { phase, done, total } = e.payload;
+      setFlash(e.payload);
+      const pct = total ? Math.round((done / total) * 100) : 0;
+      const label =
+        phase === "reboot"
+          ? "Rebooting into updater…"
+          : phase === "wait"
+            ? "Waiting for LogicPad Boot…"
+            : phase === "start"
+              ? "Erasing…"
+              : phase === "write"
+                ? `Writing firmware… ${pct}%`
+                : phase === "verify"
+                  ? "Verifying…"
+                  : phase === "done"
+                    ? "Firmware written"
+                    : phase;
+      setStatus(label);
+    }).then((fn) => {
+      if (gone) fn();
+      else {
+        const prev = unlisten;
+        unlisten = () => {
+          prev?.();
+          fn();
+        };
+      }
+    });
     return () => {
       gone = true;
       unlisten?.();
     };
+  }, []);
+
+  useEffect(() => {
+    let gone = false;
+    let unlisten: (() => void) | undefined;
+    void getCurrentWebview()
+      .onDragDropEvent((ev) => {
+        const p = ev.payload;
+        if (p.type === "leave") {
+          setDropHover(null);
+          return;
+        }
+        if (p.type === "over" || p.type === "enter") {
+          setDropHover(keyAtPoint(p.position));
+          return;
+        }
+        if (p.type === "drop") {
+          setDropHover(null);
+          const idx = keyAtPoint(p.position);
+          const path = p.paths[0];
+          if (idx == null || !path) return;
+          void linkProgram(idx, path);
+        }
+      })
+      .then((fn) => {
+        if (gone) fn();
+        else unlisten = fn;
+      })
+      .catch(() => undefined);
+    return () => {
+      gone = true;
+      unlisten?.();
+    };
+    // linkProgram reads latest pad state from refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function saveLaunch(next: LaunchEntry) {
@@ -154,8 +293,9 @@ export default function App() {
   }
 
   async function pushKey(next: PadKey) {
-    if (!snap) return;
-    const copy: Snapshot = structuredClone(snap);
+    const cur = snapRef.current;
+    if (!cur) return;
+    const copy: Snapshot = structuredClone(cur);
     copy.keys[next.profile][next.index] = next;
     copy.meta.dirty = true;
     setSnap(copy);
@@ -164,6 +304,25 @@ export default function App() {
     } catch (e) {
       setErr(String(e));
     }
+  }
+
+  async function linkProgram(index: number, path: string) {
+    const cur = snapRef.current;
+    if (!cur) {
+      setErr("Connect the pad before linking a program.");
+      return;
+    }
+    const p = cur.meta.active;
+    setSel(index);
+    setErr("");
+    const prev = launchOf(launchesRef.current, p, index);
+    const next = { profile: p, key: index, path, args: prev.args };
+    await saveLaunch(next);
+    const k = cur.keys[p]?.[index] ?? emptyKey(p, index);
+    if (!k.label.trim()) {
+      await pushKey({ ...k, label: stemName(path) });
+    }
+    setStatus(`Linked ${baseName(path)} to key ${index + 1}`);
   }
 
   async function pushHdr(next: ProfileHdr) {
@@ -184,15 +343,41 @@ export default function App() {
       return;
     }
     await run("Firmware updated", async () => {
-      const buf = new Uint8Array(await file.arrayBuffer());
-      await api.flashFirmware(Array.from(buf));
-      setSnap(null);
-      await api.connect();
-      setSnap(await api.loadPad());
+      setFlash({ phase: "start", done: 0, total: 1 });
+      setStatus("Starting firmware update…");
+      try {
+        const buf = new Uint8Array(await file.arrayBuffer());
+        await api.flashFirmware(Array.from(buf));
+        setStatus("Firmware written. Reconnecting…");
+        setSnap(null);
+        await api.connect();
+        try {
+          await syncPadTime();
+        } catch {
+          /* old firmware / app without SET_TIME */
+        }
+        setSnap(await api.loadPad());
+      } finally {
+        setFlash(null);
+      }
     });
   }
 
   const letterGrid = useMemo(() => HID_LETTERS, []);
+  const flashPct = flash && flash.total ? Math.round((flash.done / flash.total) * 100) : 0;
+  const mem = snap ? memoryOf(snap) : null;
+  const poolOn = mem?.poolEnabled ?? false;
+  const typeValue = typedDisplay(key);
+  const typeBytes = utf8Len(poolOn ? key.text : typeValue);
+  const typeRoom = snap ? roomForText(snap, profile, sel) : TEXT_MAX;
+  const typeOver = poolOn && typeBytes > typeRoom;
+  const typeHint = poolOn
+    ? typeOver
+      ? `Needs ${typeBytes} B, ${typeRoom} B free on the pad. Shorten this or another key.`
+      : `US keyboard characters. Shared ${mem?.textMax ?? TEXT_MAX} B across all keys, ${TEXT_MAX} B max on this key.`
+    : typeValue.length > ACT_SLOTS
+      ? `Only the first ${ACT_SLOTS} characters fit until you update firmware.`
+      : `This firmware stores one tap per character (${ACT_SLOTS} max on this key). Update firmware for longer text.`;
 
   return (
     <div className="app">
@@ -242,7 +427,7 @@ export default function App() {
             disabled={busy}
             onClick={() => fwInput.current?.click()}
           >
-            Update firmware
+            {flash ? `Updating ${flashPct}%` : "Update firmware"}
           </button>
           <input
             ref={fwInput}
@@ -258,6 +443,13 @@ export default function App() {
           {snap?.meta.dirty ? <span className="dirty">unsaved</span> : null}
         </div>
       </header>
+      {flash ? (
+        <div className="flash">
+          <div className="flash-track">
+            <div className="flash-fill" style={{ width: `${flashPct}%` }} />
+          </div>
+        </div>
+      ) : null}
       {err ? <div className="err">{err}</div> : null}
 
       {!snap ? (
@@ -363,19 +555,58 @@ export default function App() {
 
           <section className="pad">
             <h2>Keys</h2>
+            {mem ? (
+              <div className="mem">
+                <MemBar
+                  label="Type text"
+                  used={mem.text}
+                  max={mem.textMax}
+                  unit="B"
+                  warn={
+                    mem.poolEnabled
+                      ? undefined
+                      : "Update firmware to store longer strings in the shared 1200 B pool."
+                  }
+                />
+                <MemBar label="Macros" used={mem.acts} max={mem.actMax} unit="slots" />
+                <p className="hint">
+                  Drop a program onto a key to launch it from this PC. Type-text memory is shared by
+                  all 36 keys.
+                </p>
+              </div>
+            ) : null}
             <div className="grid">
               {Array.from({ length: 9 }, (_, i) => {
                 const k = keys[i] ?? emptyKey(profile, i);
+                const tlen = utf8Len(k.text);
+                const fill = Math.max(
+                  tlen / TEXT_MAX,
+                  k.acts.length / ACT_SLOTS,
+                );
+                const cls = [
+                  "key",
+                  sel === i ? "on" : "",
+                  dropHover === i ? "drop" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ");
                 return (
                   <button
                     key={i}
-                    className={sel === i ? "key on" : "key"}
+                    data-key={i}
+                    className={cls}
                     onClick={() => setSel(i)}
                   >
                     <span className="idx">{i + 1}</span>
                     <span className="lab">{k.label || "—"}</span>
-                    {launchOf(launches, profile, i).path ? (
-                      <span className="run">app</span>
+                    <span className="tags">
+                      {launchOf(launches, profile, i).path ? <span className="run">app</span> : null}
+                      {tlen ? <span className="run">text</span> : null}
+                    </span>
+                    {fill > 0 ? (
+                      <span className="key-use">
+                        <span style={{ width: `${Math.min(100, Math.round(fill * 100))}%` }} />
+                      </span>
                     ) : null}
                   </button>
                 );
@@ -383,7 +614,7 @@ export default function App() {
             </div>
           </section>
 
-          <section className="edit">
+          <section className="edit" data-key={sel}>
             <h2>Key {sel + 1}</h2>
             <label>
               Label
@@ -414,7 +645,7 @@ export default function App() {
             </label>
             <h3>Launch program</h3>
             <p className="hint">
-              Runs on this PC when you press the key. LogicPad must stay open. Needs current firmware.
+              Drop an .exe or shortcut onto the key, or browse. Runs on this PC while LogicPad is open.
             </p>
             <label>
               Program
@@ -469,6 +700,46 @@ export default function App() {
               />
             </label>
             {launch.path ? <p className="hint">Opens {baseName(launch.path)}</p> : null}
+            <h3>Type text</h3>
+            <p className={`hint ${typeOver ? "hot" : ""}`}>{typeHint}</p>
+            <textarea
+              className={typeOver ? "over" : ""}
+              rows={5}
+              spellCheck={false}
+              placeholder="The pad types this when you press the key"
+              value={typeValue}
+              onChange={(e) => {
+                if (!snap) return;
+                const next = applyTypedText(key, e.target.value, poolOn);
+                const copy = structuredClone(snap);
+                copy.keys[profile][sel] = next;
+                copy.meta.dirty = true;
+                setSnap(copy);
+                setErr("");
+              }}
+              onBlur={() => {
+                if (typeOver) return;
+                void pushKey(key);
+              }}
+            />
+            <p className="mem-lab tight">
+              <span>
+                This key {poolOn ? `${typeBytes} B` : `${key.acts.length} / ${ACT_SLOTS} slots`}
+              </span>
+              {poolOn ? <span>{typeRoom} B free for this key</span> : null}
+            </p>
+            {typeValue ? (
+              <div className="add">
+                <button
+                  onClick={() => {
+                    const next = applyTypedText(key, "", poolOn);
+                    void pushKey(next);
+                  }}
+                >
+                  Clear text
+                </button>
+              </div>
+            ) : null}
             <h3>Macro</h3>
             <ul className="acts">
               {key.acts.length === 0 ? <li className="empty">No actions</li> : null}
@@ -517,7 +788,7 @@ export default function App() {
             </div>
             <div className="add">
               <button
-                disabled={key.acts.length >= 12}
+                disabled={key.acts.length >= ACT_SLOTS}
                 onClick={() =>
                   pushKey({
                     ...key,
@@ -531,7 +802,7 @@ export default function App() {
                 Add key
               </button>
               <button
-                disabled={key.acts.length >= 12}
+                disabled={key.acts.length >= ACT_SLOTS}
                 onClick={() =>
                   pushKey({
                     ...key,
@@ -544,7 +815,7 @@ export default function App() {
               {MEDIA.map((m) => (
                 <button
                   key={m.usage}
-                  disabled={key.acts.length >= 12}
+                  disabled={key.acts.length >= ACT_SLOTS}
                   onClick={() =>
                     pushKey({
                       ...key,

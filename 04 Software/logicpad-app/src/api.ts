@@ -13,6 +13,14 @@ export const api = {
   save: () => invoke<void>("save_store"),
   reload: () => invoke<Snapshot>("reload_store"),
   factory: () => invoke<Snapshot>("factory_reset"),
+  setTime: (t: {
+    year: number;
+    month: number;
+    day: number;
+    hour: number;
+    minute: number;
+    second: number;
+  }) => invoke<void>("set_time", t),
   flashFirmware: (data: number[]) => invoke<void>("flash_firmware", { data }),
   getLaunches: () => invoke<LaunchEntry[]>("get_launches"),
   setLaunch: (entry: LaunchEntry) => invoke<void>("set_launch", { entry }),

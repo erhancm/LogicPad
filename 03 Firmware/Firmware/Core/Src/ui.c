@@ -49,11 +49,22 @@ static int16_t i;
 static uint8_t edit_key;
 static uint8_t edit_prof;
 static uint16_t t_ms;
-static uint16_t idle_ms;
-static uint16_t live_idle;
+static uint32_t idle_ms;
+static uint32_t live_idle;
 static uint8_t need_draw = 1;
 static uint8_t toast_key;
 static char name_buf[13];
+
+static uint16_t clk_year = 2026;
+static uint8_t clk_mon = 8;
+static uint8_t clk_day = 16;
+static uint8_t clk_hour;
+static uint8_t clk_min;
+static uint8_t clk_sec;
+static uint16_t clk_ms;
+
+static const char *const MONS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
 static const char *const COLORS[] = {"Off", "White", "Red", "Green", "Blue"};
 static const char *const MODES[] = {"Off",    "Solid", "React", "Breathe", "Wave",  "Ring",
@@ -145,6 +156,98 @@ static void text2x_center(uint8_t y, const char *s) {
   uint8_t x = (uint8_t)((128 - w) / 2);
   ssd1306_SetCursor(x, y);
   ssd1306_WriteString2x(s, White);
+}
+
+static uint8_t month_days(uint16_t y, uint8_t m) {
+  static const uint8_t d[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  if (m == 2 && ((y % 4u) == 0 && ((y % 100u) != 0 || (y % 400u) == 0))) {
+    return 29;
+  }
+  if (m < 1 || m > 12) {
+    return 31;
+  }
+  return d[m - 1];
+}
+
+static void clock_advance_sec(void) {
+  if (++clk_sec < 60) {
+    return;
+  }
+  clk_sec = 0;
+  if (++clk_min < 60) {
+    return;
+  }
+  clk_min = 0;
+  if (++clk_hour < 24) {
+    return;
+  }
+  clk_hour = 0;
+  if (++clk_day <= month_days(clk_year, clk_mon)) {
+    return;
+  }
+  clk_day = 1;
+  if (++clk_mon <= 12) {
+    return;
+  }
+  clk_mon = 1;
+  clk_year++;
+}
+
+void ui_set_clock(uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8_t min, uint8_t sec) {
+  if (year < 2000) {
+    year = 2000;
+  }
+  if (month < 1 || month > 12) {
+    month = 1;
+  }
+  uint8_t md = month_days(year, month);
+  if (day < 1 || day > md) {
+    day = 1;
+  }
+  if (hour > 23) {
+    hour = 0;
+  }
+  if (min > 59) {
+    min = 0;
+  }
+  if (sec > 59) {
+    sec = 0;
+  }
+  clk_year = year;
+  clk_mon = month;
+  clk_day = day;
+  clk_hour = hour;
+  clk_min = min;
+  clk_sec = sec;
+  clk_ms = 0;
+  need_draw = 1;
+}
+
+static void draw_idle_clock(void) {
+  char t[12];
+  char d[16];
+  snprintf(t, sizeof(t), "%02u:%02u:%02u", clk_hour, clk_min, clk_sec);
+  snprintf(d, sizeof(d), "%u %s %u", clk_day, MONS[clk_mon - 1], clk_year);
+  text2x_center(8, t);
+  {
+    uint8_t n = (uint8_t)strlen(d);
+    ssd1306_SetCursor((uint8_t)((128 - n * 6) / 2), 32);
+    ssd1306_WriteString(d, Font_6x8, White);
+  }
+  /* Yellow band: seconds bar + bouncing block */
+  ssd1306_FillRect(0, UI_YELLOW_Y, 128, UI_YELLOW_H, Black);
+  {
+    uint8_t bar = (uint8_t)((clk_sec * 128u) / 60u);
+    if (bar) {
+      ssd1306_FillRect(0, UI_YELLOW_Y, bar, 2, White);
+    }
+  }
+  {
+    uint16_t phase = (uint16_t)((HAL_GetTick() / 16u) % 240u);
+    uint8_t span = 120;
+    uint8_t x = (uint8_t)(phase < span ? phase : (uint16_t)(span * 2u - phase));
+    ssd1306_FillRect(x, (uint8_t)(UI_YELLOW_Y + 5), 8, 8, White);
+  }
 }
 
 static void big_menu(const char *const *items, uint8_t n, int16_t sel) {
@@ -741,8 +844,7 @@ static void draw(void) {
     header("v0.1");
     break;
   case SCR_HOME:
-    text2x_center(8, p->name);
-    header_hint(p->name, "SEL");
+    draw_idle_clock();
     break;
   case SCR_TOAST: {
     const char *lab = or_dash(p->keys[toast_key].label);
@@ -897,6 +999,7 @@ static void draw(void) {
     confirm_screen("Erase?");
     break;
   case SCR_SLEEPING:
+    draw_idle_clock();
     break;
   case SCR_SAVE_PROMPT:
     confirm_screen("Save?");
@@ -911,13 +1014,27 @@ void ui_init(void) {
   go(SCR_BOOT);
 }
 
+static int showing_clock(void) {
+  return scr == SCR_SLEEPING || scr == SCR_HOME;
+}
+
 void ui_tick(void) {
   t_ms++;
   idle_ms++;
+  if (++clk_ms >= 1000) {
+    clk_ms -= 1000;
+    clock_advance_sec();
+    if (showing_clock()) {
+      need_draw = 1;
+    }
+  }
   if (is_live() && scr != SCR_BOOT) {
     live_idle++;
   } else {
     live_idle = 0;
+  }
+  if (showing_clock() && (clk_ms % 50u) == 0) {
+    need_draw = 1;
   }
 
   keypad_event_t e;
@@ -939,7 +1056,6 @@ void ui_tick(void) {
 
   uint32_t sleep_after = SLEEP_MS[g_store.sleep <= 4 ? g_store.sleep : 3];
   if (is_live() && sleep_after && live_idle > sleep_after) {
-    ssd1306_DisplayOn(0);
     go(SCR_SLEEPING);
   }
 
@@ -953,6 +1069,17 @@ void ui_tick(void) {
   }
 }
 
+void ui_show_update(void) {
+  ssd1306_Fill(Black);
+  text2x_center(8, "FLASH");
+  ssd1306_SetCursor(22, 32);
+  ssd1306_WriteString("Keep USB in", Font_6x8, White);
+  ssd1306_FillRect(0, UI_YELLOW_Y, 128, UI_YELLOW_H, White);
+  ssd1306_SetCursor(10, (uint8_t)(UI_YELLOW_Y + 4));
+  ssd1306_WriteString("BOOT MODE", Font_6x8, Black);
+  ssd1306_UpdateScreen();
+}
+
 void ui_draw_if_needed(void) {
   static uint32_t last;
   uint32_t now = HAL_GetTick();
@@ -961,8 +1088,6 @@ void ui_draw_if_needed(void) {
   }
   last = now;
   need_draw = 0;
-  if (scr != SCR_SLEEPING) {
-    draw();
-    ssd1306_UpdateScreen();
-  }
+  draw();
+  ssd1306_UpdateScreen();
 }

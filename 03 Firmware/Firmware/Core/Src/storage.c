@@ -3,11 +3,13 @@
 #include "main.h"
 #include <string.h>
 
-#define LP_MAGIC 0x4C504146u /* LPAF: empty factory keys */
+#define LP_MAGIC 0x4C504147u /* LPAG: shared type-text pool */
 #define STORE_PAGES 4
 #define STORE_BYTES (STORE_PAGES * 1024u)
 #define SLOT0 ((uint32_t)(FLASH_BASE + 0xE000u))
 #define SLOT1 (SLOT0 + STORE_BYTES)
+
+_Static_assert(sizeof(lp_store_t) <= STORE_BYTES, "store exceeds ping-pong slot");
 
 lp_store_t g_store;
 
@@ -141,4 +143,84 @@ lp_profile_t *storage_active(void) {
     g_store.active = 0;
   }
   return &g_store.profiles[g_store.active];
+}
+
+static lp_text_ref_t *tref(uint8_t profile, uint8_t key) {
+  return &g_store.texts[(unsigned)profile * LP_N_KEYS + key];
+}
+
+static void pool_remove(uint8_t profile, uint8_t key) {
+  lp_text_ref_t *r = tref(profile, key);
+  if (r->len == 0) {
+    return;
+  }
+  uint16_t off = r->off;
+  uint8_t len = r->len;
+  if ((uint32_t)off + len > g_store.pool_n) {
+    r->off = 0;
+    r->len = 0;
+    return;
+  }
+  memmove(g_store.pool + off, g_store.pool + off + len, g_store.pool_n - off - len);
+  g_store.pool_n = (uint16_t)(g_store.pool_n - len);
+  r->off = 0;
+  r->len = 0;
+  for (int i = 0; i < LP_TEXT_SLOTS; i++) {
+    if (g_store.texts[i].len && g_store.texts[i].off > off) {
+      g_store.texts[i].off = (uint16_t)(g_store.texts[i].off - len);
+    }
+  }
+}
+
+int storage_set_text(uint8_t profile, uint8_t key, const uint8_t *data, uint8_t len) {
+  if (profile >= LP_N_PROFILES || key >= LP_N_KEYS) {
+    return -3;
+  }
+  if (len > LP_TEXT_MAX) {
+    return -2;
+  }
+  lp_text_ref_t *r = tref(profile, key);
+  uint16_t others = (uint16_t)(g_store.pool_n - r->len);
+  if ((uint32_t)others + len > LP_TEXT_POOL) {
+    return -1;
+  }
+  pool_remove(profile, key);
+  if (len == 0) {
+    return 0;
+  }
+  if (data == NULL) {
+    return -3;
+  }
+  r->off = g_store.pool_n;
+  r->len = len;
+  memcpy(g_store.pool + r->off, data, len);
+  g_store.pool_n = (uint16_t)(g_store.pool_n + len);
+  return 0;
+}
+
+const uint8_t *storage_text(uint8_t profile, uint8_t key, uint8_t *len) {
+  if (profile >= LP_N_PROFILES || key >= LP_N_KEYS) {
+    if (len) {
+      *len = 0;
+    }
+    return NULL;
+  }
+  lp_text_ref_t *r = tref(profile, key);
+  if (len) {
+    *len = r->len;
+  }
+  if (r->len == 0) {
+    return NULL;
+  }
+  if ((uint32_t)r->off + r->len > g_store.pool_n) {
+    if (len) {
+      *len = 0;
+    }
+    return NULL;
+  }
+  return (const uint8_t *)(g_store.pool + r->off);
+}
+
+uint16_t storage_pool_used(void) {
+  return g_store.pool_n;
 }

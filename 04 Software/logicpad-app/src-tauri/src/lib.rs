@@ -74,11 +74,45 @@ fn factory_reset(pad: State<AppPad>) -> Result<Snapshot, String> {
 }
 
 #[tauri::command]
-fn flash_firmware(pad: State<AppPad>, data: Vec<u8>) -> Result<(), String> {
+fn set_time(
+    pad: State<AppPad>,
+    year: u16,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
+) -> Result<(), String> {
     pad.0
         .lock()
         .map_err(|e| e.to_string())?
-        .flash_firmware(&data)
+        .set_time(year, month, day, hour, minute, second)
+        .map_err(Into::into)
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FlashProgress {
+    phase: String,
+    done: u32,
+    total: u32,
+}
+
+#[tauri::command]
+fn flash_firmware(app: tauri::AppHandle, pad: State<AppPad>, data: Vec<u8>) -> Result<(), String> {
+    pad.0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .flash_firmware(&data, |phase, done, total| {
+            let _ = app.emit(
+                "flash-progress",
+                FlashProgress {
+                    phase: phase.to_string(),
+                    done,
+                    total,
+                },
+            );
+        })
         .map_err(Into::into)
 }
 
@@ -122,6 +156,7 @@ pub fn run() {
             save_store,
             reload_store,
             factory_reset,
+            set_time,
             flash_firmware,
             get_launches,
             set_launch,

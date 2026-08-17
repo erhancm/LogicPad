@@ -13,10 +13,10 @@ Tracker: [`03 Firmware/Firmware/PROJECT_PROGRESS_TRACKER.md`](03%20Firmware/Firm
 ## Product (locked)
 
 - **Daily use:** plug USB in. Inbox OS HID keyboard/mouse/media. No installer, no driver, no Python, no app required.
-- **On-device config:** 0.96" SSD1306 128×64. Profiles, keys, macros, lights, screen.
+- **On-device config:** 0.96" SSD1306 128×64. Profiles, keys, macros, lights, screen. Home/sleep is a 24-hour clock with seconds.
 - **Optional PC/Mac/Linux app:** one codebase — **Tauri 2 + React (or similar) + Rust hidapi**. Not Python, not Electron, not browser-only WebHID (WKWebView has no WebHID).
-- App-only extra: live-record of **host** keys, backup/restore, big-screen editor, **launch a PC program** from a pad key (app must be running; mapping is local JSON, not flash).
-- All nine pad keys are macros. Selector is **not** a 10th macro. Factory: empty labels and empty actions (no assigned keys). Flash magic `LP_MAGIC` `0x4C504146` so older WORK-profile stores are discarded on boot.
+- App-only extra: live-record of **host** keys, backup/restore, big-screen editor, **launch a PC program** from a pad key (drag a file onto the key; app must be running; mapping is local JSON, not flash). Typed strings live in a 1200-byte flash pool on the pad.
+- All nine pad keys are macros. Selector is **not** a 10th macro. Factory: empty labels and empty actions (no assigned keys). Flash magic `LP_MAGIC` `0x4C504147` so older stores without the type-text pool are discarded on boot.
 - Live: SEL short = menu, SEL long = home. Keys 0–8 fire their macros (empty = no-op toast).
 - Menus: d-pad — key 1 up, key 7 down, key 3 left, key 5 right, key 4 OK. SEL short = Back. SEL long = Home. Corners unused except macro list: key 2 add, key 8 delete. Save prompt: OK = yes, SEL = no.
 - Out of v1: QMK/VIA, kernel drivers, Python GUI, Electron.
@@ -47,11 +47,13 @@ Do **not** regenerate CubeMX over USER CODE. Rows must stay inputs.
 
 HID reports: 1 keyboard, 2 mouse, 3 consumer, 4 vendor (64-byte). Protocol: [`01 Documentation/HID_PROTOCOL.md`](01%20Documentation/HID_PROTOCOL.md). OLED screens/nav: [`01 Documentation/OLED_UI.md`](01%20Documentation/OLED_UI.md). `ui.c` is the look-and-feel source of truth in-repo (the Cursor canvas mockup is local-only and not in git).
 
-USB still uses ST test VID/PID 1155/22352 (app). Bootloader is the same VID, PID 22353 (`0x5751`), product string LogicPad Boot. First ST-Link flash is `LogicPad_factory.hex`. Later updates are `LogicPad.bin` via the Tauri app. Recovery: hold SEL on plug-in.
+USB still uses ST test VID/PID 1155/22352 (app). Bootloader is the same VID, PID 22353 (`0x5751`), product string LogicPad Boot. First ST-Link flash is `LogicPad_factory.hex`. Later updates are `LogicPad.bin` via the Tauri app. Recovery: hold SEL on plug-in. Bootloader OLED (**BOOT** / **USB FLASH**) only updates with a factory hex; the app `.bin` shows **FLASH** / **BOOT MODE** then resets.
 
 ## App (when you start it)
 
 Path: `04 Software/logicpad-app/`. Same `lp_store_t` / key structs as flash. HID via Rust hidapi filtered to vendor report 4 (Windows skips the keyboard/mouse collections) so the pad keeps typing. **Update firmware** sends the app `.bin` to the HID bootloader. Linux: udev rule in the app README (include PID `5751`), not a custom driver.
+
+Daily Windows use: installed **LogicPad** (`%LOCALAPPDATA%\LogicPad\LogicPad.exe`) — Start menu or desktop shortcut, no terminal. Rebuild with `npm run build:app` or double-click `Build LogicPad.bat`. `npm run tauri dev` is only for live development.
 
 ## Do not
 

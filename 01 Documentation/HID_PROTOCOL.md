@@ -17,9 +17,11 @@ EP IN/OUT max packet = 64. Poll interval 1 ms.
 
 Byte 0 = report ID `4`. Byte 1 = command. Bytes 2–63 = payload.
 
+PING payload is protocol `0x01, 0x01` (minor `1` = type-text pool). Older firmware replies `0x01, 0x00`.
+
 | Cmd | Name | Host → pad | Pad → host |
 |-----|------|------------|------------|
-| 0x01 | PING | — | version `0x01, 0x00` |
+| 0x01 | PING | — | version `0x01, 0x01` |
 | 0x02 | GET_META | — | active, dirty, contrast, flip, sleep, in_menu, usb |
 | 0x03 | GET_KEY | profile, key | profile, key, first 60 bytes of `lp_key_t` |
 | 0x04 | SET_KEY | profile, key, 60 bytes | echo profile, key |
@@ -32,10 +34,19 @@ Byte 0 = report ID `4`. Byte 1 = command. Bytes 2–63 = payload.
 | 0x0B | GET_STATUS | — | same as GET_META |
 | 0x0C | ENTER_BOOTLOADER | — | ack, then reset into the 4 KB HID updater |
 | 0x0D | KEY_EVENT | — | unsolicited IN: profile, key, down (1/0). Live keys only. |
+| 0x0E | SET_TIME | year u16le, month, day, hour, min, sec (local 24h) | echo |
+| 0x0F | GET_TEXT | profile, key, offset | profile, key, total_len, offset, pool_used u16le, data (56) |
+| 0x10 | SET_TEXT | profile, key, offset, total_len, data (58) | profile, key, offset, status, pool_used u16le |
+
+`SET_TEXT` status `0` ok, `1` pool full, `2` longer than 240 bytes, `3` bad args. Offset `0` starts a new write; further packets must continue from the next byte. Empty `total_len` clears that key.
+
+`ENTER_BOOTLOADER` acks, then the main loop shows **FLASH / BOOT MODE** on the OLED and resets. Do not wait in the USB callback — USB IRQ priority 0 would hang `HAL_Delay`.
+
+Typed strings live in a **shared 1200-byte pool** (max 240 bytes per key) at the end of `lp_store_t`. Pressing a key plays its macro actions, then types the string as US-HID taps. Store magic is `LPAG` (`0x4C504147`); older `LPAF` stores are discarded on boot.
 
 Structs are in `03 Firmware/Firmware/Core/Inc/storage.h`. OLED USB dot blinks while a vendor command was seen in the last 2 s.
 
-The pad keeps sending keyboard/mouse/media while the app holds report 4. KEY_EVENT lets the Tauri app launch host programs; that mapping lives on the PC, not in flash.
+The pad keeps sending keyboard/mouse/media while the app holds report 4. KEY_EVENT lets the Tauri app launch host programs; that mapping lives on the PC, not in flash. SET_TIME loads the host's local wall clock; the pad has no RTC crystal, so time starts at 16 Aug 2026 00:00:00 until the app connects.
 
 ## Field firmware update
 
@@ -43,7 +54,9 @@ The STM32F103C8 ROM bootloader is USART-only. Updates go through a 4 KB HID boot
 
 **Once:** flash `LogicPad_factory.hex` with ST-Link (bootloader + app). After that, the Tauri app **Update firmware** writes `LogicPad.bin` (app only) over vendor report 4.
 
-Recovery: hold **SEL** while plugging USB. The pad stays in LogicPad Boot.
+Recovery: hold **SEL** while plugging USB. The pad stays in LogicPad Boot. The OLED shows **BOOT** / **USB FLASH**, then a progress bar while the image writes.
+
+A software reset (in-app **Update firmware**) also stays in the updater. That bootloader change is in `LogicPad_factory.hex` (ST-Link once); **Update firmware** only writes the app.
 
 | Cmd | Name | Host → boot | Boot → host |
 |-----|------|-------------|-------------|

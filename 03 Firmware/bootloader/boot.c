@@ -1,4 +1,5 @@
 #include "lp_memmap.h"
+#include "oled.h"
 #include "stm32f1xx.h"
 #include "usb.h"
 
@@ -11,6 +12,7 @@ static uint32_t run_crc;
 static uint8_t flashing;
 static uint8_t jump_soon;
 static uint32_t jump_wait;
+static uint8_t last_pct = 255;
 
 static void clock_72(void) {
   RCC->CR |= RCC_CR_HSEON;
@@ -48,14 +50,42 @@ static int app_ok(void) {
   return rv >= LP_APP_BASE && rv < LP_STORE_BASE;
 }
 
+static void clocks_hsi(void) {
+  RCC->CFGR &= ~RCC_CFGR_SW;
+  while ((RCC->CFGR & RCC_CFGR_SWS) != 0) {
+  }
+  RCC->CR &= ~(RCC_CR_PLLON | RCC_CR_CSSON | RCC_CR_HSEON);
+  while (RCC->CR & (RCC_CR_PLLRDY | RCC_CR_HSERDY)) {
+  }
+  RCC->CR |= RCC_CR_HSION;
+  while ((RCC->CR & RCC_CR_HSIRDY) == 0) {
+  }
+  RCC->CFGR = 0;
+  FLASH->ACR = 0;
+}
+
 static void jump_app(void) {
   uint32_t sp = *(const uint32_t *)LP_APP_BASE;
   uint32_t rv = *(const uint32_t *)(LP_APP_BASE + 4u);
-  usb_off();
-  RCC->APB1ENR &= ~RCC_APB1ENR_USBEN;
+  uint32_t i;
+  __disable_irq();
+  if (RCC->APB1ENR & RCC_APB1ENR_USBEN) {
+    usb_off();
+    RCC->APB1ENR &= ~RCC_APB1ENR_USBEN;
+  }
+  clocks_hsi();
+  SysTick->CTRL = 0;
+  SysTick->LOAD = 0;
+  SysTick->VAL = 0;
+  for (i = 0; i < 8u; i++) {
+    NVIC->ICER[i] = 0xFFFFFFFFu;
+    NVIC->ICPR[i] = 0xFFFFFFFFu;
+  }
   SCB->VTOR = LP_APP_BASE;
-  __asm volatile("msr msp, %0" : : "r"(sp) : );
-  ((void (*)(void))rv)();
+  __DSB();
+  __ISB();
+  __asm volatile("msr msp, %0" : : "r"(sp) : "memory");
+  __asm volatile("bx %0" : : "r"(rv) : );
   for (;;) {
   }
 }
@@ -194,6 +224,8 @@ static void on_hid(const uint8_t *b) {
     flashing = 0;
     FLASH->CR |= FLASH_CR_LOCK;
     reply(cmd, BL_ST_OK, 0);
+    oled_boot();
+    last_pct = 255;
     if (app_ok()) {
       jump_soon = 1;
       jump_wait = 200000u;
@@ -216,6 +248,8 @@ static void on_hid(const uint8_t *b) {
     wr_off = 0;
     run_crc = 0xFFFFFFFFu;
     flashing = 1;
+    last_pct = 255;
+    oled_progress(0);
     reply(cmd, BL_ST_OK, sz);
     return;
   }
@@ -239,6 +273,7 @@ static void on_hid(const uint8_t *b) {
       if (!vec_ok(sp, rv)) {
         flashing = 0;
         FLASH->CR |= FLASH_CR_LOCK;
+        oled_result(0);
         reply(cmd, BL_ST_BAD_VEC, 0);
         return;
       }
@@ -247,8 +282,16 @@ static void on_hid(const uint8_t *b) {
     if (write_chunk(&b[2], n) < 0) {
       flashing = 0;
       FLASH->CR |= FLASH_CR_LOCK;
+      oled_result(0);
       reply(cmd, BL_ST_FLASH, wr_off);
       return;
+    }
+    {
+      uint8_t pct = (uint8_t)((wr_off * 100u) / (img_size ? img_size : 1u));
+      if (pct != last_pct) {
+        last_pct = pct;
+        oled_progress(pct);
+      }
     }
     reply(cmd, BL_ST_OK, wr_off);
     return;
@@ -259,15 +302,19 @@ static void on_hid(const uint8_t *b) {
       reply(cmd, BL_ST_STATE, wr_off);
       flashing = 0;
       FLASH->CR |= FLASH_CR_LOCK;
+      oled_result(0);
       return;
     }
     got = ~run_crc;
     FLASH->CR |= FLASH_CR_LOCK;
     flashing = 0;
     if (got != img_crc || !app_ok()) {
+      oled_result(0);
       reply(cmd, BL_ST_CRC, got);
       return;
     }
+    oled_progress(100);
+    oled_result(1);
     reply(cmd, BL_ST_OK, img_size);
     jump_soon = 1;
     jump_wait = 400000u;
@@ -275,22 +322,27 @@ static void on_hid(const uint8_t *b) {
 }
 
 int main(void) {
-  volatile uint32_t *magic = (volatile uint32_t *)LP_BL_MAGIC_ADDR;
   int stay = 0;
-
-  clock_72();
-
-  if (*magic == LP_BL_MAGIC) {
+  uint32_t csr = RCC->CSR;
+  if (*(volatile uint32_t *)LP_BL_MAGIC_ADDR == LP_BL_MAGIC) {
     stay = 1;
-    *magic = 0;
+    *(volatile uint32_t *)LP_BL_MAGIC_ADDR = 0;
   }
   if (sel_held()) {
     stay = 1;
   }
+  /* In-app update does NVIC_SystemReset. Stay even if SRAM magic was lost. */
+  if (csr & RCC_CSR_SFTRSTF) {
+    stay = 1;
+  }
+  RCC->CSR |= RCC_CSR_RMVF;
   if (!stay && app_ok()) {
     jump_app();
   }
 
+  clock_72();
+  oled_init();
+  oled_boot();
   usb_init();
   for (;;) {
     uint8_t pkt[64];

@@ -320,8 +320,9 @@ void usb_init(void) {
   GPIOA->CRH = (GPIOA->CRH & ~(0xFu << 16)) | (0x1u << 16);
   GPIOA->BRR = (1u << 12);
   {
+    /* ~100 ms at 72 MHz so the host drops the old 5750 node. */
     volatile uint32_t i;
-    for (i = 0; i < 360000u; i++) {
+    for (i = 0; i < 2000000u; i++) {
     }
   }
   GPIOA->CRH = (GPIOA->CRH & ~(0xFu << 16)) | (0x4u << 16);

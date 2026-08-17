@@ -4,8 +4,16 @@ set(CMAKE_SYSTEM_PROCESSOR arm)
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 set(CMAKE_C_COMPILER arm-none-eabi-gcc)
 set(CMAKE_ASM_COMPILER arm-none-eabi-gcc)
+cmake_minimum_required(VERSION 3.22)
+set(CMAKE_SYSTEM_NAME Generic)
+set(CMAKE_SYSTEM_PROCESSOR arm)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+set(CMAKE_C_COMPILER arm-none-eabi-gcc)
+set(CMAKE_ASM_COMPILER arm-none-eabi-gcc)
 set(CMAKE_OBJCOPY arm-none-eabi-objcopy)
 set(CMAKE_SIZE arm-none-eabi-size)
+set(CMAKE_C_FLAGS_RELEASE "-Os -DNDEBUG")
+set(CMAKE_C_FLAGS_DEBUG "-Os -g3")
 
 project(LogicPadBoot C)
 
@@ -13,6 +21,7 @@ add_executable(bootloader
     startup.c
     boot.c
     usb.c
+    oled.c
 )
 
 target_include_directories(bootloader PRIVATE
@@ -25,10 +34,10 @@ target_include_directories(bootloader PRIVATE
 target_compile_definitions(bootloader PRIVATE STM32F103xB)
 target_compile_options(bootloader PRIVATE
     -mcpu=cortex-m3 -mthumb -Os -ffunction-sections -fdata-sections
-    -fno-builtin -Wall -ffreestanding
+    -fno-builtin -Wall -ffreestanding -flto
 )
 target_link_options(bootloader PRIVATE
-    -mcpu=cortex-m3 -mthumb -nostartfiles -nostdlib
+    -mcpu=cortex-m3 -mthumb -nostartfiles -nostdlib -flto -Os
     -T${CMAKE_CURRENT_SOURCE_DIR}/STM32F103XX_BOOT.ld
     -Wl,--gc-sections -Wl,--print-memory-usage
     -Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/bootloader.map

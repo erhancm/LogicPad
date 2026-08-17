@@ -4,18 +4,37 @@ Optional Tauri 2 app. The pad already works as a USB HID keyboard without it.
 
 Talks **vendor HID report 4** only (usage page `0xFF00`), so Windows/macOS/Linux keep using reports 1–3 for typing. ST test VID/PID `1155` / `22352` until we own IDs.
 
-## Run
+## Daily use (Windows)
 
-Needs Node 20+ and [Rust](https://rustup.rs/) (stable). On Windows, MSVC build tools.
+Build once, then start **LogicPad** from the Start menu or the desktop shortcut. No terminal after that.
 
 ```
 cd "04 Software/logicpad-app"
 npm install
 node generate-icons.mjs
+npm run build:app
+```
+
+Or double-click `Build LogicPad.bat` in that folder. That installs to `%LOCALAPPDATA%\LogicPad\` (current user, no admin) and writes:
+
+- `src-tauri/target/release/LogicPad.exe` — the raw program
+- `src-tauri/target/release/bundle/nsis/LogicPad_0.1.0_x64-setup.exe` — installer
+
+WebView2 is already on Windows 10/11. Rebuild the same way after app code changes.
+
+## Develop
+
+Needs Node 20+ and [Rust](https://rustup.rs/) (stable). On Windows, MSVC build tools. Cargo must be on `PATH` (`%USERPROFILE%\.cargo\bin`).
+
+```
+cd "04 Software/logicpad-app"
+npm install
 npm run tauri dev
 ```
 
 Connect with the pad plugged in. Edit profiles, the 3×3 keys, macros, and lights. **Save** writes flash on the device. **Update firmware** takes the app `LogicPad.bin` (not the factory hex).
+
+Drop an `.exe` or shortcut onto a key to launch it from this PC (stored locally, not on the pad). The **Type text** box is what the pad types over USB; a live bar shows the shared 1200-byte pool and the 12-slot macro lists. Flash firmware that includes `GET_TEXT` / `SET_TEXT` (`0x0F` / `0x10`) for strings longer than 12 characters. That firmware uses store magic `LPAG` and resets older config.
 
 **Launch program** on a key is stored on this PC (not on the pad). Pressing that key opens the file while this app is running. Flash firmware that includes `KEY_EVENT` (`0x0D`).
 

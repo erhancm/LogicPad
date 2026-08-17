@@ -23,6 +23,9 @@
 #define CMD_GET_STATUS 0x0B
 #define CMD_ENTER_BOOTLOADER 0x0C
 #define CMD_KEY_EVENT 0x0D
+#define CMD_SET_TIME 0x0E
+#define CMD_GET_TEXT 0x0F
+#define CMD_SET_TEXT 0x10
 
 void hid_init(void);
 void hid_tick(void);

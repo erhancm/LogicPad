@@ -12,7 +12,7 @@
 #define LP_APP_MAX (LP_STORE_BASE - LP_APP_BASE)   /* 52 KB */
 
 #define LP_BL_MAGIC 0x4C50424Cu /* 'LPBL' */
-#define LP_BL_MAGIC_ADDR 0x20004FFCu /* last word of 20 KB SRAM, survives SW reset */
+#define LP_BL_MAGIC_ADDR 0x20004FFCu /* last SRAM word; stack is 8-byte aligned at 0x20004FF8 */
 
 #define LP_USB_VID 0x0483u
 #define LP_USB_PID_APP 0x5750u

@@ -22,4 +22,6 @@ Program `LogicPad_factory.hex`. After that, use the Tauri app **Update firmware*
 
 ## Recovery
 
-Hold SEL while plugging USB. Device enumerates as **LogicPad Boot** (VID `0x0483`, PID `0x5751`).
+Hold SEL while plugging USB. Device enumerates as **LogicPad Boot** (VID `0x0483`, PID `0x5751`). OLED shows **BOOT** / **USB FLASH**.
+
+In-app **Update firmware** resets into this loader (software-reset stay + SRAM magic). The OLED boot screens and that stay logic only update when you ST-Link `LogicPad_factory.hex`.

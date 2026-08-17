@@ -72,7 +72,10 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+  /* Bootloader jump_app() leaves PRIMASK set. SysTick/USB/TIM2 never run
+   * until this, and ssd1306_Init()'s HAL_Delay(80) would hang forever. */
   SCB->VTOR = 0x08001000U;
+  __enable_irq();
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -188,10 +191,20 @@ void SystemClock_Config(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
+  /* Blink key 0 red (PA0 anode low, PB8 sink high) so a clock/USB hang is visible. */
   __disable_irq();
+  RCC->APB2ENR |= RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPBEN;
+  GPIOA->CRL = (GPIOA->CRL & ~0xFu) | 0x1u;
+  GPIOB->CRH = (GPIOB->CRH & ~0xFu) | 0x1u;
+  GPIOA->BRR = GPIO_PIN_0;
   while (1)
   {
+    GPIOB->BSRR = GPIO_PIN_8;
+    for (volatile uint32_t i = 0; i < 200000u; i++) {
+    }
+    GPIOB->BRR = GPIO_PIN_8;
+    for (volatile uint32_t i = 0; i < 200000u; i++) {
+    }
   }
   /* USER CODE END Error_Handler_Debug */
 }

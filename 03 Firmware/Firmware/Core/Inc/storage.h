@@ -9,6 +9,9 @@
 #define LP_MAX_ACTIONS 16
 #define LP_NAME_LEN 12
 #define LP_LABEL_LEN 6
+#define LP_TEXT_POOL 1200
+#define LP_TEXT_MAX 240
+#define LP_TEXT_SLOTS (LP_N_PROFILES * LP_N_KEYS)
 
 enum {
   ACT_NONE = 0,
@@ -46,6 +49,11 @@ typedef struct __attribute__((packed)) {
 } lp_profile_t;
 
 typedef struct __attribute__((packed)) {
+  uint16_t off;
+  uint8_t len;
+} lp_text_ref_t;
+
+typedef struct __attribute__((packed)) {
   uint32_t magic;
   uint16_t crc;
   uint8_t active;
@@ -56,6 +64,9 @@ typedef struct __attribute__((packed)) {
   uint8_t dirty;
   uint8_t _pad[2];
   lp_profile_t profiles[LP_N_PROFILES];
+  lp_text_ref_t texts[LP_TEXT_SLOTS];
+  uint16_t pool_n;
+  char pool[LP_TEXT_POOL];
 } lp_store_t;
 
 extern lp_store_t g_store;
@@ -65,5 +76,8 @@ void storage_factory(void);
 int storage_save(void);
 void storage_reload(void);
 lp_profile_t *storage_active(void);
+int storage_set_text(uint8_t profile, uint8_t key, const uint8_t *data, uint8_t len);
+const uint8_t *storage_text(uint8_t profile, uint8_t key, uint8_t *len);
+uint16_t storage_pool_used(void);
 
 #endif
