@@ -115,12 +115,23 @@ static const char *or_dash(const char *s) {
   return (s && s[0]) ? s : "--";
 }
 
+static void set_hw_contrast(uint8_t level) {
+  uint8_t c = (uint8_t)(level * 25);
+  if (c == 0) {
+    c = 1;
+  }
+  ssd1306_SetContrast(c);
+}
+
 static void dirty(void) {
   g_store.dirty = 1;
   need_draw = 1;
 }
 
 static void go(screen_t s) {
+  if (scr == SCR_CONTRAST && s != SCR_CONTRAST) {
+    set_hw_contrast(g_store.contrast);
+  }
   scr = s;
   i = 0;
   t_ms = 0;
@@ -390,11 +401,7 @@ void ui_mark_dirty(void) {
 }
 
 static void apply_screen_hw(void) {
-  uint8_t c = (uint8_t)(g_store.contrast * 25);
-  if (c == 0) {
-    c = 1;
-  }
-  ssd1306_SetContrast(c);
+  set_hw_contrast(g_store.contrast);
   ssd1306_SetFlip(g_store.flip);
 }
 
@@ -794,6 +801,9 @@ static void nav(int dir) {
   if (scr == SCR_LMODE) {
     ap()->light_mode = (uint8_t)i;
     dirty();
+  }
+  if (scr == SCR_CONTRAST) {
+    set_hw_contrast((uint8_t)i);
   }
   need_draw = 1;
 }
