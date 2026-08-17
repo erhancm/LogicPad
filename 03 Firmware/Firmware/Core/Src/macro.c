@@ -15,11 +15,9 @@ static uint8_t in_text;
 static uint8_t text_i;
 static uint8_t text_len;
 static const uint8_t *text_p;
-static uint8_t text_phase;
+static uint8_t text_last_hid; /* 0 = nothing held; same usage needs a break */
 static uint8_t text_resume; /* 1 = continue the macro after the string */
 
-#define TEXT_DOWN_MS 5u
-#define TEXT_UP_MS 5u
 #define TAP_MS 8u
 
 void macro_init(void) {
@@ -34,6 +32,7 @@ void macro_cancel(void) {
   playing = 0;
   in_text = 0;
   text_resume = 0;
+  text_last_hid = 0;
   hid_kbd_release();
   hid_consumer_release();
   hid_mouse_send(0, 0, 0, 0);
@@ -114,7 +113,7 @@ static uint8_t ascii_hid(uint8_t c, uint8_t *mods) {
 static void load_text(uint8_t key_idx) {
   text_p = storage_text(g_store.active, key_idx, &text_len);
   text_i = 0;
-  text_phase = 0;
+  text_last_hid = 0;
 }
 
 static int key_has_text_act(const lp_key_t *k) {
@@ -151,6 +150,9 @@ static int tick_text(void) {
     if (hid_kbd_release() != 0) {
       return 1;
     }
+    live_mods = 0;
+    memset(live_keys, 0, 6);
+    text_last_hid = 0;
     in_text = 0;
     if (text_resume) {
       text_resume = 0;
@@ -160,22 +162,22 @@ static int tick_text(void) {
     playing = 0;
     return 1;
   }
-  if (text_phase == 1) {
-    if (hid_kbd_release() != 0) {
-      return 1;
-    }
-    live_mods = 0;
-    memset(live_keys, 0, 6);
-    text_i++;
-    text_phase = 0;
-    wait_ms = TEXT_UP_MS;
-    return 1;
-  }
   uint8_t mods = 0;
   uint8_t hid = ascii_hid(text_p ? text_p[text_i] : 0, &mods);
   if (hid == 0) {
     text_i++;
     return 0;
+  }
+  /* USB reports are the current key state. A new usage releases the previous
+   * one; the same usage (ll, a/A) needs an empty report or the host sees a hold. */
+  if (text_last_hid == hid) {
+    if (hid_kbd_release() != 0) {
+      return 1;
+    }
+    live_mods = 0;
+    memset(live_keys, 0, 6);
+    text_last_hid = 0;
+    return 1;
   }
   live_mods = mods;
   memset(live_keys, 0, 6);
@@ -183,8 +185,8 @@ static int tick_text(void) {
   if (hid_kbd_send(live_mods, live_keys) != 0) {
     return 1;
   }
-  wait_ms = TEXT_DOWN_MS;
-  text_phase = 1;
+  text_last_hid = hid;
+  text_i++;
   return 1;
 }
 
@@ -217,7 +219,7 @@ void macro_tick(uint16_t elapsed_ms) {
       in_text = 1;
       text_resume = 0;
       text_i = 0;
-      text_phase = 0;
+      text_last_hid = 0;
       return;
     }
     playing = 0;
@@ -302,7 +304,7 @@ void macro_tick(uint16_t elapsed_ms) {
       break;
     }
     text_i = 0;
-    text_phase = 0;
+    text_last_hid = 0;
     in_text = 1;
     text_resume = 1;
     break;

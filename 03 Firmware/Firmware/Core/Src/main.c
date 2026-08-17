@@ -132,7 +132,14 @@ int main(void)
       macro_tick(steps);
       hid_tick();
     }
-    ui_draw_if_needed();
+    if (macro_busy()) {
+      /* Clock/OLED I2C is ~25 ms blocking; don't pace HID behind it. */
+      if (hid_in_ready()) {
+        macro_tick(0);
+      }
+    } else {
+      ui_draw_if_needed();
+    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

@@ -92,6 +92,14 @@ int hid_configured(void) {
   return hUsbDeviceFS.dev_state == USBD_STATE_CONFIGURED;
 }
 
+int hid_in_ready(void) {
+  if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED || hUsbDeviceFS.pClassData == NULL) {
+    return 0;
+  }
+  USBD_CUSTOM_HID_HandleTypeDef *h = (USBD_CUSTOM_HID_HandleTypeDef *)hUsbDeviceFS.pClassData;
+  return h->state == CUSTOM_HID_IDLE;
+}
+
 int hid_vendor_session(void) {
   return (HAL_GetTick() - vendor_last_ms) < 2000u && vendor_last_ms != 0;
 }

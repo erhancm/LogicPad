@@ -32,6 +32,7 @@
 void hid_init(void);
 void hid_tick(void);
 int hid_configured(void);
+int hid_in_ready(void);
 int hid_vendor_session(void);
 void hid_notify_key(uint8_t profile, uint8_t key, uint8_t down);
 int hid_kbd_send(uint8_t mods, const uint8_t keys[6]);
