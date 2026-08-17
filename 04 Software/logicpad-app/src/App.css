@@ -249,8 +249,43 @@ select {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   padding: 6px 0;
   border-bottom: 1px solid #2a2e38;
+}
+
+.act-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.act-tools {
+  display: flex;
+  gap: 4px;
+}
+
+.act-tools button {
+  padding: 4px 8px;
+  min-width: 28px;
+}
+
+.send {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.send button {
+  background: #1c212c;
+  border: 1px solid #3a4150;
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.send button:hover {
+  border-color: #f0d060;
 }
 
 .acts .empty {
@@ -267,6 +302,11 @@ select {
 .letters button {
   min-width: 36px;
   padding: 5px 7px;
+}
+
+.letters.specials button {
+  min-width: 52px;
+  font-weight: 600;
 }
 
 .add {

@@ -30,11 +30,13 @@ Menus (d-pad; corners unused except +/− on the macro list):
 
 Key 1 up, key 7 down, key 3 left, key 5 right, key 4 OK. SEL short = Back (not Left). Lists do not wrap. At most three large rows in the blue band; highlight stays center while scrolling. Value screens: value in blue, title/hint in yellow. Save prompt: OK = save, SEL = discard.
 
+Add action kinds: Key, Sys, Mouse, Wait, Text. Sys is Tab / Win / Alt / Ctrl / Shift / Esc / Enter / Space / Bksp. Text plays the key’s pool string (edit the string in the PC app).
+
 Key picker: the nine keys select themselves.
 
 ## Screens
 
-`boot`, `home`, `toast`, `menu`, `profList`, `profActs`, `profName`, `profReset`, `profDel`, `keyPick`, `keyEdit`, `keyName`, `keyLight`, `macroView`, `addKind`, `addLetter`, `addSend`, `addMouse`, `addWait`, `setup`, `lightsHub`, `lightMode`, `lightBright`, `lightDim`, `screenHub`, `scrContrast`, `scrFlip`, `scrSleep`, `about`, `saved`, `resetAll`, `sleeping`, `savePrompt`.
+`boot`, `home`, `toast`, `menu`, `profList`, `profActs`, `profName`, `profReset`, `profDel`, `keyPick`, `keyEdit`, `keyName`, `keyLight`, `macroView`, `addKind`, `addLetter`, `addSend`, `addSys`, `addMouse`, `addWait`, `setup`, `lightsHub`, `lightMode`, `lightBright`, `lightDim`, `screenHub`, `scrContrast`, `scrFlip`, `scrSleep`, `about`, `saved`, `resetAll`, `sleeping`, `savePrompt`.
 
 In-app firmware update draws **FLASH** (blue) and **BOOT MODE** (yellow) then resets. The 4 KB HID bootloader has its own screens: **BOOT** / **USB FLASH**, a progress bar, then **OK** or **FAIL**. Those bootloader screens ship in `LogicPad_factory.hex` (ST-Link), not in the app `.bin`.
 

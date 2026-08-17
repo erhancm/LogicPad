@@ -21,7 +21,8 @@ enum {
   ACT_MOUSE_MOVE = 4,
   ACT_WHEEL = 5,
   ACT_CONSUMER = 6,
-  ACT_RELEASE = 7
+  ACT_RELEASE = 7,
+  ACT_TEXT = 8
 };
 
 enum { SEND_TAP = 0, SEND_DOWN = 1, SEND_UP = 2 };

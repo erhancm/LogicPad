@@ -16,9 +16,11 @@ static uint8_t text_i;
 static uint8_t text_len;
 static const uint8_t *text_p;
 static uint8_t text_phase;
+static uint8_t text_resume; /* 1 = continue the macro after the string */
 
-#define TEXT_DOWN_MS 16u
-#define TEXT_UP_MS 16u
+#define TEXT_DOWN_MS 5u
+#define TEXT_UP_MS 5u
+#define TAP_MS 8u
 
 void macro_init(void) {
   playing = 0;
@@ -31,6 +33,7 @@ int macro_busy(void) {
 void macro_cancel(void) {
   playing = 0;
   in_text = 0;
+  text_resume = 0;
   hid_kbd_release();
   hid_consumer_release();
   hid_mouse_send(0, 0, 0, 0);
@@ -112,7 +115,16 @@ static void load_text(uint8_t key_idx) {
   text_p = storage_text(g_store.active, key_idx, &text_len);
   text_i = 0;
   text_phase = 0;
-  in_text = 0;
+}
+
+static int key_has_text_act(const lp_key_t *k) {
+  uint8_t n = k->n > LP_MAX_ACTIONS ? LP_MAX_ACTIONS : k->n;
+  for (uint8_t i = 0; i < n; i++) {
+    if (k->acts[i].type == ACT_TEXT) {
+      return 1;
+    }
+  }
+  return 0;
 }
 
 void macro_play(uint8_t key_idx) {
@@ -129,7 +141,8 @@ void macro_play(uint8_t key_idx) {
   act_i = 0;
   wait_ms = 0;
   phase = 0;
-  in_text = (k->n == 0) ? 1 : 0;
+  text_resume = 0;
+  in_text = (k->n == 0 && text_len) ? 1 : 0;
   led_mux_key_flash(key_idx);
 }
 
@@ -138,8 +151,13 @@ static int tick_text(void) {
     if (hid_kbd_release() != 0) {
       return 1;
     }
-    playing = 0;
     in_text = 0;
+    if (text_resume) {
+      text_resume = 0;
+      act_i++;
+      return 1;
+    }
+    playing = 0;
     return 1;
   }
   if (text_phase == 1) {
@@ -195,8 +213,9 @@ void macro_tick(uint16_t elapsed_ms) {
     hid_consumer_release();
     live_mods = 0;
     memset(live_keys, 0, 6);
-    if (text_len) {
+    if (text_len && !key_has_text_act(k)) {
       in_text = 1;
+      text_resume = 0;
       text_i = 0;
       text_phase = 0;
       return;
@@ -251,7 +270,7 @@ void macro_tick(uint16_t elapsed_ms) {
     if (hid_consumer_send(a.code) != 0) {
       return;
     }
-    wait_ms = 16;
+    wait_ms = TAP_MS;
     phase = 1;
     break;
   case ACT_MOUSE_BTN:
@@ -259,7 +278,7 @@ void macro_tick(uint16_t elapsed_ms) {
       return;
     }
     if (send == SEND_TAP) {
-      wait_ms = 16;
+      wait_ms = TAP_MS;
       phase = 1;
     } else {
       act_i++;
@@ -277,8 +296,17 @@ void macro_tick(uint16_t elapsed_ms) {
     }
     act_i++;
     break;
+  case ACT_TEXT:
+    if (text_len == 0) {
+      act_i++;
+      break;
+    }
+    text_i = 0;
+    text_phase = 0;
+    in_text = 1;
+    text_resume = 1;
+    break;
   case ACT_KEY:
-  default:
     if (send == SEND_UP) {
       if (hid) {
         keys_del(hid);
@@ -301,9 +329,12 @@ void macro_tick(uint16_t elapsed_ms) {
       if (hid_kbd_send(live_mods, live_keys) != 0) {
         return;
       }
-      wait_ms = 16;
+      wait_ms = TAP_MS;
       phase = 1;
     }
+    break;
+  default:
+    act_i++;
     break;
   }
 }

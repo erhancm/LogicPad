@@ -7,6 +7,7 @@ export const ACT = {
   wheel: 5,
   consumer: 6,
   release: 7,
+  text: 8,
 } as const;
 
 export const SEND = { tap: 0, down: 1, up: 2 } as const;
@@ -92,6 +93,37 @@ export const HID_LETTERS: { name: string; hid: number }[] = [
   { name: "Bksp", hid: 0x2a },
   { name: "Tab", hid: 0x2b },
   { name: "Space", hid: 0x2c },
+  { name: "Caps", hid: 0x39 },
+  { name: "Menu", hid: 0x65 },
+  { name: "PrtSc", hid: 0x46 },
+  { name: "Pause", hid: 0x48 },
+  { name: "←", hid: 0x50 },
+  { name: "→", hid: 0x4f },
+  { name: "↑", hid: 0x52 },
+  { name: "↓", hid: 0x51 },
+  { name: "Ins", hid: 0x49 },
+  { name: "Del", hid: 0x4c },
+  { name: "Home", hid: 0x4a },
+  { name: "End", hid: 0x4d },
+  { name: "PgUp", hid: 0x4b },
+  { name: "PgDn", hid: 0x4e },
+  ...Array.from({ length: 12 }, (_, i) => ({
+    name: `F${i + 1}`,
+    hid: 0x3a + i,
+  })),
+];
+
+/** Standalone taps (Win/Alt/Ctrl/Shift live in the modifier byte). */
+export const HID_SPECIALS: { name: string; hid: number; mods: number }[] = [
+  { name: "Win", hid: 0, mods: 8 },
+  { name: "Alt", hid: 0, mods: 4 },
+  { name: "Ctrl", hid: 0, mods: 1 },
+  { name: "Shift", hid: 0, mods: 2 },
+  { name: "Tab", hid: 0x2b, mods: 0 },
+  { name: "Esc", hid: 0x29, mods: 0 },
+  { name: "Enter", hid: 0x28, mods: 0 },
+  { name: "Space", hid: 0x2c, mods: 0 },
+  { name: "Bksp", hid: 0x2a, mods: 0 },
 ];
 
 export const MEDIA = [

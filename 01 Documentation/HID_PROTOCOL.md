@@ -46,7 +46,7 @@ PING payload is protocol `0x01, 0x02` (minor `2` = add/delete profiles). Minor `
 
 `ENTER_BOOTLOADER` acks, then the main loop shows **FLASH / BOOT MODE** on the OLED and resets. Do not wait in the USB callback — USB IRQ priority 0 would hang `HAL_Delay`.
 
-Typed strings live in a **shared 1200-byte pool** (max 240 bytes per key) at the end of `lp_store_t`. Pressing a key plays its macro actions, then types the string as US-HID taps. Store magic is `LPAG` (`0x4C504147`); older `LPAF` stores are discarded on boot.
+Typed strings live in a **shared 1200-byte pool** (max 240 bytes per key) at the end of `lp_store_t`. `ACT_TEXT` (`8`) is a macro step that types that string as US-HID taps, so later steps can be Enter or a chord. Keys that still have pool text but no `ACT_TEXT` play the string after the other actions (older saves). Store magic is `LPAG` (`0x4C504147`); older `LPAF` stores are discarded on boot.
 
 Structs are in `03 Firmware/Firmware/Core/Inc/storage.h`. OLED USB dot blinks while a vendor command was seen in the last 2 s.
 
@@ -76,4 +76,4 @@ Do not send `LogicPad_factory.bin` through the updater — that image includes t
 
 ## Keyboard usages
 
-Factory keys are empty. When assigning: A=0x04 … Z=0x1D. LCtrl modifier bit 0. Consumer: Prev `0xB6`, Next `0xB5`, Play/Pause `0xCD`.
+Factory keys are empty. When assigning: A=0x04 … Z=0x1D. Tab `0x2B`, Esc `0x29`, Enter `0x28`, Space `0x2C`, Bksp `0x2A`. Modifier bits: LCtrl 0, LShift 1, LAlt 2, LWin/LGUI 3. A Win tap is mods=`0x08` with hid `0` (not usage `0xE3`). Consumer: Prev `0xB6`, Next `0xB5`, Play/Pause `0xCD`.

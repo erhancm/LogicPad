@@ -5,6 +5,7 @@ import { api } from "./api";
 import {
   ACT,
   HID_LETTERS,
+  HID_SPECIALS,
   LEDS,
   LIGHT_MODES,
   MEDIA,
@@ -19,11 +20,14 @@ import {
   ACT_SLOTS,
   TEXT_MAX,
   applyTypedText,
+  hasTextAct,
   memoryOf,
+  moveAct,
   roomForText,
   stemName,
   typedDisplay,
   utf8Len,
+  withTextStep,
   PROFILE_MAX,
 } from "./text";
 
@@ -40,7 +44,7 @@ function fmtAct(a: Action): string {
         a.mods & 1 ? "Ctrl" : "",
         a.mods & 2 ? "Shift" : "",
         a.mods & 4 ? "Alt" : "",
-        a.mods & 8 ? "Gui" : "",
+        a.mods & 8 ? "Win" : "",
       ]
         .filter(Boolean)
         .join("+");
@@ -60,6 +64,8 @@ function fmtAct(a: Action): string {
       return "Wheel";
     case ACT.release:
       return "Release";
+    case ACT.text:
+      return "Type text";
     default:
       return "—";
   }
@@ -134,6 +140,7 @@ export default function App() {
   const [sel, setSel] = useState(0);
   const [hidPick, setHidPick] = useState(0x04);
   const [mods, setMods] = useState(0);
+  const [sendMode, setSendMode] = useState<number>(SEND.tap);
   const [status, setStatus] = useState("Looking for LogicPad…");
   const [launches, setLaunches] = useState<LaunchEntry[]>([]);
   const [flash, setFlash] = useState<{ phase: string; done: number; total: number } | null>(null);
@@ -147,7 +154,8 @@ export default function App() {
   const profile = snap?.meta.active ?? 0;
   const hdr = snap?.profiles[profile];
   const keys = snap?.keys[profile] ?? [];
-  const key = keys[sel] ?? emptyKey(profile, sel);
+  const poolOn = snap?.textPool?.enabled ?? false;
+  const key = withTextStep(keys[sel] ?? emptyKey(profile, sel), poolOn);
   const launch = launchOf(launches, profile, sel);
 
   async function run(label: string, fn: () => Promise<void>) {
@@ -387,7 +395,6 @@ export default function App() {
   const letterGrid = useMemo(() => HID_LETTERS, []);
   const flashPct = flash && flash.total ? Math.round((flash.done / flash.total) * 100) : 0;
   const mem = snap ? memoryOf(snap) : null;
-  const poolOn = mem?.poolEnabled ?? false;
   const typeValue = typedDisplay(key);
   const typeBytes = utf8Len(poolOn ? key.text : typeValue);
   const typeRoom = snap ? roomForText(snap, profile, sel) : TEXT_MAX;
@@ -395,10 +402,15 @@ export default function App() {
   const typeHint = poolOn
     ? typeOver
       ? `Needs ${typeBytes} B, ${typeRoom} B free on the pad. Shorten this or another key.`
-      : `US keyboard characters. Shared ${mem?.textMax ?? TEXT_MAX} B across all keys, ${TEXT_MAX} B max on this key.`
+      : `One step in the macro (move it like any other). Then add Enter or a shortcut. Shared ${mem?.textMax ?? TEXT_MAX} B, ${TEXT_MAX} B max on this key.`
     : typeValue.length > ACT_SLOTS
       ? `Only the first ${ACT_SLOTS} characters fit until you update firmware.`
       : `This firmware stores one tap per character (${ACT_SLOTS} max on this key). Update firmware for longer text.`;
+
+  function addAct(a: Action) {
+    if (key.acts.length >= ACT_SLOTS) return;
+    void pushKey({ ...key, acts: [...key.acts, a] });
+  }
 
   return (
     <div className="app">
@@ -743,13 +755,48 @@ export default function App() {
               />
             </label>
             {launch.path ? <p className="hint">Opens {baseName(launch.path)}</p> : null}
+            <h3>Actions</h3>
+            <p className="hint">
+              Runs top to bottom. Type text is one step — put Enter or a shortcut after it.
+            </p>
+            <ul className="acts">
+              {key.acts.length === 0 ? <li className="empty">No actions</li> : null}
+              {key.acts.map((a, i) => (
+                <li key={`${a.type}-${i}-${a.code}`}>
+                  <span className="act-name">{fmtAct(a)}</span>
+                  <span className="act-tools">
+                    <button
+                      disabled={i === 0}
+                      onClick={() => pushKey({ ...key, acts: moveAct(key.acts, i, -1) })}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      disabled={i === key.acts.length - 1}
+                      onClick={() => pushKey({ ...key, acts: moveAct(key.acts, i, 1) })}
+                    >
+                      ↓
+                    </button>
+                    <button
+                      onClick={() => {
+                        const acts = key.acts.filter((_, j) => j !== i);
+                        const dropText = a.type === ACT.text && !hasTextAct(acts);
+                        void pushKey({ ...key, acts, text: dropText ? "" : key.text });
+                      }}
+                    >
+                      ×
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
             <h3>Type text</h3>
             <p className={`hint ${typeOver ? "hot" : ""}`}>{typeHint}</p>
             <textarea
               className={typeOver ? "over" : ""}
-              rows={5}
+              rows={4}
               spellCheck={false}
-              placeholder="The pad types this when you press the key"
+              placeholder="Typed as its own step in the list above"
               value={typeValue}
               onChange={(e) => {
                 if (!snap) return;
@@ -762,7 +809,8 @@ export default function App() {
               }}
               onBlur={() => {
                 if (typeOver) return;
-                void pushKey(key);
+                const k = snapRef.current?.keys[profile]?.[sel];
+                if (k) void pushKey(withTextStep(k, poolOn));
               }}
             />
             <p className="mem-lab tight">
@@ -771,41 +819,50 @@ export default function App() {
               </span>
               {poolOn ? <span>{typeRoom} B free for this key</span> : null}
             </p>
-            {typeValue ? (
-              <div className="add">
+            <div className="send">
+              {(
+                [
+                  [SEND.tap, "Tap"],
+                  [SEND.down, "Down"],
+                  [SEND.up, "Up"],
+                ] as const
+              ).map(([mode, name]) => (
                 <button
-                  onClick={() => {
-                    const next = applyTypedText(key, "", poolOn);
-                    void pushKey(next);
-                  }}
+                  key={name}
+                  className={sendMode === mode ? "on" : ""}
+                  onClick={() => setSendMode(mode)}
                 >
-                  Clear text
+                  {name}
                 </button>
-              </div>
-            ) : null}
-            <h3>Macro</h3>
-            <ul className="acts">
-              {key.acts.length === 0 ? <li className="empty">No actions</li> : null}
-              {key.acts.map((a, i) => (
-                <li key={i}>
-                  <span>{fmtAct(a)}</span>
-                  <button
-                    onClick={() =>
-                      pushKey({ ...key, acts: key.acts.filter((_, j) => j !== i) })
-                    }
-                  >
-                    ×
-                  </button>
-                </li>
               ))}
-            </ul>
+            </div>
+            <p className="hint">
+              Win, Alt, Tab are keys you add. Hold them as modifiers with the checkboxes, then click
+              another key (Alt + Tab).
+            </p>
+            <div className="letters specials">
+              {HID_SPECIALS.map((h) => (
+                <button
+                  key={h.name}
+                  onClick={() =>
+                    addAct({
+                      type: ACT.key,
+                      mods: mods | h.mods,
+                      code: h.hid | (sendMode << 8),
+                    })
+                  }
+                >
+                  {h.name}
+                </button>
+              ))}
+            </div>
             <div className="mods">
               {(
                 [
                   [1, "Ctrl"],
                   [2, "Shift"],
                   [4, "Alt"],
-                  [8, "Gui"],
+                  [8, "Win"],
                 ] as const
               ).map(([bit, name]) => (
                 <label key={bit} className="chk">
@@ -823,7 +880,10 @@ export default function App() {
                 <button
                   key={h.hid}
                   className={hidPick === h.hid ? "on" : ""}
-                  onClick={() => setHidPick(h.hid)}
+                  onClick={() => {
+                    setHidPick(h.hid);
+                    addAct({ type: ACT.key, mods, code: h.hid | (sendMode << 8) });
+                  }}
                 >
                   {h.name}
                 </button>
@@ -831,40 +891,34 @@ export default function App() {
             </div>
             <div className="add">
               <button
-                disabled={key.acts.length >= ACT_SLOTS}
-                onClick={() =>
-                  pushKey({
-                    ...key,
-                    acts: [
-                      ...key.acts,
-                      { type: ACT.key, mods, code: hidPick | (SEND.tap << 8) },
-                    ],
-                  })
-                }
+                disabled={key.acts.length >= ACT_SLOTS || (poolOn && hasTextAct(key.acts))}
+                onClick={() => addAct({ type: ACT.text, mods: 0, code: 0 })}
               >
-                Add key
+                Add text
               </button>
               <button
                 disabled={key.acts.length >= ACT_SLOTS}
-                onClick={() =>
-                  pushKey({
-                    ...key,
-                    acts: [...key.acts, { type: ACT.delay, mods: 0, code: 50 }],
-                  })
-                }
+                onClick={() => addAct({ type: ACT.delay, mods: 0, code: 50 })}
               >
-                Add wait 50ms
+                Wait 50ms
+              </button>
+              <button
+                disabled={key.acts.length >= ACT_SLOTS}
+                onClick={() => addAct({ type: ACT.delay, mods: 0, code: 200 })}
+              >
+                Wait 200ms
+              </button>
+              <button
+                disabled={key.acts.length >= ACT_SLOTS}
+                onClick={() => addAct({ type: ACT.mouseBtn, mods: 1, code: SEND.tap << 8 })}
+              >
+                Click
               </button>
               {MEDIA.map((m) => (
                 <button
                   key={m.usage}
                   disabled={key.acts.length >= ACT_SLOTS}
-                  onClick={() =>
-                    pushKey({
-                      ...key,
-                      acts: [...key.acts, { type: ACT.consumer, mods: SEND.tap, code: m.usage }],
-                    })
-                  }
+                  onClick={() => addAct({ type: ACT.consumer, mods: SEND.tap, code: m.usage })}
                 >
                   {m.name}
                 </button>

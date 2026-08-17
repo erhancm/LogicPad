@@ -124,15 +124,39 @@ export function typedDisplay(key: PadKey): string {
   return actsToText(key.acts) ?? "";
 }
 
+export function hasTextAct(acts: Action[]): boolean {
+  return acts.some((a) => a.type === ACT.text);
+}
+
+export function withTextStep(key: PadKey, poolOn: boolean): PadKey {
+  if (!poolOn) return key;
+  const has = hasTextAct(key.acts);
+  if (key.text) {
+    if (has || key.acts.length >= ACT_SLOTS) return key;
+    return { ...key, acts: [...key.acts, { type: ACT.text, mods: 0, code: 0 }] };
+  }
+  if (!has) return key;
+  return { ...key, acts: key.acts.filter((a) => a.type !== ACT.text) };
+}
+
 export function applyTypedText(key: PadKey, raw: string, poolEnabled: boolean): PadKey {
   const str = raw.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
   if (poolEnabled) {
     const text = utf8Truncate(str, TEXT_MAX);
-    const wasTypedMacro = actsToText(key.acts) !== null;
-    return { ...key, text, acts: wasTypedMacro ? [] : key.acts };
+    return withTextStep({ ...key, text }, true);
   }
   const { acts } = textToActions(str, ACT_SLOTS);
   return { ...key, acts, text: str };
+}
+
+export function moveAct(acts: Action[], index: number, dir: -1 | 1): Action[] {
+  const j = index + dir;
+  if (index < 0 || j < 0 || index >= acts.length || j >= acts.length) return acts;
+  const next = acts.slice();
+  const tmp = next[index];
+  next[index] = next[j];
+  next[j] = tmp;
+  return next;
 }
 
 export function memoryOf(snap: Snapshot): {

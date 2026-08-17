@@ -6,6 +6,7 @@
 #include "macro.h"
 #include "led_mux.h"
 #include <stdio.h>
+#include <stddef.h>
 #include <string.h>
 
 typedef enum {
@@ -26,6 +27,7 @@ typedef enum {
   SCR_ADD_KIND,
   SCR_ADD_LETTER,
   SCR_ADD_SEND,
+  SCR_ADD_SYS,
   SCR_ADD_MOUSE,
   SCR_ADD_WAIT,
   SCR_SETUP,
@@ -73,6 +75,20 @@ static const char *const MODES[] = {"Off",    "Solid", "React", "Breathe", "Wave
 static const char *const SLEEP_L[] = {"Never", "15s", "30s", "1m", "5m"};
 static const uint32_t SLEEP_MS[] = {0, 15000, 30000, 60000, 300000};
 static const uint32_t IDLE_MS[] = {15000, 30000, 60000};
+
+typedef struct {
+  const char *name;
+  uint8_t hid;
+  uint8_t mods;
+} sys_key_t;
+
+/* Standalone taps. Win/Alt/Ctrl/Shift live in the modifier byte (hid 0). */
+static const sys_key_t SYS_KEYS[] = {
+    {"Tab", 0x2B, 0}, {"Win", 0, 8},     {"Alt", 0, 4},    {"Ctrl", 0, 1},
+    {"Shift", 0, 2},  {"Esc", 0x29, 0},  {"Enter", 0x28, 0}, {"Space", 0x2C, 0},
+    {"Bksp", 0x2A, 0},
+};
+#define N_SYS_KEYS ((uint8_t)(sizeof(SYS_KEYS) / sizeof(SYS_KEYS[0])))
 
 /* Dual-color 0.96" panel (yellow glass fixed at physical bottom):
  * blue content y=0..47, yellow status y=48..63. */
@@ -292,7 +308,6 @@ static uint8_t list_max(void) {
   switch (scr) {
   case SCR_MENU:
   case SCR_KEY_EDIT:
-  case SCR_ADD_KIND:
   case SCR_ADD_SEND:
   case SCR_ADD_MOUSE:
   case SCR_SETUP:
@@ -300,6 +315,10 @@ static uint8_t list_max(void) {
   case SCR_SCREEN:
   case SCR_ABOUT:
     return 2;
+  case SCR_ADD_KIND:
+    return 4;
+  case SCR_ADD_SYS:
+    return (uint8_t)(N_SYS_KEYS - 1);
   case SCR_PROF_ACTS:
     return storage_n_profiles() > 1 ? 3 : 2;
   case SCR_PROF_LIST: {
@@ -421,6 +440,7 @@ static void back(void) {
     go(SCR_MACRO);
     break;
   case SCR_ADD_LETTER:
+  case SCR_ADD_SYS:
   case SCR_ADD_MOUSE:
   case SCR_ADD_WAIT:
     go(SCR_ADD_KIND);
@@ -621,12 +641,32 @@ static void ok(void) {
     if (i == 0) {
       go(SCR_ADD_LETTER);
     } else if (i == 1) {
+      go(SCR_ADD_SYS);
+    } else if (i == 2) {
       go(SCR_ADD_MOUSE);
-    } else {
+    } else if (i == 3) {
       i = 5;
       go(SCR_ADD_WAIT);
       i = 5;
+    } else {
+      lp_key_t *k = &p->keys[edit_key];
+      if (k->n < LP_MAX_ACTIONS) {
+        k->acts[k->n++] = (lp_action_t){.type = ACT_TEXT, .mods = 0, .code = 0};
+        dirty();
+      }
+      go(SCR_MACRO);
     }
+    return;
+  }
+  if (scr == SCR_ADD_SYS) {
+    lp_key_t *k = &p->keys[edit_key];
+    if (k->n < LP_MAX_ACTIONS) {
+      uint8_t idx = (uint8_t)clampi(i, 0, (int16_t)(N_SYS_KEYS - 1));
+      k->acts[k->n++] = (lp_action_t){
+          .type = ACT_KEY, .mods = SYS_KEYS[idx].mods, .code = SYS_KEYS[idx].hid};
+      dirty();
+    }
+    go(SCR_MACRO);
     return;
   }
   if (scr == SCR_ADD_SEND) {
@@ -859,13 +899,58 @@ static void fmt_act(const lp_action_t *a, char *buf, size_t n) {
   case ACT_RELEASE:
     snprintf(buf, n, "Release");
     break;
-  default:
+  case ACT_TEXT:
+    snprintf(buf, n, "Text");
+    break;
+  default: {
+    char name[8] = "";
     if (hid >= 4 && hid <= 29) {
-      snprintf(buf, n, "Key %c", 'A' + (hid - 4));
+      name[0] = (char)('A' + (hid - 4));
+      name[1] = 0;
+    } else if (hid == 0x28) {
+      strncpy(name, "Enter", sizeof(name));
+    } else if (hid == 0x29) {
+      strncpy(name, "Esc", sizeof(name));
+    } else if (hid == 0x2A) {
+      strncpy(name, "Bksp", sizeof(name));
+    } else if (hid == 0x2B) {
+      strncpy(name, "Tab", sizeof(name));
+    } else if (hid == 0x2C) {
+      strncpy(name, "Space", sizeof(name));
+    } else if (hid) {
+      strncpy(name, "Key", sizeof(name));
+    }
+    char m[20] = "";
+    size_t p = 0;
+    if (a->mods & 1u) {
+      memcpy(m + p, "Ctrl+", 5);
+      p += 5;
+    }
+    if (a->mods & 2u) {
+      memcpy(m + p, "Sh+", 3);
+      p += 3;
+    }
+    if (a->mods & 4u) {
+      memcpy(m + p, "Alt+", 4);
+      p += 4;
+    }
+    if (a->mods & 8u) {
+      memcpy(m + p, "Win+", 4);
+      p += 4;
+    }
+    if (p && !name[0]) {
+      m[p - 1] = 0;
+      snprintf(buf, n, "%s", m);
+    } else if (p) {
+      m[p] = 0;
+      snprintf(buf, n, "%s%s", m, name);
+    } else if (name[0]) {
+      snprintf(buf, n, "%s", name);
     } else {
       snprintf(buf, n, "Key");
     }
     break;
+  }
   }
 }
 
@@ -965,9 +1050,18 @@ static void draw(void) {
     break;
   }
   case SCR_ADD_KIND: {
-    const char *it[] = {"Key", "Mouse", "Wait"};
-    big_menu(it, 3, i);
+    const char *it[] = {"Key", "Sys", "Mouse", "Wait", "Text"};
+    big_menu(it, 5, i);
     header("ADD");
+    break;
+  }
+  case SCR_ADD_SYS: {
+    const char *it[N_SYS_KEYS];
+    for (uint8_t k = 0; k < N_SYS_KEYS; k++) {
+      it[k] = SYS_KEYS[k].name;
+    }
+    big_menu(it, N_SYS_KEYS, i);
+    header("SYS");
     break;
   }
   case SCR_ADD_LETTER:
