@@ -85,4 +85,11 @@ int storage_set_text(uint8_t profile, uint8_t key, const uint8_t *data, uint8_t 
 const uint8_t *storage_text(uint8_t profile, uint8_t key, uint8_t *len);
 uint16_t storage_pool_used(void);
 
+/* Clock snapshots live in the unused tail of the active store slot (not in
+ * lp_store_t, so old saves stay valid). force=1 may use the last slot. */
+int storage_clock_load(uint16_t *year, uint8_t *month, uint8_t *day, uint8_t *hour,
+                       uint8_t *min, uint8_t *sec);
+int storage_clock_store(uint16_t year, uint8_t month, uint8_t day, uint8_t hour,
+                        uint8_t min, uint8_t sec, int force);
+
 #endif

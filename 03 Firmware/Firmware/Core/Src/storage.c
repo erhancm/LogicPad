@@ -1,4 +1,5 @@
 #include "storage.h"
+#include "clock.h"
 #include "led_mux.h"
 #include "main.h"
 #include <stddef.h>
@@ -10,9 +11,26 @@
 #define SLOT0 ((uint32_t)(FLASH_BASE + 0xE000u))
 #define SLOT1 (SLOT0 + STORE_BYTES)
 
+typedef struct __attribute__((packed)) {
+  uint16_t year;
+  uint8_t month;
+  uint8_t day;
+  uint8_t hour;
+  uint8_t min;
+  uint8_t sec;
+  uint8_t flags;
+  uint16_t crc;
+} lp_clk_snap_t;
+
+#define CLK_OFF ((sizeof(lp_store_t) + 1u) & ~1u)
+#define CLK_MAX ((STORE_BYTES - CLK_OFF) / sizeof(lp_clk_snap_t))
+
 _Static_assert(sizeof(lp_store_t) <= STORE_BYTES, "store exceeds ping-pong slot");
+_Static_assert(sizeof(lp_clk_snap_t) == 10, "clock snap size");
+_Static_assert(CLK_MAX >= 2, "store slot has no room for clock snaps");
 
 lp_store_t g_store;
+static uint32_t live_slot = SLOT0;
 
 static uint16_t crc16(const uint8_t *p, uint32_t n) {
   uint16_t c = 0xFFFF;
@@ -143,8 +161,10 @@ void storage_init(void) {
   int bo = slot_ok(b);
   if (bo) {
     memcpy(&g_store, b, sizeof(g_store));
+    live_slot = SLOT1;
   } else if (ao) {
     memcpy(&g_store, a, sizeof(g_store));
+    live_slot = SLOT0;
   } else {
     storage_factory();
     storage_save();
@@ -162,7 +182,12 @@ int storage_save(void) {
   g_store.crc = store_crc(&g_store);
   const lp_store_t *a = (const lp_store_t *)SLOT0;
   uint32_t dest = slot_ok(a) ? SLOT1 : SLOT0;
-  return flash_write_slot(dest, &g_store);
+  int r = flash_write_slot(dest, &g_store);
+  if (r == 0) {
+    live_slot = dest;
+    clock_on_store_written();
+  }
+  return r;
 }
 
 void storage_reload(void) {
@@ -300,4 +325,93 @@ const uint8_t *storage_text(uint8_t profile, uint8_t key, uint8_t *len) {
 
 uint16_t storage_pool_used(void) {
   return g_store.pool_n;
+}
+
+static int snap_ok(const lp_clk_snap_t *s) {
+  if (s->year == 0xFFFFu || s->year < 2000 || s->month < 1 || s->month > 12 || s->day < 1 ||
+      s->hour > 23 || s->min > 59 || s->sec > 59) {
+    return 0;
+  }
+  return s->crc == crc16((const uint8_t *)s, 8);
+}
+
+int storage_clock_load(uint16_t *year, uint8_t *month, uint8_t *day, uint8_t *hour, uint8_t *min,
+                       uint8_t *sec) {
+  const uint32_t slots[2] = {live_slot, live_slot == SLOT0 ? SLOT1 : SLOT0};
+  const lp_clk_snap_t *found = NULL;
+  for (int si = 0; si < 2; si++) {
+    const lp_clk_snap_t *base = (const lp_clk_snap_t *)(slots[si] + CLK_OFF);
+    for (uint32_t i = 0; i < CLK_MAX; i++) {
+      if (snap_ok(&base[i])) {
+        found = &base[i];
+      }
+    }
+    if (found) {
+      break;
+    }
+  }
+  if (!found) {
+    return -1;
+  }
+  if (year) {
+    *year = found->year;
+  }
+  if (month) {
+    *month = found->month;
+  }
+  if (day) {
+    *day = found->day;
+  }
+  if (hour) {
+    *hour = found->hour;
+  }
+  if (min) {
+    *min = found->min;
+  }
+  if (sec) {
+    *sec = found->sec;
+  }
+  return 0;
+}
+
+int storage_clock_store(uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8_t min,
+                        uint8_t sec, int force) {
+  lp_clk_snap_t *base = (lp_clk_snap_t *)(live_slot + CLK_OFF);
+  int empty = -1;
+  int nempty = 0;
+  for (uint32_t i = 0; i < CLK_MAX; i++) {
+    if (base[i].year == 0xFFFFu && base[i].crc == 0xFFFFu) {
+      if (empty < 0) {
+        empty = (int)i;
+      }
+      nempty++;
+    }
+  }
+  if (empty < 0) {
+    return -2;
+  }
+  if (!force && nempty <= 1) {
+    return -2;
+  }
+  lp_clk_snap_t s = {0};
+  s.year = year;
+  s.month = month;
+  s.day = day;
+  s.hour = hour;
+  s.min = min;
+  s.sec = sec;
+  s.flags = 1;
+  s.crc = crc16((const uint8_t *)&s, 8);
+  uint32_t addr = live_slot + CLK_OFF + (uint32_t)empty * sizeof(s);
+  HAL_FLASH_Unlock();
+  for (uint32_t off = 0; off < sizeof(s); off += 2) {
+    uint16_t hw;
+    memcpy(&hw, (const uint8_t *)&s + off, 2);
+    if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, addr + off, hw) != HAL_OK) {
+      HAL_FLASH_Lock();
+      return -1;
+    }
+  }
+  HAL_FLASH_Lock();
+  return 0;
 }

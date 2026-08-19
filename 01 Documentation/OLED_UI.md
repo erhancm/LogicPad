@@ -17,7 +17,7 @@ Fonts: Font_6x8 in yellow; 12×16 (2×) list rows in blue (three rows × 16 px =
 
 ## Controls
 
-Live: keys 0–8 fire macros (factory: none assigned). SEL short = menu. SEL long = home. Home is the clock: 24-hour `HH:MM:SS`, date `16 Aug 2026`, bouncing block in the yellow band. Sleep timeout keeps that clock on (display stays on); the first wake key is consumed.
+Live: keys 0–8 fire macros (factory: none assigned). SEL short = menu. SEL long = home. Home is the clock: 24-hour `HH:MM:SS`, date `16 Aug 2026` until the PC app syncs once; after that the pad keeps time while it has power. Sleep timeout keeps that clock on (display stays on); the first wake key is consumed.
 
 Menus (d-pad; corners unused except +/− on the macro list):
 

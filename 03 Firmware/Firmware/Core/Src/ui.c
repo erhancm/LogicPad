@@ -5,6 +5,7 @@
 #include "hid_reports.h"
 #include "macro.h"
 #include "led_mux.h"
+#include "clock.h"
 #include <stdio.h>
 #include <stddef.h>
 #include <string.h>
@@ -248,6 +249,7 @@ void ui_set_clock(uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8
   clk_min = min;
   clk_sec = sec;
   clk_ms = 0;
+  clock_set(year, month, day, hour, min, sec);
   need_draw = 1;
 }
 
@@ -1161,6 +1163,7 @@ void ui_init(void) {
   ssd1306_Init();
   apply_screen_hw();
   ssd1306_DisplayOn(1);
+  clock_get(&clk_year, &clk_mon, &clk_day, &clk_hour, &clk_min, &clk_sec);
   go(SCR_BOOT);
 }
 
@@ -1171,9 +1174,12 @@ static int showing_clock(void) {
 void ui_tick(void) {
   t_ms++;
   idle_ms++;
+  clock_poll();
   if (++clk_ms >= 1000) {
     clk_ms -= 1000;
-    clock_advance_sec();
+    if (!clock_get(&clk_year, &clk_mon, &clk_day, &clk_hour, &clk_min, &clk_sec)) {
+      clock_advance_sec();
+    }
     if (showing_clock()) {
       need_draw = 1;
     }

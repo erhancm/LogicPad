@@ -30,6 +30,7 @@
 #include "macro.h"
 #include "led_mux.h"
 #include "ui.h"
+#include "clock.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -101,6 +102,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   keypad_init();
   storage_init();
+  clock_init();
   hid_init();
   led_mux_init();
   macro_init();

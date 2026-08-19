@@ -52,6 +52,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/macro.c
     Core/Src/led_mux.c
     Core/Src/ui.c
+    Core/Src/clock.c
 )
 
 # Add include paths

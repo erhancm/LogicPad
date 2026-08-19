@@ -50,7 +50,7 @@ Typed strings live in a **shared 1200-byte pool** (max 240 bytes per key) at the
 
 Structs are in `03 Firmware/Firmware/Core/Inc/storage.h`. OLED USB dot blinks while a vendor command was seen in the last 2 s.
 
-The pad keeps sending keyboard/mouse/media while the app holds report 4. KEY_EVENT lets the Tauri app launch host programs; that mapping lives on the PC, not in flash. SET_TIME loads the host's local wall clock; the pad has no RTC crystal, so time starts at 16 Aug 2026 00:00:00 until the app connects.
+The pad keeps sending keyboard/mouse/media while the app holds report 4. KEY_EVENT lets the Tauri app launch host programs; that mapping lives on the PC, not in flash. SET_TIME loads the host's local wall clock. The pad then keeps time on its own (STM32 RTC from the 8 MHz crystal) for as long as it has USB power; it does not need the app connected. There is no 32 kHz backup crystal or battery, so a full unplug still loses the seconds the pad was off; a flash snapshot restores the last saved time. Until the first sync, the display starts at 16 Aug 2026 00:00:00. Open the app now and then if it has drifted.
 
 ## Field firmware update
 
