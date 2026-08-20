@@ -11,6 +11,7 @@ static uint8_t ready;
 static uint8_t wall; /* 1 = SET_TIME or restored snap, safe to persist */
 static uint8_t save_req;
 static uint32_t last_save_ms;
+static uint32_t last_bkp_tod = 0xFFFFFFFFu;
 static uint16_t date_year = 2026;
 static uint8_t date_mon = 8;
 static uint8_t date_day = 16;
@@ -50,9 +51,13 @@ static int wait_flag(volatile uint32_t *reg, uint32_t bit, uint32_t set, uint32_
   return 1;
 }
 
+static int rtc_wait_rsf(void) {
+  return wait_flag(&RTC->CRL, RTC_CRL_RSF, 1, 100);
+}
+
 static int rtc_sync(void) {
   RTC->CRL &= (uint16_t)~RTC_CRL_RSF;
-  return wait_flag(&RTC->CRL, RTC_CRL_RSF, 1, 100);
+  return rtc_wait_rsf();
 }
 
 static int rtc_enter(void) {
@@ -65,11 +70,18 @@ static int rtc_enter(void) {
 
 static int rtc_exit(void) {
   RTC->CRL &= (uint16_t)~RTC_CRL_CNF;
-  return wait_flag(&RTC->CRL, RTC_CRL_RTOFF, 1, 100);
+  if (!wait_flag(&RTC->CRL, RTC_CRL_RTOFF, 1, 100)) {
+    return 0;
+  }
+  /* CNF clears RSF; CNT reads as 0 until the APB shadow catches up. */
+  return rtc_wait_rsf();
 }
 
 static uint32_t rtc_read_cnt(void) {
   uint16_t h1, h2, lo;
+  if ((RTC->CRL & RTC_CRL_RSF) == 0u) {
+    rtc_wait_rsf();
+  }
   h1 = (uint16_t)RTC->CNTH;
   lo = (uint16_t)RTC->CNTL;
   h2 = (uint16_t)RTC->CNTH;
@@ -89,14 +101,31 @@ static int rtc_write_cnt(uint32_t cnt) {
   return rtc_exit();
 }
 
-static void bkp_store(void) {
+static void bkp_store_tod(uint32_t tod) {
+  if (tod >= DAY_SECS) {
+    tod %= DAY_SECS;
+  }
   BKP->DR1 = BKP_MAGIC;
   BKP->DR2 = date_year;
   BKP->DR3 = (uint32_t)date_mon | ((uint32_t)date_day << 8);
-  BKP->DR4 = wall ? 1u : 0u;
+  BKP->DR4 = (wall ? 1u : 0u) | 0x2u; /* bit1 = second-of-day is valid */
+  BKP->DR5 = tod & 0xFFFFu;
+  BKP->DR6 = (tod >> 16) & 0xFFFFu;
+  last_bkp_tod = tod;
 }
 
-static int bkp_load(void) {
+static void bkp_store(void) {
+  uint32_t tod = last_bkp_tod;
+  if (tod == 0xFFFFFFFFu && ready) {
+    tod = rtc_read_cnt();
+  }
+  if (tod == 0xFFFFFFFFu) {
+    tod = 0;
+  }
+  bkp_store_tod(tod);
+}
+
+static int bkp_load(uint32_t *tod_out) {
   if ((uint16_t)BKP->DR1 != BKP_MAGIC) {
     return 0;
   }
@@ -106,10 +135,18 @@ static int bkp_load(void) {
   if (y < 2000 || mo < 1 || mo > 12 || d < 1 || d > month_days(y, mo)) {
     return 0;
   }
+  uint32_t tod = (uint32_t)(uint16_t)BKP->DR5 | ((uint32_t)(uint16_t)BKP->DR6 << 16);
   date_year = y;
   date_mon = mo;
   date_day = d;
   wall = (uint8_t)(BKP->DR4 & 1u);
+  if (tod_out) {
+    if ((BKP->DR4 & 0x2u) && tod < DAY_SECS) {
+      *tod_out = tod;
+    } else {
+      *tod_out = 0xFFFFFFFFu;
+    }
+  }
   return 1;
 }
 
@@ -117,6 +154,8 @@ static int rtc_setup(void) {
   __HAL_RCC_PWR_CLK_ENABLE();
   __HAL_RCC_BKP_CLK_ENABLE();
   HAL_PWR_EnableBkUpAccess();
+  (void)RCC->BDCR;
+  (void)BKP->DR1;
 
   if (!wait_flag(&RCC->CR, RCC_CR_HSERDY, 1, 200)) {
     return 0;
@@ -204,8 +243,9 @@ static void apply_wall(uint16_t year, uint8_t month, uint8_t day, uint8_t hour, 
   date_day = day;
   wall = is_wall ? 1 : 0;
   if (ready) {
-    rtc_write_cnt((uint32_t)hour * 3600u + (uint32_t)min * 60u + sec);
-    bkp_store();
+    uint32_t tod = (uint32_t)hour * 3600u + (uint32_t)min * 60u + sec;
+    rtc_write_cnt(tod);
+    bkp_store_tod(tod);
     if (save) {
       persist(1);
     } else {
@@ -222,7 +262,17 @@ void clock_init(void) {
 
   uint16_t y;
   uint8_t mo, d, h, mi, s;
-  if (bkp_load()) {
+  uint32_t bkp_tod = 0xFFFFFFFFu;
+  if (bkp_load(&bkp_tod)) {
+    uint32_t cnt = rtc_read_cnt() % DAY_SECS;
+    /* Config mode and a core reset can make CNT read 0 while the date in BKP
+     * is still valid. Put the last stored H:M:S back. */
+    if (bkp_tod < DAY_SECS && cnt != bkp_tod) {
+      uint32_t diff = (cnt > bkp_tod) ? (cnt - bkp_tod) : (bkp_tod - cnt);
+      if (cnt == 0u || diff > 2u) {
+        rtc_write_cnt(bkp_tod);
+      }
+    }
     apply_cnt_rollover();
     return;
   }
@@ -267,6 +317,9 @@ int clock_get(uint16_t *year, uint8_t *month, uint8_t *day, uint8_t *hour, uint8
   }
   if (sec) {
     *sec = (uint8_t)(cnt % 60u);
+  }
+  if (wall && cnt != last_bkp_tod) {
+    bkp_store_tod(cnt);
   }
   return 1;
 }
