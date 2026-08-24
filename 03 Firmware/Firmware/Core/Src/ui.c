@@ -72,7 +72,7 @@ static const char *const MONS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
 
 static const char *const COLORS[] = {"Off", "White", "Red", "Green", "Blue"};
 static const char *const MODES[] = {"Off",    "Solid", "React", "Breathe", "Wave",  "Ring",
-                                    "Ripple", "Rain",  "Heart", "Cross",   "Twinkle"};
+                                    "Ripple", "Rain",  "Heart", "Cross",   "Twinkle", "Full"};
 static const char *const SLEEP_L[] = {"Never", "15s", "30s", "1m", "5m"};
 static const uint32_t SLEEP_MS[] = {0, 15000, 30000, 60000, 300000};
 static const uint32_t IDLE_MS[] = {15000, 30000, 60000};
@@ -810,6 +810,11 @@ static void nav(int dir) {
 }
 
 static void on_event(keypad_event_t e) {
+  if (e.type == KP_DOWN && e.key < 9) {
+    led_mux_key_flash(e.key);
+  } else if (e.type == KP_SEL_SHORT || e.type == KP_SEL_LONG) {
+    led_mux_key_flash(LED_SEL);
+  }
   if (scr == SCR_BOOT) {
     go(SCR_HOME);
     return;

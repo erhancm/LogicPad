@@ -130,6 +130,7 @@ void macro_play(uint8_t key_idx) {
   if (key_idx >= LP_N_KEYS) {
     return;
   }
+  led_mux_key_flash(key_idx);
   lp_key_t *k = &storage_active()->keys[key_idx];
   load_text(key_idx);
   if (k->n == 0 && text_len == 0) {
@@ -142,7 +143,6 @@ void macro_play(uint8_t key_idx) {
   phase = 0;
   text_resume = 0;
   in_text = (k->n == 0 && text_len) ? 1 : 0;
-  led_mux_key_flash(key_idx);
 }
 
 static int tick_text(void) {

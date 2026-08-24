@@ -12,6 +12,7 @@
 #define LED_IRQ_HZ 16000u
 #define LED_PWM_STEPS 16u
 #define LED_KEYS 9u
+#define LED_PIX (LED_KEYS + 1u) /* + selector */
 #define LED_MS_TICKS (LED_IRQ_HZ / 1000u)
 
 /* Key index is row-major (same as the keypad). CubeMX CxRy nets walk
@@ -35,8 +36,9 @@ static uint16_t ms_div;
 static uint16_t anim_ms;
 static uint8_t ripple_key = 0xFF;
 static uint16_t ripple_age;
-static uint8_t pix_color[LED_KEYS];
-static uint8_t pix_duty[LED_KEYS];
+static uint8_t pix_color[LED_PIX];
+static uint8_t pix_duty[LED_PIX];
+static uint8_t flood; /* 1 = all anodes together (no 1/9 mux) */
 
 enum {
   MODE_OFF = 0,
@@ -49,23 +51,44 @@ enum {
   MODE_RAIN,
   MODE_HEART,
   MODE_CROSS,
-  MODE_TWINKLE
+  MODE_TWINKLE,
+  MODE_FULL
 };
 
 static const uint8_t HUE[3] = {LED_RED, LED_GREEN, LED_BLUE};
 /* Clockwise from top-left; 0xFF = center. */
-static const uint8_t RING_POS[LED_KEYS] = {0, 1, 2, 7, 0xFF, 3, 6, 5, 4};
+static const uint8_t RING_POS[LED_PIX] = {0, 1, 2, 7, 0xFF, 3, 6, 5, 4, 5};
 /* Linear 0–16 → PWM duty; extra low-end steps so fades don’t stair-step. */
 static const uint8_t GAMMA[17] = {0, 1, 1, 2, 2, 3, 4, 5, 6, 8, 10, 12, 13, 14, 15, 16, 16};
 
 static void anodes_off(void) {
   HAL_GPIO_WritePin(GPIOA, C0R0_Pin | C0R1_Pin | C0R2_Pin | C1R0_Pin | C1R1_Pin |
-                                C1R2_Pin | C2R0_Pin | C2R1_Pin | C2R2_Pin,
+                                C1R2_Pin | C2R0_Pin | C2R1_Pin | C2R2_Pin | CtrlLed_Pin,
                     GPIO_PIN_SET);
 }
 
 static void anode_on(uint8_t key) {
-  HAL_GPIO_WritePin(GPIOA, anode_pin[key], GPIO_PIN_RESET);
+  if (key == LED_SEL) {
+    HAL_GPIO_WritePin(CtrlLed_GPIO_Port, CtrlLed_Pin, GPIO_PIN_RESET);
+  } else {
+    HAL_GPIO_WritePin(GPIOA, anode_pin[key], GPIO_PIN_RESET);
+  }
+}
+
+static void anodes_all_on(void) {
+  HAL_GPIO_WritePin(GPIOA, C0R0_Pin | C0R1_Pin | C0R2_Pin | C1R0_Pin | C1R1_Pin |
+                                C1R2_Pin | C2R0_Pin | C2R1_Pin | C2R2_Pin | CtrlLed_Pin,
+                    GPIO_PIN_RESET);
+}
+
+static void pix_rc(uint8_t k, uint8_t *row, uint8_t *col) {
+  if (k == LED_SEL) {
+    *row = 3;
+    *col = 1;
+  } else {
+    *row = k / 3u;
+    *col = k % 3u;
+  }
 }
 
 /* N-FET color sinks: high = on. White is R+G+B. */
@@ -130,7 +153,8 @@ static void show_frame(uint8_t mode, uint8_t bright, uint8_t dim) {
   uint8_t k;
   uint8_t level = (idle_ms > 2000) ? dim : bright;
 
-  for (k = 0; k < LED_KEYS; k++) {
+  flood = 0;
+  for (k = 0; k < LED_PIX; k++) {
     pix_color[k] = LED_OFF;
     pix_duty[k] = 0;
   }
@@ -139,9 +163,24 @@ static void show_frame(uint8_t mode, uint8_t bright, uint8_t dim) {
     return;
   }
 
+  /* All nine anodes on at once (white). PWM is global, not 1/9 scanned.
+   * Stays on Bright (ignores idle Dim) so this mode can actually sit at max. */
+  if (mode == MODE_FULL) {
+    flood = 1;
+    for (k = 0; k < LED_PIX; k++) {
+      set_pix(k, LED_WHITE, 255, bright);
+    }
+    return;
+  }
+
   if (mode == MODE_SOLID || mode == MODE_REACT) {
-    for (k = 0; k < LED_KEYS; k++) {
-      uint8_t color = storage_active()->keys[k].led;
+    for (k = 0; k < LED_PIX; k++) {
+      uint8_t color;
+      if (k == LED_SEL) {
+        color = storage_active()->keys[7].led; /* physically under bottom-center */
+      } else {
+        color = storage_active()->keys[k].led;
+      }
       if (mode == MODE_REACT) {
         color = (flash_key == k) ? (uint8_t)LED_WHITE : (uint8_t)LED_OFF;
       }
@@ -152,9 +191,10 @@ static void show_frame(uint8_t mode, uint8_t bright, uint8_t dim) {
     return;
   }
 
-  for (k = 0; k < LED_KEYS; k++) {
-    uint8_t row = k / 3u;
-    uint8_t col = k % 3u;
+  for (k = 0; k < LED_PIX; k++) {
+    uint8_t row;
+    uint8_t col;
+    pix_rc(k, &row, &col);
     uint8_t lv = 0;
     uint8_t color = LED_OFF;
 
@@ -194,11 +234,10 @@ static void show_frame(uint8_t mode, uint8_t bright, uint8_t dim) {
       uint8_t ocol;
       uint16_t dist;
       uint16_t rad;
-      if (ripple_key > 8 || ripple_age == 0) {
+      if (ripple_key > LED_SEL || ripple_age == 0) {
         break;
       }
-      orow = ripple_key / 3u;
-      ocol = ripple_key % 3u;
+      pix_rc(ripple_key, &orow, &ocol);
       dist = (uint16_t)((row > orow ? row - orow : orow - row) +
                         (col > ocol ? col - ocol : ocol - col)) *
              256u;
@@ -231,7 +270,7 @@ static void show_frame(uint8_t mode, uint8_t bright, uint8_t dim) {
     case MODE_CROSS: {
       uint16_t t = anim_ms % 800u;
       uint8_t mix;
-      uint8_t is_plus = ((k & 1u) || k == 4u) ? 1u : 0u;
+      uint8_t is_plus = ((k & 1u) || k == 4u || k == LED_SEL) ? 1u : 0u;
       if (t < 280u) {
         mix = 0;
       } else if (t < 400u) {
@@ -291,10 +330,25 @@ static void led_mux_step(void) {
     show_frame(pr->light_mode, bright, dim);
   }
 
+  if (flood) {
+    phase = slice % LED_PWM_STEPS;
+    if (++slice >= LED_PWM_STEPS) {
+      slice = 0;
+    }
+    if (phase >= pix_duty[0] || pix_color[0] == LED_OFF || pix_color[0] > LED_BLUE) {
+      anodes_off();
+      drive_color(LED_OFF);
+      return;
+    }
+    drive_color(pix_color[0]);
+    anodes_all_on();
+    return;
+  }
+
   phase = slice % LED_PWM_STEPS;
   key = slice / LED_PWM_STEPS;
   slice++;
-  if (slice >= (uint8_t)(LED_KEYS * LED_PWM_STEPS)) {
+  if (slice >= (uint8_t)(LED_PIX * LED_PWM_STEPS)) {
     slice = 0;
   }
 
@@ -332,6 +386,9 @@ void led_mux_init(void) {
 }
 
 void led_mux_key_flash(uint8_t key) {
+  if (key > LED_SEL) {
+    return;
+  }
   flash_key = key;
   flash_ms = 120;
   idle_ms = 0;

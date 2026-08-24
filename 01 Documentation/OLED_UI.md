@@ -44,7 +44,7 @@ Main menu is Profiles / Keys / Setup. Setup is Lights / Screen / About. One sett
 
 Profiles: current list, then **+ New** if fewer than 4. Actions are Use / Rename / Reset, plus Delete when more than one profile remains (confirm like Reset).
 
-Lights → Mode: Off, Solid, React, Breathe, Wave, Ring, Ripple, Rain, Heart, Cross, Twinkle. Shows paint their own colors (they do not need per-key LED assignments). Bright caps show intensity. Ripple reacts to live key presses.
+Lights → Mode: Off, Solid, React, Breathe, Wave, Ring, Ripple, Rain, Heart, Cross, Twinkle, Full. Shows paint their own colors (they do not need per-key LED assignments). **Full** is all nine keys plus the selector LED, white, with no 1/9 scan; it stays on Bright (does not fall back to Dim). **React** flashes the pressed key (empty macros still flash). **Ripple** spreads from the pressed key, including SEL. The selector RGB follows animations; in Solid it matches key 7 (the key above it). Bright caps show intensity. Ripple reacts to live key presses.
 
 ## Timing
 

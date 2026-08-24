@@ -26,6 +26,7 @@ export const LIGHT_MODES = [
   "Heart",
   "Cross",
   "Twinkle",
+  "Full",
 ] as const;
 
 export type Action = { type: number; mods: number; code: number };
