@@ -21,7 +21,6 @@ typedef struct {
 
 void keypad_init(void);
 void keypad_tick(void);
-void keypad_set_wake_eat(uint8_t on);
 int keypad_pop(keypad_event_t *out);
 
 #endif

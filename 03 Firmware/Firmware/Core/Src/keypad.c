@@ -17,7 +17,6 @@ static uint16_t hold_ms[9];
 static uint8_t sel_raw, sel_stable, sel_db;
 static uint16_t sel_hold;
 static uint8_t sel_long_fired;
-static uint8_t wake_eat;
 
 static keypad_event_t q[QN];
 static uint8_t qh, qt, qn;
@@ -42,10 +41,6 @@ static uint8_t scan_row(uint8_t r) {
 
 void keypad_init(void) {
   cols_idle();
-}
-
-void keypad_set_wake_eat(uint8_t on) {
-  wake_eat = on;
 }
 
 void keypad_tick(void) {
@@ -77,14 +72,10 @@ void keypad_tick(void) {
       if (raw[i] && !stable[i]) {
         stable[i] = 1;
         hold_ms[i] = 0;
-        if (!wake_eat) {
-          push(KP_DOWN, i);
-        }
+        push(KP_DOWN, i);
       } else if (!raw[i] && stable[i]) {
         stable[i] = 0;
-        if (!wake_eat) {
-          push(KP_UP, i);
-        }
+        push(KP_UP, i);
       }
     }
     if (stable[i]) {
@@ -93,9 +84,7 @@ void keypad_tick(void) {
       }
       if (hold_ms[i] == REPEAT_DELAY_MS ||
           (hold_ms[i] > REPEAT_DELAY_MS && ((hold_ms[i] - REPEAT_DELAY_MS) % REPEAT_HZ_MS) == 0)) {
-        if (!wake_eat) {
-          push(KP_REPEAT, i);
-        }
+        push(KP_REPEAT, i);
       }
     }
   }
@@ -116,7 +105,7 @@ void keypad_tick(void) {
       sel_long_fired = 0;
     } else if (!sel_raw && sel_stable) {
       sel_stable = 0;
-      if (!wake_eat && !sel_long_fired) {
+      if (!sel_long_fired) {
         push(KP_SEL_SHORT, KEYPAD_NONE);
       }
     }
@@ -127,19 +116,7 @@ void keypad_tick(void) {
     }
     if (!sel_long_fired && sel_hold >= SEL_LONG_MS) {
       sel_long_fired = 1;
-      if (!wake_eat) {
-        push(KP_SEL_LONG, KEYPAD_NONE);
-      }
-    }
-  }
-
-  if (wake_eat) {
-    uint8_t any = sel_stable;
-    for (uint8_t i = 0; i < 9; i++) {
-      any = (uint8_t)(any | stable[i]);
-    }
-    if (!any) {
-      wake_eat = 0;
+      push(KP_SEL_LONG, KEYPAD_NONE);
     }
   }
 }

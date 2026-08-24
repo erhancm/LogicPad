@@ -394,7 +394,6 @@ int ui_is_sleeping(void) {
 
 void ui_wake(void) {
   ssd1306_DisplayOn(1);
-  keypad_set_wake_eat(1);
   go(SCR_HOME);
 }
 
@@ -817,7 +816,9 @@ static void on_event(keypad_event_t e) {
   }
   if (scr == SCR_SLEEPING) {
     ui_wake();
-    return;
+    if (!(e.type == KP_DOWN && e.key < 9)) {
+      return;
+    }
   }
   if (scr == SCR_SAVE_PROMPT) {
     if (e.type == KP_DOWN && e.key == 4) {

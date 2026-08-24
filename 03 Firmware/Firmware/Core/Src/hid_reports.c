@@ -14,10 +14,12 @@ static volatile uint8_t enter_boot;
 static uint8_t kbd[9];
 static uint8_t mouse[5];
 static uint8_t cons[3];
-static uint8_t key_evt_pending;
-static uint8_t key_evt_profile;
-static uint8_t key_evt_key;
-static uint8_t key_evt_down;
+#define KEY_EVT_Q 4
+static uint8_t key_evt_prof[KEY_EVT_Q];
+static uint8_t key_evt_key[KEY_EVT_Q];
+static uint8_t key_evt_down[KEY_EVT_Q];
+static uint8_t key_evt_qh, key_evt_qt, key_evt_qn;
+static uint8_t key_evt_report[64];
 
 static int hid_send(uint8_t *r, uint16_t n) {
   if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED || hUsbDeviceFS.pClassData == NULL) {
@@ -35,6 +37,9 @@ void hid_init(void) {
   kbd[0] = HID_RID_KBD;
   mouse[0] = HID_RID_MOUSE;
   cons[0] = HID_RID_CONS;
+  key_evt_qh = 0;
+  key_evt_qt = 0;
+  key_evt_qn = 0;
 }
 
 static void hid_go_boot(void) {
@@ -62,30 +67,41 @@ void hid_tick(void) {
   if (enter_boot) {
     hid_go_boot();
   }
-  if (!key_evt_pending) {
+  if (!key_evt_qn) {
     return;
   }
   if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED) {
-    key_evt_pending = 0;
+    key_evt_qn = 0;
+    key_evt_qh = 0;
+    key_evt_qt = 0;
     return;
   }
-  uint8_t r[64];
-  memset(r, 0, sizeof(r));
-  r[0] = HID_RID_VENDOR;
-  r[1] = CMD_KEY_EVENT;
-  r[2] = key_evt_profile;
-  r[3] = key_evt_key;
-  r[4] = key_evt_down;
-  if (hid_send(r, 64) == 0) {
-    key_evt_pending = 0;
+  memset(key_evt_report, 0, sizeof(key_evt_report));
+  key_evt_report[0] = HID_RID_VENDOR;
+  key_evt_report[1] = CMD_KEY_EVENT;
+  key_evt_report[2] = key_evt_prof[key_evt_qt];
+  key_evt_report[3] = key_evt_key[key_evt_qt];
+  key_evt_report[4] = key_evt_down[key_evt_qt];
+  if (hid_send(key_evt_report, 64) == 0) {
+    key_evt_qt = (uint8_t)((key_evt_qt + 1) % KEY_EVT_Q);
+    key_evt_qn--;
   }
 }
 
 void hid_notify_key(uint8_t profile, uint8_t key, uint8_t down) {
-  key_evt_profile = profile;
-  key_evt_key = key;
-  key_evt_down = down ? 1 : 0;
-  key_evt_pending = 1;
+  if (key_evt_qn >= KEY_EVT_Q) {
+    key_evt_qt = (uint8_t)((key_evt_qt + 1) % KEY_EVT_Q);
+    key_evt_qn--;
+  }
+  key_evt_prof[key_evt_qh] = profile;
+  key_evt_key[key_evt_qh] = key;
+  key_evt_down[key_evt_qh] = down ? 1 : 0;
+  key_evt_qh = (uint8_t)((key_evt_qh + 1) % KEY_EVT_Q);
+  key_evt_qn++;
+}
+
+int hid_key_evt_pending(void) {
+  return key_evt_qn != 0;
 }
 
 int hid_configured(void) {

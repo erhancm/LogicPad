@@ -131,13 +131,17 @@ int main(void)
       now = HAL_GetTick();
     }
     if (steps) {
-      macro_tick(steps);
       hid_tick();
+      macro_tick(steps);
     }
-    if (macro_busy()) {
+    if (hid_key_evt_pending() || macro_busy()) {
       /* Clock/OLED I2C is ~25 ms blocking; don't pace HID behind it. */
       if (hid_in_ready()) {
-        macro_tick(0);
+        if (hid_key_evt_pending()) {
+          hid_tick();
+        } else {
+          macro_tick(0);
+        }
       }
     } else {
       ui_draw_if_needed();
