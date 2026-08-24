@@ -221,6 +221,7 @@ select {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
+  overflow: visible;
 }
 
 .key {
@@ -231,6 +232,29 @@ select {
   align-items: flex-start;
   position: relative;
   overflow: hidden;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.key.dragging {
+  opacity: 0.35;
+  cursor: grabbing;
+}
+
+.key-ghost {
+  position: fixed;
+  pointer-events: none;
+  z-index: 30;
+  transform: translate(-50%, -60%);
+  min-width: 72px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #2a2618;
+  border: 1px solid #f0d060;
+  color: #f0d060;
+  font-weight: 600;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
 }
 
 .key .idx {

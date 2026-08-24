@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { api } from "./api";
@@ -123,14 +123,18 @@ function baseName(path: string): string {
   return i >= 0 ? p.slice(i + 1) : p;
 }
 
-function keyAtPoint(pos: { x: number; y: number }): number | null {
-  const x = pos.x / (window.devicePixelRatio || 1);
-  const y = pos.y / (window.devicePixelRatio || 1);
+function keyAtClient(x: number, y: number): number | null {
   const el = document.elementFromPoint(x, y);
-  const node = el?.closest("[data-key]") as HTMLElement | null;
+  const node = el?.closest(".grid [data-key]") as HTMLElement | null;
   if (!node) return null;
   const n = Number(node.dataset.key);
   return Number.isInteger(n) && n >= 0 && n < 9 ? n : null;
+}
+
+function keyAtPoint(pos: { x: number; y: number }): number | null {
+  const x = pos.x / (window.devicePixelRatio || 1);
+  const y = pos.y / (window.devicePixelRatio || 1);
+  return keyAtClient(x, y);
 }
 
 export default function App() {
@@ -146,11 +150,22 @@ export default function App() {
   const [flash, setFlash] = useState<{ phase: string; done: number; total: number } | null>(null);
   const [dropHover, setDropHover] = useState<number | null>(null);
   const [linked, setLinked] = useState(false);
+  const [dragKey, setDragKey] = useState<number | null>(null);
+  const [swapAnim, setSwapAnim] = useState<{
+    from: number;
+    to: number;
+    fromRect: DOMRect;
+    toRect: DOMRect;
+  } | null>(null);
   const fwInput = useRef<HTMLInputElement>(null);
   const snapRef = useRef(snap);
   const launchesRef = useRef(launches);
   const hdrBusy = useRef(false);
   const hdrWait = useRef<ProfileHdr | null>(null);
+  const skipClick = useRef(false);
+  const dragKeyRef = useRef<number | null>(null);
+  const dragOrigin = useRef<{ x: number; y: number; i: number } | null>(null);
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
   snapRef.current = snap;
   launchesRef.current = launches;
 
@@ -317,6 +332,49 @@ export default function App() {
     }
   }
 
+  useLayoutEffect(() => {
+    if (!swapAnim) return;
+    const a = document.querySelector(`.grid [data-key="${swapAnim.from}"]`) as HTMLElement | null;
+    const b = document.querySelector(`.grid [data-key="${swapAnim.to}"]`) as HTMLElement | null;
+    if (!a || !b) {
+      setSwapAnim(null);
+      return;
+    }
+    const dxA = swapAnim.toRect.left - swapAnim.fromRect.left;
+    const dyA = swapAnim.toRect.top - swapAnim.fromRect.top;
+    const dxB = swapAnim.fromRect.left - swapAnim.toRect.left;
+    const dyB = swapAnim.fromRect.top - swapAnim.toRect.top;
+    a.style.transition = "none";
+    b.style.transition = "none";
+    a.style.transform = `translate(${dxA}px, ${dyA}px)`;
+    b.style.transform = `translate(${dxB}px, ${dyB}px)`;
+    a.style.zIndex = "6";
+    b.style.zIndex = "6";
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        a.style.transition = "transform 0.32s cubic-bezier(0.22, 1, 0.36, 1)";
+        b.style.transition = "transform 0.32s cubic-bezier(0.22, 1, 0.36, 1)";
+        a.style.transform = "";
+        b.style.transform = "";
+      });
+    });
+    const done = (ev: TransitionEvent) => {
+      if (ev.propertyName !== "transform") return;
+      a.style.transition = "";
+      b.style.transition = "";
+      a.style.zIndex = "";
+      b.style.zIndex = "";
+      setSwapAnim(null);
+    };
+    a.addEventListener("transitionend", done);
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      a.removeEventListener("transitionend", done);
+    };
+  }, [swapAnim]);
+
   async function pushKey(next: PadKey) {
     const cur = snapRef.current;
     if (!cur) return;
@@ -328,6 +386,77 @@ export default function App() {
       await api.applyKey(next);
     } catch (e) {
       setErr(String(e));
+    }
+  }
+
+  async function swapKeys(from: number, to: number) {
+    const cur = snapRef.current;
+    if (!cur || from === to) return;
+    const p = cur.meta.active;
+    const fromEl = document.querySelector(`.grid [data-key="${from}"]`);
+    const toEl = document.querySelector(`.grid [data-key="${to}"]`);
+    const fromRect = fromEl?.getBoundingClientRect();
+    const toRect = toEl?.getBoundingClientRect();
+    const a = cur.keys[p]?.[from] ?? emptyKey(p, from);
+    const b = cur.keys[p]?.[to] ?? emptyKey(p, to);
+    const la = launchOf(launchesRef.current, p, from);
+    const lb = launchOf(launchesRef.current, p, to);
+    const aAtTo: PadKey = { ...a, profile: p, index: to };
+    const bAtFrom: PadKey = { ...b, profile: p, index: from };
+    const copy: Snapshot = structuredClone(cur);
+    copy.keys[p][from] = bAtFrom;
+    copy.keys[p][to] = aAtTo;
+    copy.meta.dirty = true;
+    setSnap(copy);
+    setSel(to);
+    if (fromRect && toRect) {
+      setSwapAnim({ from, to, fromRect, toRect });
+    }
+    await pushKey(bAtFrom);
+    await pushKey(aAtTo);
+    await saveLaunch({ profile: p, key: to, path: la.path, args: la.args });
+    await saveLaunch({ profile: p, key: from, path: lb.path, args: lb.args });
+    setStatus(`Swapped key ${from + 1} and key ${to + 1}`);
+  }
+
+  function onKeyPointerDown(i: number, e: PointerEvent<HTMLButtonElement>) {
+    if (e.button !== 0) return;
+    dragOrigin.current = { x: e.clientX, y: e.clientY, i };
+    dragKeyRef.current = null;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function onKeyPointerMove(e: PointerEvent<HTMLButtonElement>) {
+    const o = dragOrigin.current;
+    if (!o) return;
+    const dx = e.clientX - o.x;
+    const dy = e.clientY - o.y;
+    if (dragKeyRef.current == null) {
+      if (dx * dx + dy * dy < 64) return;
+      dragKeyRef.current = o.i;
+      setDragKey(o.i);
+      skipClick.current = true;
+    }
+    setDragPos({ x: e.clientX, y: e.clientY });
+    const over = keyAtClient(e.clientX, e.clientY);
+    setDropHover(over != null && over !== o.i ? over : null);
+  }
+
+  function endKeyDrag(e: PointerEvent<HTMLButtonElement>) {
+    const from = dragKeyRef.current;
+    dragOrigin.current = null;
+    dragKeyRef.current = null;
+    setDragPos(null);
+    setDragKey(null);
+    setDropHover(null);
+    if (from == null) return;
+    skipClick.current = true;
+    const to = keyAtClient(e.clientX, e.clientY);
+    if (to != null && to !== from) void swapKeys(from, to);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
     }
   }
 
@@ -661,8 +790,8 @@ export default function App() {
                 />
                 <MemBar label="Macros" used={mem.acts} max={mem.actMax} unit="slots" />
                 <p className="hint">
-                  Drop a program onto a key to launch it from this PC. Type-text memory is shared by
-                  all keys.
+                  Drop a program onto a key to launch it from this PC. Drag one key onto another to
+                  swap them. Type-text memory is shared by all keys.
                 </p>
               </div>
             ) : null}
@@ -678,6 +807,7 @@ export default function App() {
                   "key",
                   sel === i ? "on" : "",
                   dropHover === i ? "drop" : "",
+                  dragKey === i ? "dragging" : "",
                 ]
                   .filter(Boolean)
                   .join(" ");
@@ -686,7 +816,17 @@ export default function App() {
                     key={i}
                     data-key={i}
                     className={cls}
-                    onClick={() => setSel(i)}
+                    onClick={() => {
+                      if (skipClick.current) {
+                        skipClick.current = false;
+                        return;
+                      }
+                      setSel(i);
+                    }}
+                    onPointerDown={(e) => onKeyPointerDown(i, e)}
+                    onPointerMove={onKeyPointerMove}
+                    onPointerUp={endKeyDrag}
+                    onPointerCancel={endKeyDrag}
                   >
                     <span className="idx">{i + 1}</span>
                     <span className="lab">{k.label || "—"}</span>
@@ -703,6 +843,14 @@ export default function App() {
                 );
               })}
             </div>
+            {dragKey != null && dragPos ? (
+              <div
+                className="key-ghost"
+                style={{ left: dragPos.x, top: dragPos.y }}
+              >
+                {keys[dragKey]?.label || `Key ${dragKey + 1}`}
+              </div>
+            ) : null}
           </section>
 
           <section className="edit" data-key={sel}>
