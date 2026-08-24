@@ -71,8 +71,11 @@ static const char *const MONS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
 static const char *const COLORS[] = {"Off", "White", "Red", "Green", "Blue"};
-static const char *const MODES[] = {"Off",    "Solid", "React", "Breathe", "Wave",  "Ring",
-                                    "Ripple", "Rain",  "Heart", "Cross",   "Twinkle", "Full"};
+static const char *const MODES[] = {
+    "Off",        "Solid",     "React",      "Breathe",   "Wave",      "Ring",
+    "Ripple",     "Rain",      "Heart",      "Cross",     "Twinkle",   "Full White",
+    "Full Red",   "Full Green", "Full Blue"};
+_Static_assert((sizeof(MODES) / sizeof(MODES[0])) == LP_N_LIGHT_MODES, "mode names");
 static const char *const SLEEP_L[] = {"Never", "15s", "30s", "1m", "5m"};
 static const uint32_t SLEEP_MS[] = {0, 15000, 30000, 60000, 300000};
 static const uint32_t IDLE_MS[] = {15000, 30000, 60000};

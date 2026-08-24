@@ -52,7 +52,10 @@ enum {
   MODE_HEART,
   MODE_CROSS,
   MODE_TWINKLE,
-  MODE_FULL
+  MODE_FULL, /* white — keep index 11 for existing stores */
+  MODE_FULL_RED,
+  MODE_FULL_GREEN,
+  MODE_FULL_BLUE
 };
 
 static const uint8_t HUE[3] = {LED_RED, LED_GREEN, LED_BLUE};
@@ -169,12 +172,20 @@ static void show_frame(uint8_t mode, uint8_t bright, uint8_t dim) {
     return;
   }
 
-  /* All nine anodes on at once (white). PWM is global, not 1/9 scanned.
+  /* All anodes on at once. PWM is global, not 1/9 scanned.
    * Stays on Bright (ignores idle Dim) so this mode can actually sit at max. */
-  if (mode == MODE_FULL) {
+  if (mode >= MODE_FULL && mode <= MODE_FULL_BLUE) {
+    uint8_t color = LED_WHITE;
+    if (mode == MODE_FULL_RED) {
+      color = LED_RED;
+    } else if (mode == MODE_FULL_GREEN) {
+      color = LED_GREEN;
+    } else if (mode == MODE_FULL_BLUE) {
+      color = LED_BLUE;
+    }
     flood = 1;
     for (k = 0; k < LED_PIX; k++) {
-      set_pix(k, LED_WHITE, 255, bright);
+      set_pix(k, color, 255, bright);
     }
     return;
   }
