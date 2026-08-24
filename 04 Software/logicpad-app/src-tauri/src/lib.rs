@@ -2,7 +2,7 @@ mod hid;
 mod launch;
 
 use hid::{Pad, PadKey, ProfileHdr, Snapshot};
-use launch::{LaunchEntry, LaunchStore};
+use launch::{LaunchEntry, LaunchStore, ResolvedProgram};
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager, State};
 
@@ -156,6 +156,11 @@ fn pick_program() -> Option<String> {
     launch::pick_program()
 }
 
+#[tauri::command]
+fn resolve_program(path: String) -> ResolvedProgram {
+    launch::resolve_program(&path)
+}
+
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct KeyEvt {
@@ -187,7 +192,8 @@ pub fn run() {
             flash_firmware,
             get_launches,
             set_launch,
-            pick_program
+            pick_program,
+            resolve_program
         ])
         .setup(|app| {
             let dir = app.path().app_config_dir().unwrap_or_else(|_| std::env::temp_dir());

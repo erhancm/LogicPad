@@ -324,14 +324,26 @@ export default function App() {
     const p = cur.meta.active;
     setSel(index);
     setErr("");
+    let resolved = { path, args: "" };
+    try {
+      resolved = await api.resolveProgram(path);
+    } catch (e) {
+      setErr(String(e));
+      return;
+    }
     const prev = launchOf(launchesRef.current, p, index);
-    const next = { profile: p, key: index, path, args: prev.args };
+    const next = {
+      profile: p,
+      key: index,
+      path: resolved.path,
+      args: resolved.args.trim() ? resolved.args : prev.args,
+    };
     await saveLaunch(next);
     const k = cur.keys[p]?.[index] ?? emptyKey(p, index);
     if (!k.label.trim()) {
-      await pushKey({ ...k, label: stemName(path) });
+      await pushKey({ ...k, label: stemName(next.path) });
     }
-    setStatus(`Linked ${baseName(path)} to key ${index + 1}`);
+    setStatus(`Linked ${baseName(next.path)} to key ${index + 1}`);
   }
 
   async function pushHdr(next: ProfileHdr) {
@@ -700,7 +712,8 @@ export default function App() {
             </label>
             <h3>Launch program</h3>
             <p className="hint">
-              Drop an .exe or shortcut onto the key, or browse. Runs on this PC while LogicPad is open.
+              Drop a program or shortcut onto the key, or browse. Shortcuts resolve to the real
+              executable. Runs on this PC while LogicPad is open.
             </p>
             <label>
               Program
@@ -722,12 +735,7 @@ export default function App() {
                 onClick={async () => {
                   const path = await api.pickProgram();
                   if (!path) return;
-                  const next = { ...launch, path };
-                  setLaunches((list) => {
-                    const rest = list.filter((l) => !(l.profile === profile && l.key === sel));
-                    return [...rest, next];
-                  });
-                  await saveLaunch(next);
+                  await linkProgram(sel, path);
                 }}
               >
                 Browse…

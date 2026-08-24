@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { LaunchEntry, PadKey, ProfileHdr, Snapshot } from "./types";
+import type { LaunchEntry, PadKey, ProfileHdr, ResolvedProgram, Snapshot } from "./types";
 
 export const api = {
   connect: () => invoke<void>("connect"),
@@ -27,4 +27,5 @@ export const api = {
   getLaunches: () => invoke<LaunchEntry[]>("get_launches"),
   setLaunch: (entry: LaunchEntry) => invoke<void>("set_launch", { entry }),
   pickProgram: () => invoke<string | null>("pick_program"),
+  resolveProgram: (path: string) => invoke<ResolvedProgram>("resolve_program", { path }),
 };

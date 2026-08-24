@@ -74,6 +74,11 @@ export type LaunchEntry = {
   args: string;
 };
 
+export type ResolvedProgram = {
+  path: string;
+  args: string;
+};
+
 export const HID_LETTERS: { name: string; hid: number }[] = [
   ...Array.from({ length: 26 }, (_, i) => ({
     name: String.fromCharCode(65 + i),

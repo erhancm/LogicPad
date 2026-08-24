@@ -5,6 +5,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
 
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LaunchEntry {
@@ -89,8 +92,26 @@ impl LaunchStore {
         let Some(e) = g.get(&(profile, key)) else {
             return Ok(());
         };
-        spawn(&e.path, &e.args)
+        let resolved = resolve_program(&e.path);
+        let path = if Path::new(&resolved.path).exists() {
+            &resolved.path
+        } else {
+            &e.path
+        };
+        let args = if e.args.trim().is_empty() {
+            &resolved.args
+        } else {
+            &e.args
+        };
+        spawn(path, args)
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedProgram {
+    pub path: String,
+    pub args: String,
 }
 
 pub fn pick_program() -> Option<String> {
@@ -99,6 +120,91 @@ pub fn pick_program() -> Option<String> {
         .add_filter("All files", &["*"])
         .pick_file()
         .map(|p| p.to_string_lossy().into_owned())
+}
+
+pub fn resolve_program(path: &str) -> ResolvedProgram {
+    let path = path.trim();
+    if path.is_empty() {
+        return ResolvedProgram {
+            path: String::new(),
+            args: String::new(),
+        };
+    }
+    #[cfg(windows)]
+    if is_lnk(path) {
+        if let Some((target, args)) = resolve_lnk(Path::new(path)) {
+            return ResolvedProgram { path: target, args };
+        }
+    }
+    ResolvedProgram {
+        path: path.to_string(),
+        args: String::new(),
+    }
+}
+
+fn is_lnk(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("lnk"))
+}
+
+#[cfg(windows)]
+fn from_wide(buf: &[u16]) -> String {
+    let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    String::from_utf16_lossy(&buf[..len])
+}
+
+#[cfg(windows)]
+fn to_wide(path: &Path) -> Vec<u16> {
+    path.as_os_str().encode_wide().chain(Some(0)).collect()
+}
+
+/// Resolve a `.lnk` via `IShellLink` on a dedicated STA thread.
+#[cfg(windows)]
+fn resolve_lnk(path: &Path) -> Option<(String, String)> {
+    let path = path.to_path_buf();
+    std::thread::scope(|s| s.spawn(|| resolve_lnk_sta(&path)).join().ok().flatten())
+}
+
+#[cfg(windows)]
+fn resolve_lnk_sta(path: &Path) -> Option<(String, String)> {
+    use windows::core::{Interface, PCWSTR};
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
+        COINIT_APARTMENTTHREADED, IPersistFile, STGM_READ,
+    };
+    use windows::Win32::UI::Shell::{IShellLinkW, ShellLink, SLR_NO_UI};
+
+    let wide = to_wide(path);
+    unsafe {
+        let initialized = CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok();
+        let result = (|| {
+            let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).ok()?;
+            let persist: IPersistFile = link.cast().ok()?;
+            persist.Load(PCWSTR(wide.as_ptr()), STGM_READ).ok()?;
+            let _ = link.Resolve(HWND::default(), SLR_NO_UI.0 as u32);
+            let mut target = [0u16; 1024];
+            link.GetPath(&mut target, std::ptr::null_mut(), 0)
+                .ok()?;
+            let target = from_wide(&target);
+            if target.is_empty() {
+                return None;
+            }
+            let mut args = [0u16; 1024];
+            let args = if link.GetArguments(&mut args).is_ok() {
+                from_wide(&args)
+            } else {
+                String::new()
+            };
+            Some((target, args))
+        })();
+        if initialized {
+            CoUninitialize();
+        }
+        result
+    }
 }
 
 fn spawn(path: &str, args: &str) -> Result<(), String> {
