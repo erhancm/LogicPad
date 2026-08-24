@@ -8,5 +8,6 @@ enum { LED_OFF = 0, LED_WHITE, LED_RED, LED_GREEN, LED_BLUE };
 
 void led_mux_init(void);
 void led_mux_key_flash(uint8_t key); /* 0–8 pad keys, LED_SEL selector */
+void led_mux_preview(uint8_t use_dim);
 
 #endif

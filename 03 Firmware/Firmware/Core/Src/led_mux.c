@@ -56,8 +56,8 @@ enum {
 };
 
 static const uint8_t HUE[3] = {LED_RED, LED_GREEN, LED_BLUE};
-/* Clockwise from top-left; 0xFF = center. */
-static const uint8_t RING_POS[LED_PIX] = {0, 1, 2, 7, 0xFF, 3, 6, 5, 4, 5};
+/* Clockwise from top-left of the 3×3; 0xFF = center. SEL shares top-left with key 0. */
+static const uint8_t RING_POS[LED_PIX] = {0, 1, 2, 7, 0xFF, 3, 6, 5, 4, 0};
 /* Linear 0–16 → PWM duty; extra low-end steps so fades don’t stair-step. */
 static const uint8_t GAMMA[17] = {0, 1, 1, 2, 2, 3, 4, 5, 6, 8, 10, 12, 13, 14, 15, 16, 16};
 
@@ -82,11 +82,17 @@ static void anodes_all_on(void) {
 }
 
 static void pix_rc(uint8_t k, uint8_t *row, uint8_t *col) {
+  /* Physical board (KiCad +Y down, as used): SEL is top-left, above key 0.
+   *   [SEL]
+   *   [0] [1] [2]
+   *   [3] [4] [5]
+   *   [6] [7] [8]
+   */
   if (k == LED_SEL) {
-    *row = 3;
-    *col = 1;
+    *row = 0;
+    *col = 0;
   } else {
-    *row = k / 3u;
+    *row = (uint8_t)(k / 3u + 1u);
     *col = k % 3u;
   }
 }
@@ -177,7 +183,7 @@ static void show_frame(uint8_t mode, uint8_t bright, uint8_t dim) {
     for (k = 0; k < LED_PIX; k++) {
       uint8_t color;
       if (k == LED_SEL) {
-        color = storage_active()->keys[7].led; /* physically under bottom-center */
+        color = storage_active()->keys[0].led; /* physically above top-left key 0 */
       } else {
         color = storage_active()->keys[k].led;
       }
@@ -270,7 +276,7 @@ static void show_frame(uint8_t mode, uint8_t bright, uint8_t dim) {
     case MODE_CROSS: {
       uint16_t t = anim_ms % 800u;
       uint8_t mix;
-      uint8_t is_plus = ((k & 1u) || k == 4u || k == LED_SEL) ? 1u : 0u;
+      uint8_t is_plus = (k != LED_SEL && ((k & 1u) || k == 4u)) ? 1u : 0u;
       if (t < 280u) {
         mix = 0;
       } else if (t < 400u) {
@@ -285,11 +291,16 @@ static void show_frame(uint8_t mode, uint8_t bright, uint8_t dim) {
       break;
     }
     case MODE_TWINKLE: {
-      uint16_t per = (uint16_t)(720u + k * 53u);
-      uint16_t ph = (uint16_t)((anim_ms + (uint16_t)k * 181u) % per);
-      if (ph < 280u) {
-        color = HUE[k % 3u];
-        lv = tri255(ph, 280);
+      /* Each spark picks a new color (R/G/B/white). Keys stay out of phase. */
+      uint16_t per = (uint16_t)(640u + k * 71u);
+      uint16_t n = (uint16_t)(anim_ms + (uint16_t)k * 293u);
+      uint16_t spark = n / per;
+      uint16_t ph = n % per;
+      uint16_t on = (uint16_t)(180u + (uint16_t)(spark % 5u) * 30u);
+      if (ph < on) {
+        uint8_t pal = (uint8_t)((spark * 3u + k * 5u) % 4u);
+        color = (pal == 3u) ? (uint8_t)LED_WHITE : HUE[pal];
+        lv = tri255(ph, on);
       }
       break;
     }
@@ -394,6 +405,10 @@ void led_mux_key_flash(uint8_t key) {
   idle_ms = 0;
   ripple_key = key;
   ripple_age = 1;
+}
+
+void led_mux_preview(uint8_t use_dim) {
+  idle_ms = use_dim ? 2500 : 0;
 }
 
 void TIM2_IRQHandler(void) {

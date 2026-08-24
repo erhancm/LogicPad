@@ -149,6 +149,8 @@ export default function App() {
   const fwInput = useRef<HTMLInputElement>(null);
   const snapRef = useRef(snap);
   const launchesRef = useRef(launches);
+  const hdrBusy = useRef(false);
+  const hdrWait = useRef<ProfileHdr | null>(null);
   snapRef.current = snap;
   launchesRef.current = launches;
 
@@ -361,15 +363,29 @@ export default function App() {
   }
 
   async function pushHdr(next: ProfileHdr) {
-    if (!snap) return;
-    const copy: Snapshot = structuredClone(snap);
+    const cur = snapRef.current;
+    if (!cur) return;
+    const copy: Snapshot = structuredClone(cur);
     copy.profiles[next.index] = next;
     copy.meta.dirty = true;
     setSnap(copy);
+    hdrWait.current = next;
+    if (hdrBusy.current) return;
+    hdrBusy.current = true;
     try {
-      await api.applyProfile(next);
-    } catch (e) {
-      setErr(String(e));
+      while (hdrWait.current) {
+        const send = hdrWait.current;
+        hdrWait.current = null;
+        try {
+          await api.applyProfile(send);
+        } catch (e) {
+          setErr(String(e));
+          break;
+        }
+      }
+    } finally {
+      hdrBusy.current = false;
+      if (hdrWait.current) void pushHdr(hdrWait.current);
     }
   }
 
@@ -607,14 +623,8 @@ export default function App() {
                     min={0}
                     max={10}
                     value={hdr.bright}
-                    onChange={(e) => {
-                      const next = { ...hdr, bright: Number(e.target.value) };
-                      const copy = structuredClone(snap);
-                      copy.profiles[hdr.index] = next;
-                      setSnap(copy);
-                    }}
-                    onPointerUp={(e) =>
-                      pushHdr({ ...hdr, bright: Number((e.target as HTMLInputElement).value) })
+                    onChange={(e) =>
+                      void pushHdr({ ...hdr, bright: Number(e.target.value) })
                     }
                   />
                 </label>
@@ -625,14 +635,8 @@ export default function App() {
                     min={0}
                     max={10}
                     value={hdr.dim}
-                    onChange={(e) => {
-                      const next = { ...hdr, dim: Number(e.target.value) };
-                      const copy = structuredClone(snap);
-                      copy.profiles[hdr.index] = next;
-                      setSnap(copy);
-                    }}
-                    onPointerUp={(e) =>
-                      pushHdr({ ...hdr, dim: Number((e.target as HTMLInputElement).value) })
+                    onChange={(e) =>
+                      void pushHdr({ ...hdr, dim: Number(e.target.value) })
                     }
                   />
                 </label>

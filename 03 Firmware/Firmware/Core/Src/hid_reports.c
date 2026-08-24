@@ -1,6 +1,7 @@
 #include "hid_reports.h"
 #include "storage.h"
 #include "ui.h"
+#include "led_mux.h"
 #include "usbd_customhid.h"
 #include "usb_device.h"
 #include "lp_memmap.h"
@@ -215,13 +216,20 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
       break;
     }
     lp_profile_t *pr = &g_store.profiles[idx];
+    uint8_t old_bright = pr->bright;
+    uint8_t old_dim = pr->dim;
     memcpy(pr->name, &p[1], LP_NAME_LEN);
     pr->name[LP_NAME_LEN] = 0;
     pr->light_mode = (p[14] >= LP_N_LIGHT_MODES) ? 0 : p[14];
-    pr->bright = p[15];
-    pr->dim = p[16];
+    pr->bright = p[15] > 10 ? 10 : p[15];
+    pr->dim = p[16] > 10 ? 10 : p[16];
     g_store.dirty = 1;
     ui_mark_dirty();
+    if (pr->bright != old_bright) {
+      led_mux_preview(0);
+    } else if (pr->dim != old_dim) {
+      led_mux_preview(1);
+    }
     vendor_reply(cmd, p, 17);
     break;
   }
