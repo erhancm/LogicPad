@@ -75,6 +75,8 @@ export type LaunchEntry = {
   key: number;
   path: string;
   args: string;
+  /** Visual index in the combined action list (0 = first). */
+  slot?: number;
 };
 
 export type ResolvedProgram = {
@@ -82,30 +84,19 @@ export type ResolvedProgram = {
   args: string;
 };
 
-export const HID_LETTERS: { name: string; hid: number }[] = [
-  ...Array.from({ length: 26 }, (_, i) => ({
-    name: String.fromCharCode(65 + i),
-    hid: 0x04 + i,
-  })),
-  { name: "1", hid: 0x1e },
-  { name: "2", hid: 0x1f },
-  { name: "3", hid: 0x20 },
-  { name: "4", hid: 0x21 },
-  { name: "5", hid: 0x22 },
-  { name: "6", hid: 0x23 },
-  { name: "7", hid: 0x24 },
-  { name: "8", hid: 0x25 },
-  { name: "9", hid: 0x26 },
+export type HidKey = { name: string; hid: number };
+
+export const HID_ALPHA: HidKey[] = Array.from({ length: 26 }, (_, i) => ({
+  name: String.fromCharCode(65 + i),
+  hid: 0x04 + i,
+}));
+
+export const HID_DIGIT: HidKey[] = [
+  ...Array.from({ length: 9 }, (_, i) => ({ name: String(i + 1), hid: 0x1e + i })),
   { name: "0", hid: 0x27 },
-  { name: "Enter", hid: 0x28 },
-  { name: "Esc", hid: 0x29 },
-  { name: "Bksp", hid: 0x2a },
-  { name: "Tab", hid: 0x2b },
-  { name: "Space", hid: 0x2c },
-  { name: "Caps", hid: 0x39 },
-  { name: "Menu", hid: 0x65 },
-  { name: "PrtSc", hid: 0x46 },
-  { name: "Pause", hid: 0x48 },
+];
+
+export const HID_NAV: HidKey[] = [
   { name: "←", hid: 0x50 },
   { name: "→", hid: 0x4f },
   { name: "↑", hid: 0x52 },
@@ -116,10 +107,32 @@ export const HID_LETTERS: { name: string; hid: number }[] = [
   { name: "End", hid: 0x4d },
   { name: "PgUp", hid: 0x4b },
   { name: "PgDn", hid: 0x4e },
-  ...Array.from({ length: 12 }, (_, i) => ({
-    name: `F${i + 1}`,
-    hid: 0x3a + i,
-  })),
+];
+
+export const HID_FN: HidKey[] = Array.from({ length: 12 }, (_, i) => ({
+  name: `F${i + 1}`,
+  hid: 0x3a + i,
+}));
+
+export const HID_MORE: HidKey[] = [
+  { name: "Caps", hid: 0x39 },
+  { name: "Menu", hid: 0x65 },
+  { name: "PrtSc", hid: 0x46 },
+  { name: "Pause", hid: 0x48 },
+];
+
+/** Lookup table for labels (includes keys that also live under Sys). */
+export const HID_LETTERS: HidKey[] = [
+  ...HID_ALPHA,
+  ...HID_DIGIT,
+  { name: "Enter", hid: 0x28 },
+  { name: "Esc", hid: 0x29 },
+  { name: "Bksp", hid: 0x2a },
+  { name: "Tab", hid: 0x2b },
+  { name: "Space", hid: 0x2c },
+  ...HID_MORE,
+  ...HID_NAV,
+  ...HID_FN,
 ];
 
 /** Standalone taps (Win/Alt/Ctrl/Shift live in the modifier byte). */

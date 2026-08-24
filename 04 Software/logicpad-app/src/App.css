@@ -57,6 +57,15 @@ h3 {
   color: #8aa0b8;
 }
 
+h4 {
+  margin: 12px 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #6b7380;
+  font-weight: 600;
+}
+
 .sub {
   margin: 4px 0 0;
   color: #8b8f9a;
@@ -172,9 +181,10 @@ button.on,
 
 main {
   display: grid;
-  grid-template-columns: 200px 1fr 320px;
+  grid-template-columns: 200px 1fr 360px;
   gap: 22px;
   margin-top: 20px;
+  align-items: start;
 }
 
 aside,
@@ -184,6 +194,11 @@ aside,
   border: 1px solid #2a2e38;
   border-radius: 10px;
   padding: 14px;
+}
+
+.edit {
+  max-height: calc(100vh - 110px);
+  overflow-y: auto;
 }
 
 .profiles,
@@ -278,13 +293,35 @@ select {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  padding: 6px 0;
+  padding: 6px 8px;
+  margin: 0 -8px;
   border-bottom: 1px solid #2a2e38;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.acts li:hover {
+  background: #1c212c;
+}
+
+.acts li.on {
+  background: #2a2618;
+  border-bottom-color: transparent;
 }
 
 .act-name {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.act-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .act-tools {
@@ -318,6 +355,49 @@ select {
 
 .acts .empty {
   color: #6b7380;
+  cursor: default;
+}
+
+.acts .empty:hover {
+  background: transparent;
+}
+
+.step-edit {
+  margin: 0 0 12px;
+  padding: 8px 10px 10px;
+  background: #12141a;
+  border: 1px solid #2a2e38;
+  border-radius: 8px;
+}
+
+.step-edit .add {
+  margin-top: 0;
+}
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 8px;
+}
+
+.pal-row {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 8px;
+  align-items: start;
+}
+
+.pal-row > span {
+  padding-top: 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6b7380;
+}
+
+.pal-row .add {
+  margin-top: 0;
 }
 
 .chk {

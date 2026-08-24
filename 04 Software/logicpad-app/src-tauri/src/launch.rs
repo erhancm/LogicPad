@@ -15,6 +15,8 @@ pub struct LaunchEntry {
     pub key: u8,
     pub path: String,
     pub args: String,
+    #[serde(default)]
+    pub slot: u8,
 }
 
 #[derive(Default, Serialize, Deserialize)]

@@ -131,12 +131,10 @@ export function hasTextAct(acts: Action[]): boolean {
 export function withTextStep(key: PadKey, poolOn: boolean): PadKey {
   if (!poolOn) return key;
   const has = hasTextAct(key.acts);
-  if (key.text) {
-    if (has || key.acts.length >= ACT_SLOTS) return key;
+  if (key.text && !has && key.acts.length < ACT_SLOTS) {
     return { ...key, acts: [...key.acts, { type: ACT.text, mods: 0, code: 0 }] };
   }
-  if (!has) return key;
-  return { ...key, acts: key.acts.filter((a) => a.type !== ACT.text) };
+  return key;
 }
 
 export function applyTypedText(key: PadKey, raw: string, poolEnabled: boolean): PadKey {

@@ -1,16 +1,22 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { api } from "./api";
 import {
   ACT,
+  HID_ALPHA,
+  HID_DIGIT,
+  HID_FN,
   HID_LETTERS,
+  HID_MORE,
+  HID_NAV,
   HID_SPECIALS,
   LEDS,
   LIGHT_MODES,
   MEDIA,
   SEND,
   type Action,
+  type HidKey,
   type LaunchEntry,
   type PadKey,
   type ProfileHdr,
@@ -76,13 +82,49 @@ function emptyKey(profile: number, index: number): PadKey {
 }
 
 function launchOf(list: LaunchEntry[], profile: number, key: number): LaunchEntry {
+  const found = list.find((l) => l.profile === profile && l.key === key);
+  return found
+    ? { slot: 0, ...found }
+    : { profile, key, path: "", args: "", slot: 0 };
+}
+
+type Step = { kind: "launch" } | { kind: "act"; i: number; a: Action };
+type ActPick = "launch" | number | null;
+
+function clampSlot(slot: number, nActs: number): number {
+  return Math.max(0, Math.min(nActs, slot));
+}
+
+function buildSteps(acts: Action[], showLaunch: boolean, slot: number): Step[] {
+  const pad: Step[] = acts.map((a, i) => ({ kind: "act", i, a }));
+  if (!showLaunch) return pad;
+  const at = clampSlot(slot, pad.length);
+  return [...pad.slice(0, at), { kind: "launch" }, ...pad.slice(at)];
+}
+
+function HidPad({
+  keys,
+  selected,
+  onPick,
+  className,
+}: {
+  keys: HidKey[];
+  selected: number;
+  onPick: (hid: number) => void;
+  className?: string;
+}) {
   return (
-    list.find((l) => l.profile === profile && l.key === key) ?? {
-      profile,
-      key,
-      path: "",
-      args: "",
-    }
+    <div className={className ? `letters ${className}` : "letters"}>
+      {keys.map((h) => (
+        <button
+          key={`${h.name}-${h.hid}`}
+          className={selected === h.hid ? "on" : ""}
+          onClick={() => onPick(h.hid)}
+        >
+          {h.name}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -166,6 +208,8 @@ export default function App() {
   const dragKeyRef = useRef<number | null>(null);
   const dragOrigin = useRef<{ x: number; y: number; i: number } | null>(null);
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
+  const [launchDraft, setLaunchDraft] = useState<LaunchEntry | null>(null);
+  const [actPick, setActPick] = useState<ActPick>(null);
   snapRef.current = snap;
   launchesRef.current = launches;
 
@@ -174,7 +218,12 @@ export default function App() {
   const keys = snap?.keys[profile] ?? [];
   const poolOn = snap?.textPool?.enabled ?? false;
   const key = withTextStep(keys[sel] ?? emptyKey(profile, sel), poolOn);
-  const launch = launchOf(launches, profile, sel);
+  const storedLaunch = launchOf(launches, profile, sel);
+  const showLaunch = Boolean(storedLaunch.path) || launchDraft != null;
+  const launch: LaunchEntry = storedLaunch.path
+    ? storedLaunch
+    : (launchDraft ?? storedLaunch);
+  const steps = buildSteps(key.acts, showLaunch, launch.slot ?? 0);
 
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(true);
@@ -220,6 +269,11 @@ export default function App() {
     // Connect once on launch; retry with the button if the pad was unplugged.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    setLaunchDraft(null);
+    setActPick(null);
+  }, [profile, sel]);
 
   useEffect(() => {
     if (!linked || busy || flash) return;
@@ -414,8 +468,8 @@ export default function App() {
     }
     await pushKey(bAtFrom);
     await pushKey(aAtTo);
-    await saveLaunch({ profile: p, key: to, path: la.path, args: la.args });
-    await saveLaunch({ profile: p, key: from, path: lb.path, args: lb.args });
+    await saveLaunch({ ...la, profile: p, key: to });
+    await saveLaunch({ ...lb, profile: p, key: from });
     setStatus(`Swapped key ${from + 1} and key ${to + 1}`);
   }
 
@@ -477,14 +531,17 @@ export default function App() {
       return;
     }
     const prev = launchOf(launchesRef.current, p, index);
-    const next = {
+    const k = cur.keys[p]?.[index] ?? emptyKey(p, index);
+    const next: LaunchEntry = {
       profile: p,
       key: index,
       path: resolved.path,
       args: resolved.args.trim() ? resolved.args : prev.args,
+      slot: prev.path ? (prev.slot ?? 0) : k.acts.length,
     };
+    setLaunchDraft(null);
     await saveLaunch(next);
-    const k = cur.keys[p]?.[index] ?? emptyKey(p, index);
+    setActPick("launch");
     if (!k.label.trim()) {
       await pushKey({ ...k, label: stemName(next.path) });
     }
@@ -565,7 +622,6 @@ export default function App() {
     });
   }
 
-  const letterGrid = useMemo(() => HID_LETTERS, []);
   const flashPct = flash && flash.total ? Math.round((flash.done / flash.total) * 100) : 0;
   const mem = snap ? memoryOf(snap) : null;
   const typeValue = typedDisplay(key);
@@ -582,8 +638,100 @@ export default function App() {
 
   function addAct(a: Action) {
     if (key.acts.length >= ACT_SLOTS) return;
-    void pushKey({ ...key, acts: [...key.acts, a] });
+    const acts = [...key.acts, a];
+    setActPick(acts.length - 1);
+    void pushKey({ ...key, acts });
   }
+
+  function patchAct(i: number, next: Action) {
+    const acts = key.acts.slice();
+    acts[i] = next;
+    void pushKey({ ...key, acts });
+  }
+
+  function addLaunch() {
+    if (showLaunch) {
+      setActPick("launch");
+      return;
+    }
+    setLaunchDraft({
+      profile,
+      key: sel,
+      path: "",
+      args: "",
+      slot: key.acts.length,
+    });
+    setActPick("launch");
+  }
+
+  function clearLaunch() {
+    setLaunchDraft(null);
+    setActPick(null);
+    void saveLaunch({ profile, key: sel, path: "", args: "", slot: 0 });
+  }
+
+  function writeLaunch(next: LaunchEntry) {
+    const slot = clampSlot(next.slot ?? 0, key.acts.length);
+    const entry = { ...next, slot };
+    if (!entry.path.trim()) {
+      setLaunchDraft(entry);
+      setLaunches((list) => list.filter((l) => !(l.profile === profile && l.key === sel)));
+      return;
+    }
+    setLaunchDraft(null);
+    setLaunches((list) => {
+      const rest = list.filter((l) => !(l.profile === entry.profile && l.key === entry.key));
+      return [...rest, entry];
+    });
+  }
+
+  function persistLaunch(next: LaunchEntry = launch) {
+    const entry = { ...next, slot: clampSlot(next.slot ?? 0, key.acts.length) };
+    writeLaunch(entry);
+    void saveLaunch(entry);
+  }
+
+  function moveStep(idx: number, dir: -1 | 1) {
+    const j = idx + dir;
+    if (j < 0 || j >= steps.length) return;
+    const a = steps[idx];
+    const b = steps[j];
+    if (a.kind === "launch" || b.kind === "launch") {
+      const slot = clampSlot(launch.slot ?? 0, key.acts.length);
+      const nextSlot = a.kind === "launch" ? slot + dir : slot - dir;
+      const entry = { ...launch, slot: clampSlot(nextSlot, key.acts.length) };
+      writeLaunch(entry);
+      if (entry.path.trim()) void saveLaunch(entry);
+      setActPick("launch");
+      return;
+    }
+    setActPick(dir === 1 ? a.i + 1 : a.i - 1);
+    void pushKey({ ...key, acts: moveAct(key.acts, a.i, dir) });
+  }
+
+  function removeStep(step: Step) {
+    if (step.kind === "launch") {
+      clearLaunch();
+      return;
+    }
+    const acts = key.acts.filter((_, j) => j !== step.i);
+    const dropText = step.a.type === ACT.text && !hasTextAct(acts);
+    if (showLaunch && step.i < (launch.slot ?? 0)) {
+      const entry = { ...launch, slot: clampSlot((launch.slot ?? 0) - 1, acts.length) };
+      writeLaunch(entry);
+      if (entry.path.trim()) void saveLaunch(entry);
+    }
+    setActPick(null);
+    void pushKey({ ...key, acts, text: dropText ? "" : key.text });
+  }
+
+  function pickHid(hid: number) {
+    setHidPick(hid);
+    addAct({ type: ACT.key, mods, code: hid | (sendMode << 8) });
+  }
+
+  const pickedAct = typeof actPick === "number" ? key.acts[actPick] : undefined;
+  const full = key.acts.length >= ACT_SLOTS;
 
   return (
     <div className="app">
@@ -790,7 +938,7 @@ export default function App() {
                 />
                 <MemBar label="Macros" used={mem.acts} max={mem.actMax} unit="slots" />
                 <p className="hint">
-                  Drop a program onto a key to launch it from this PC. Drag one key onto another to
+                  Drop a program onto a key to add a launch step, or drag one key onto another to
                   swap them. Type-text memory is shared by all keys.
                 </p>
               </div>
@@ -882,122 +1030,230 @@ export default function App() {
                 ))}
               </select>
             </label>
-            <h3>Launch program</h3>
-            <p className="hint">
-              Drop a program or shortcut onto the key, or browse. Shortcuts resolve to the real
-              executable. Closing this window leaves LogicPad in the tray so launch keys still work.
-            </p>
-            <label>
-              Program
-              <input
-                value={launch.path}
-                placeholder="C:\Path\app.exe"
-                onChange={(e) => {
-                  const next = { ...launch, path: e.target.value };
-                  setLaunches((list) => {
-                    const rest = list.filter((l) => !(l.profile === profile && l.key === sel));
-                    return next.path ? [...rest, next] : rest;
-                  });
-                }}
-                onBlur={() => void saveLaunch(launch)}
-              />
-            </label>
-            <div className="add">
-              <button
-                onClick={async () => {
-                  const path = await api.pickProgram();
-                  if (!path) return;
-                  await linkProgram(sel, path);
-                }}
-              >
-                Browse…
-              </button>
-              <button
-                disabled={!launch.path}
-                onClick={() => void saveLaunch({ ...launch, path: "", args: "" })}
-              >
-                Clear
-              </button>
-            </div>
-            <label>
-              Arguments
-              <input
-                value={launch.args}
-                placeholder="optional"
-                onChange={(e) => {
-                  const next = { ...launch, args: e.target.value };
-                  setLaunches((list) => {
-                    const rest = list.filter((l) => !(l.profile === profile && l.key === sel));
-                    return [...rest, next];
-                  });
-                }}
-                onBlur={() => void saveLaunch(launch)}
-              />
-            </label>
-            {launch.path ? <p className="hint">Opens {baseName(launch.path)}</p> : null}
             <h3>Actions</h3>
             <p className="hint">
-              Runs top to bottom. Type text is one step — put Enter or a shortcut after it.
+              Pad steps run top to bottom on the device. Launch opens on this PC when you press the
+              key — keep LogicPad running (tray is enough).
             </p>
             <ul className="acts">
-              {key.acts.length === 0 ? <li className="empty">No actions</li> : null}
-              {key.acts.map((a, i) => (
-                <li key={`${a.type}-${i}-${a.code}`}>
-                  <span className="act-name">{fmtAct(a)}</span>
-                  <span className="act-tools">
-                    <button
-                      disabled={i === 0}
-                      onClick={() => pushKey({ ...key, acts: moveAct(key.acts, i, -1) })}
-                    >
-                      ↑
-                    </button>
-                    <button
-                      disabled={i === key.acts.length - 1}
-                      onClick={() => pushKey({ ...key, acts: moveAct(key.acts, i, 1) })}
-                    >
-                      ↓
-                    </button>
-                    <button
-                      onClick={() => {
-                        const acts = key.acts.filter((_, j) => j !== i);
-                        const dropText = a.type === ACT.text && !hasTextAct(acts);
-                        void pushKey({ ...key, acts, text: dropText ? "" : key.text });
-                      }}
-                    >
-                      ×
-                    </button>
-                  </span>
-                </li>
-              ))}
+              {steps.length === 0 ? <li className="empty">No actions</li> : null}
+              {steps.map((step, i) => {
+                const selected =
+                  step.kind === "launch" ? actPick === "launch" : actPick === step.i;
+                const label =
+                  step.kind === "launch"
+                    ? launch.path
+                      ? `Launch ${baseName(launch.path)}`
+                      : "Launch program"
+                    : fmtAct(step.a);
+                return (
+                  <li
+                    key={step.kind === "launch" ? "launch" : `act-${step.i}-${step.a.type}-${step.a.code}`}
+                    className={selected ? "on" : ""}
+                    onClick={() => setActPick(step.kind === "launch" ? "launch" : step.i)}
+                  >
+                    <span className="act-name" title={step.kind === "launch" ? launch.path : label}>
+                      {step.kind === "launch" ? <span className="run">pc</span> : null}
+                      <span className="act-label">{label}</span>
+                    </span>
+                    <span className="act-tools">
+                      <button
+                        disabled={i === 0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          moveStep(i, -1);
+                        }}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        disabled={i === steps.length - 1}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          moveStep(i, 1);
+                        }}
+                      >
+                        ↓
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeStep(step);
+                        }}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
-            <h3>Type text</h3>
-            <p className={`hint ${typeOver ? "hot" : ""}`}>{typeHint}</p>
-            <textarea
-              className={typeOver ? "over" : ""}
-              rows={4}
-              spellCheck={false}
-              placeholder="Typed as its own step in the list above"
-              value={typeValue}
-              onChange={(e) => {
-                if (!snap) return;
-                const next = applyTypedText(key, e.target.value, poolOn);
-                const copy = structuredClone(snap);
-                copy.keys[profile][sel] = next;
-                copy.meta.dirty = true;
-                setSnap(copy);
-                setErr("");
-              }}
-              onBlur={() => {
-                if (typeOver) return;
-                const k = snapRef.current?.keys[profile]?.[sel];
-                if (k) void pushKey(withTextStep(k, poolOn));
-              }}
-            />
-            <p className="mem-lab tight">
-              <span>
-                This key {poolOn ? `${typeBytes} B` : `${key.acts.length} / ${ACT_SLOTS} slots`}
-              </span>
-              {poolOn ? <span>{typeRoom} B free for this key</span> : null}
+            {actPick === "launch" ? (
+              <div className="step-edit">
+                <p className="hint">
+                  Drop a program or shortcut onto the key, or browse. Shortcuts resolve to the real
+                  executable.
+                </p>
+                <label>
+                  Program
+                  <input
+                    value={launch.path}
+                    placeholder="C:\Path\app.exe"
+                    onChange={(e) => writeLaunch({ ...launch, path: e.target.value })}
+                    onBlur={(e) => persistLaunch({ ...launch, path: e.target.value })}
+                  />
+                </label>
+                <div className="add">
+                  <button
+                    onClick={async () => {
+                      const path = await api.pickProgram();
+                      if (!path) return;
+                      await linkProgram(sel, path);
+                    }}
+                  >
+                    Browse…
+                  </button>
+                </div>
+                <label>
+                  Arguments
+                  <input
+                    value={launch.args}
+                    placeholder="optional"
+                    onChange={(e) => writeLaunch({ ...launch, args: e.target.value })}
+                    onBlur={(e) => persistLaunch({ ...launch, args: e.target.value })}
+                  />
+                </label>
+              </div>
+            ) : null}
+            {pickedAct?.type === ACT.text ? (
+              <div className="step-edit">
+                <p className={`hint ${typeOver ? "hot" : ""}`}>{typeHint}</p>
+                <textarea
+                  className={typeOver ? "over" : ""}
+                  rows={4}
+                  spellCheck={false}
+                  placeholder="Typed as its own step in the list"
+                  value={typeValue}
+                  onChange={(e) => {
+                    if (!snap) return;
+                    const next = applyTypedText(key, e.target.value, poolOn);
+                    const copy = structuredClone(snap);
+                    copy.keys[profile][sel] = next;
+                    copy.meta.dirty = true;
+                    setSnap(copy);
+                    setErr("");
+                  }}
+                  onBlur={() => {
+                    if (typeOver) return;
+                    const k = snapRef.current?.keys[profile]?.[sel];
+                    if (k) void pushKey(withTextStep(k, poolOn));
+                  }}
+                />
+                <p className="mem-lab tight">
+                  <span>
+                    This key {poolOn ? `${typeBytes} B` : `${key.acts.length} / ${ACT_SLOTS} slots`}
+                  </span>
+                  {poolOn ? <span>{typeRoom} B free for this key</span> : null}
+                </p>
+              </div>
+            ) : null}
+            {pickedAct?.type === ACT.delay ? (
+              <div className="step-edit">
+                <label>
+                  Wait (ms)
+                  <input
+                    type="number"
+                    min={0}
+                    max={65535}
+                    value={pickedAct.code}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (!Number.isFinite(n)) return;
+                      patchAct(actPick as number, {
+                        ...pickedAct,
+                        code: Math.max(0, Math.min(65535, Math.round(n))),
+                      });
+                    }}
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            <h3>Add</h3>
+            <div className="palette">
+              <div className="pal-row">
+                <span>Program</span>
+                <div className="add">
+                  <button disabled={showLaunch} onClick={() => addLaunch()}>
+                    Launch
+                  </button>
+                </div>
+              </div>
+              <div className="pal-row">
+                <span>Text</span>
+                <div className="add">
+                  <button
+                    disabled={full || (poolOn && hasTextAct(key.acts))}
+                    onClick={() => addAct({ type: ACT.text, mods: 0, code: 0 })}
+                  >
+                    Type text
+                  </button>
+                </div>
+              </div>
+              <div className="pal-row">
+                <span>Wait</span>
+                <div className="add">
+                  <button disabled={full} onClick={() => addAct({ type: ACT.delay, mods: 0, code: 50 })}>
+                    50 ms
+                  </button>
+                  <button disabled={full} onClick={() => addAct({ type: ACT.delay, mods: 0, code: 200 })}>
+                    200 ms
+                  </button>
+                </div>
+              </div>
+              <div className="pal-row">
+                <span>Mouse</span>
+                <div className="add">
+                  <button
+                    disabled={full}
+                    onClick={() => addAct({ type: ACT.mouseBtn, mods: 1, code: SEND.tap << 8 })}
+                  >
+                    Click
+                  </button>
+                  <button
+                    disabled={full}
+                    onClick={() => addAct({ type: ACT.mouseMove, mods: 0, code: 10 })}
+                  >
+                    Move
+                  </button>
+                  <button
+                    disabled={full}
+                    onClick={() => addAct({ type: ACT.wheel, mods: 0, code: 0xff })}
+                  >
+                    Wheel
+                  </button>
+                </div>
+              </div>
+              <div className="pal-row">
+                <span>Media</span>
+                <div className="add">
+                  {MEDIA.map((m) => (
+                    <button
+                      key={m.usage}
+                      disabled={full}
+                      onClick={() => addAct({ type: ACT.consumer, mods: SEND.tap, code: m.usage })}
+                    >
+                      {m.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <h3>Keyboard</h3>
+            <p className="hint">
+              Check Ctrl / Shift / Alt / Win, then click a key. Sys keys can also be added on their
+              own (Alt + Tab).
             </p>
             <div className="send">
               {(
@@ -1013,26 +1269,6 @@ export default function App() {
                   onClick={() => setSendMode(mode)}
                 >
                   {name}
-                </button>
-              ))}
-            </div>
-            <p className="hint">
-              Win, Alt, Tab are keys you add. Hold them as modifiers with the checkboxes, then click
-              another key (Alt + Tab).
-            </p>
-            <div className="letters specials">
-              {HID_SPECIALS.map((h) => (
-                <button
-                  key={h.name}
-                  onClick={() =>
-                    addAct({
-                      type: ACT.key,
-                      mods: mods | h.mods,
-                      code: h.hid | (sendMode << 8),
-                    })
-                  }
-                >
-                  {h.name}
                 </button>
               ))}
             </div>
@@ -1055,55 +1291,33 @@ export default function App() {
                 </label>
               ))}
             </div>
-            <div className="letters">
-              {letterGrid.map((h) => (
+            <h4>Sys</h4>
+            <div className="letters specials">
+              {HID_SPECIALS.map((h) => (
                 <button
-                  key={h.hid}
-                  className={hidPick === h.hid ? "on" : ""}
-                  onClick={() => {
-                    setHidPick(h.hid);
-                    addAct({ type: ACT.key, mods, code: h.hid | (sendMode << 8) });
-                  }}
+                  key={h.name}
+                  onClick={() =>
+                    addAct({
+                      type: ACT.key,
+                      mods: mods | h.mods,
+                      code: h.hid | (sendMode << 8),
+                    })
+                  }
                 >
                   {h.name}
                 </button>
               ))}
             </div>
-            <div className="add">
-              <button
-                disabled={key.acts.length >= ACT_SLOTS || (poolOn && hasTextAct(key.acts))}
-                onClick={() => addAct({ type: ACT.text, mods: 0, code: 0 })}
-              >
-                Add text
-              </button>
-              <button
-                disabled={key.acts.length >= ACT_SLOTS}
-                onClick={() => addAct({ type: ACT.delay, mods: 0, code: 50 })}
-              >
-                Wait 50ms
-              </button>
-              <button
-                disabled={key.acts.length >= ACT_SLOTS}
-                onClick={() => addAct({ type: ACT.delay, mods: 0, code: 200 })}
-              >
-                Wait 200ms
-              </button>
-              <button
-                disabled={key.acts.length >= ACT_SLOTS}
-                onClick={() => addAct({ type: ACT.mouseBtn, mods: 1, code: SEND.tap << 8 })}
-              >
-                Click
-              </button>
-              {MEDIA.map((m) => (
-                <button
-                  key={m.usage}
-                  disabled={key.acts.length >= ACT_SLOTS}
-                  onClick={() => addAct({ type: ACT.consumer, mods: SEND.tap, code: m.usage })}
-                >
-                  {m.name}
-                </button>
-              ))}
-            </div>
+            <h4>Letters</h4>
+            <HidPad keys={HID_ALPHA} selected={hidPick} onPick={pickHid} />
+            <h4>Numbers</h4>
+            <HidPad keys={HID_DIGIT} selected={hidPick} onPick={pickHid} />
+            <h4>Navigation</h4>
+            <HidPad keys={HID_NAV} selected={hidPick} onPick={pickHid} />
+            <h4>Function</h4>
+            <HidPad keys={HID_FN} selected={hidPick} onPick={pickHid} />
+            <h4>Other</h4>
+            <HidPad keys={HID_MORE} selected={hidPick} onPick={pickHid} />
           </section>
         </main>
       )}
