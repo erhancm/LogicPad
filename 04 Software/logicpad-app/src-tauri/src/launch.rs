@@ -61,6 +61,13 @@ impl LaunchStore {
             .unwrap_or_default()
     }
 
+    pub fn has_launches(&self) -> bool {
+        self.map
+            .lock()
+            .map(|g| g.values().any(|e| !e.path.trim().is_empty()))
+            .unwrap_or(false)
+    }
+
     pub fn set(&self, entry: LaunchEntry) -> Result<(), String> {
         let mut g = self.map.lock().map_err(|_| "lock".to_string())?;
         if entry.path.trim().is_empty() {

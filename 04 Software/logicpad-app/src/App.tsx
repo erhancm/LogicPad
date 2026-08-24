@@ -713,7 +713,7 @@ export default function App() {
             <h3>Launch program</h3>
             <p className="hint">
               Drop a program or shortcut onto the key, or browse. Shortcuts resolve to the real
-              executable. Runs on this PC while LogicPad is open.
+              executable. Closing this window leaves LogicPad in the tray so launch keys still work.
             </p>
             <label>
               Program
