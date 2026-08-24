@@ -106,6 +106,10 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.bar button:disabled:hover {
+  border-color: #3a4150;
+}
+
 button.on,
 .profiles button.on,
 .letters button.on,

@@ -145,6 +145,7 @@ export default function App() {
   const [launches, setLaunches] = useState<LaunchEntry[]>([]);
   const [flash, setFlash] = useState<{ phase: string; done: number; total: number } | null>(null);
   const [dropHover, setDropHover] = useState<number | null>(null);
+  const [linked, setLinked] = useState(false);
   const fwInput = useRef<HTMLInputElement>(null);
   const snapRef = useRef(snap);
   const launchesRef = useRef(launches);
@@ -192,6 +193,7 @@ export default function App() {
         /* old firmware / app without SET_TIME */
       }
       setSnap(await api.loadPad());
+      setLinked(true);
     });
   }
 
@@ -201,6 +203,18 @@ export default function App() {
     // Connect once on launch; retry with the button if the pad was unplugged.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!linked || busy || flash) return;
+    const id = window.setInterval(() => {
+      void api.ping().catch((e) => {
+        if (String(e).toLowerCase().includes("busy")) return;
+        setLinked(false);
+        setStatus("Pad disconnected");
+      });
+    }, 2000);
+    return () => window.clearInterval(id);
+  }, [linked, busy, flash]);
 
   useEffect(() => {
     let gone = false;
@@ -390,6 +404,7 @@ export default function App() {
         const buf = new Uint8Array(await file.arrayBuffer());
         await api.flashFirmware(Array.from(buf));
         setStatus("Firmware written. Reconnecting…");
+        setLinked(false);
         setSnap(null);
         await api.connect();
         try {
@@ -398,6 +413,7 @@ export default function App() {
           /* old firmware / app without SET_TIME */
         }
         setSnap(await api.loadPad());
+        setLinked(true);
       } finally {
         setFlash(null);
       }
@@ -432,8 +448,12 @@ export default function App() {
           <p className="sub">{status}</p>
         </div>
         <div className="bar">
-          <button disabled={busy} onClick={onConnect}>
-            Connect
+          <button
+            disabled={busy || linked}
+            title={linked ? "Already connected" : "Connect to LogicPad"}
+            onClick={onConnect}
+          >
+            {linked ? "Connected" : "Connect"}
           </button>
           <button
             disabled={busy || !snap}
