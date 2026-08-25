@@ -64,17 +64,26 @@ static void hid_go_boot(void) {
   NVIC_SystemReset();
 }
 
+static void hid_on_no_host(void) {
+  key_evt_qn = 0;
+  key_evt_qh = 0;
+  key_evt_qt = 0;
+  if (hUsbDeviceFS.pClassData != NULL) {
+    USBD_CUSTOM_HID_HandleTypeDef *h =
+        (USBD_CUSTOM_HID_HandleTypeDef *)hUsbDeviceFS.pClassData;
+    h->state = CUSTOM_HID_IDLE;
+  }
+}
+
 void hid_tick(void) {
   if (enter_boot) {
     hid_go_boot();
   }
-  if (!key_evt_qn) {
+  if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED) {
+    hid_on_no_host();
     return;
   }
-  if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED) {
-    key_evt_qn = 0;
-    key_evt_qh = 0;
-    key_evt_qt = 0;
+  if (!key_evt_qn) {
     return;
   }
   memset(key_evt_report, 0, sizeof(key_evt_report));
@@ -90,6 +99,9 @@ void hid_tick(void) {
 }
 
 void hid_notify_key(uint8_t profile, uint8_t key, uint8_t down) {
+  if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED) {
+    return;
+  }
   if (key_evt_qn >= KEY_EVT_Q) {
     key_evt_qt = (uint8_t)((key_evt_qt + 1) % KEY_EVT_Q);
     key_evt_qn--;

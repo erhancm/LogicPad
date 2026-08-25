@@ -134,7 +134,7 @@ int main(void)
       hid_tick();
       macro_tick(steps);
     }
-    if (hid_key_evt_pending() || macro_busy()) {
+    if ((hid_key_evt_pending() || macro_busy()) && hid_configured()) {
       /* Clock/OLED I2C is ~25 ms blocking; don't pace HID behind it. */
       if (hid_in_ready()) {
         if (hid_key_evt_pending()) {

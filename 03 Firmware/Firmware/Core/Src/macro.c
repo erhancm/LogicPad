@@ -28,16 +28,22 @@ int macro_busy(void) {
   return playing;
 }
 
-void macro_cancel(void) {
+static void macro_stop(void) {
   playing = 0;
   in_text = 0;
   text_resume = 0;
   text_last_hid = 0;
+  wait_ms = 0;
+  phase = 0;
+  live_mods = 0;
+  memset(live_keys, 0, 6);
+}
+
+void macro_cancel(void) {
+  macro_stop();
   hid_kbd_release();
   hid_consumer_release();
   hid_mouse_send(0, 0, 0, 0);
-  live_mods = 0;
-  memset(live_keys, 0, 6);
 }
 
 static void keys_add(uint8_t hid) {
@@ -131,6 +137,10 @@ void macro_play(uint8_t key_idx) {
     return;
   }
   led_mux_key_flash(key_idx);
+  /* No USB host: still flash the LED, but never wait on HID IN. */
+  if (!hid_configured()) {
+    return;
+  }
   lp_key_t *k = &storage_active()->keys[key_idx];
   load_text(key_idx);
   if (k->n == 0 && text_len == 0) {
@@ -192,6 +202,10 @@ static int tick_text(void) {
 
 void macro_tick(uint16_t elapsed_ms) {
   if (!playing) {
+    return;
+  }
+  if (!hid_configured()) {
+    macro_stop();
     return;
   }
   if (wait_ms) {
