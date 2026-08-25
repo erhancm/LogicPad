@@ -200,11 +200,14 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
   switch (cmd) {
   case CMD_PING:
     out[0] = 0x01;
-    out[1] = 0x04; /* minor: SET_HOST idle home */
+    out[1] = 0x05; /* minor: packed store, add until flash full */
     vendor_reply(CMD_PING, out, 2);
     break;
   case CMD_GET_META:
-  case CMD_GET_STATUS:
+  case CMD_GET_STATUS: {
+    (void)storage_commit();
+    uint16_t used = storage_used();
+    uint16_t cap = storage_cap();
     out[0] = g_store.active;
     out[1] = g_store.dirty;
     out[2] = g_store.contrast;
@@ -213,40 +216,49 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
     out[5] = (uint8_t)(ui_is_live() ? 0 : 1);
     out[6] = hid_configured() ? 1 : 0;
     out[7] = storage_n_profiles();
-    vendor_reply(cmd, out, 8);
+    out[8] = (uint8_t)used;
+    out[9] = (uint8_t)(used >> 8);
+    out[10] = (uint8_t)cap;
+    out[11] = (uint8_t)(cap >> 8);
+    vendor_reply(cmd, out, 12);
     break;
+  }
   case CMD_GET_PROFILE_HDR: {
+    static lp_profile_t pr;
     uint8_t idx = p[0];
-    if (idx >= storage_n_profiles()) {
+    if (storage_get_profile_hdr(idx, &pr) != 0) {
       break;
     }
-    lp_profile_t *pr = &g_store.profiles[idx];
     out[0] = idx;
-    memcpy(&out[1], pr->name, LP_NAME_LEN + 1);
-    out[14] = pr->light_mode;
-    out[15] = pr->bright;
-    out[16] = pr->dim;
+    memcpy(&out[1], pr.name, LP_NAME_LEN + 1);
+    out[14] = pr.light_mode;
+    out[15] = pr.bright;
+    out[16] = pr.dim;
     vendor_reply(cmd, out, 17);
     break;
   }
   case CMD_SET_PROFILE_HDR: {
     uint8_t idx = p[0];
+    char name[LP_NAME_LEN + 1];
+    uint8_t old_bright = 0, old_dim = 0;
+    static lp_profile_t pr;
     if (idx >= storage_n_profiles()) {
       break;
     }
-    lp_profile_t *pr = &g_store.profiles[idx];
-    uint8_t old_bright = pr->bright;
-    uint8_t old_dim = pr->dim;
-    memcpy(pr->name, &p[1], LP_NAME_LEN);
-    pr->name[LP_NAME_LEN] = 0;
-    pr->light_mode = (p[14] >= LP_N_LIGHT_MODES) ? 0 : p[14];
-    pr->bright = p[15] > 10 ? 10 : p[15];
-    pr->dim = p[16] > 10 ? 10 : p[16];
+    if (storage_get_profile_hdr(idx, &pr) == 0) {
+      old_bright = pr.bright;
+      old_dim = pr.dim;
+    }
+    memset(name, 0, sizeof(name));
+    memcpy(name, &p[1], LP_NAME_LEN);
+    if (storage_set_profile_hdr(idx, name, p[14], p[15], p[16]) != 0) {
+      break;
+    }
     g_store.dirty = 1;
     ui_mark_dirty();
-    if (pr->bright != old_bright) {
+    if (p[15] != old_bright) {
       led_mux_preview(0);
-    } else if (pr->dim != old_dim) {
+    } else if (p[16] != old_dim) {
       led_mux_preview(1);
     }
     vendor_reply(cmd, p, 17);
@@ -254,42 +266,52 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
   }
   case CMD_GET_KEY: {
     uint8_t pi = p[0], ki = p[1];
-    lp_key_t *k;
-    if (pi >= storage_n_profiles() || ki >= LP_N_KEYS) {
+    lp_key_t k;
+    if (storage_get_key(pi, ki, &k) != 0) {
       break;
     }
-    k = &g_store.profiles[pi].keys[ki];
     out[0] = pi;
     out[1] = ki;
-    memcpy(&out[2], k, LP_KEY_HID_BYTES);
+    memcpy(&out[2], &k, LP_KEY_HID_BYTES);
     vendor_reply(cmd, out, 62);
     break;
   }
   case CMD_SET_KEY: {
     uint8_t pi = p[0], ki = p[1];
-    lp_key_t *k;
-    if (pi >= storage_n_profiles() || ki >= LP_N_KEYS) {
+    lp_key_t k;
+    char title[LP_TITLE_LEN + 1];
+    uint8_t st = 0;
+    if (storage_get_key(pi, ki, &k) != 0) {
       break;
     }
-    k = &g_store.profiles[pi].keys[ki];
-    memcpy(k, &p[2], LP_KEY_HID_BYTES);
-    k->label[LP_LABEL_LEN] = 0;
-    if (k->n > LP_MAX_ACTIONS) {
-      k->n = LP_MAX_ACTIONS;
+    memcpy(title, k.title, sizeof(title));
+    memcpy(&k, &p[2], LP_KEY_HID_BYTES);
+    k.label[LP_LABEL_LEN] = 0;
+    if (k.n > LP_MAX_ACTIONS) {
+      k.n = LP_MAX_ACTIONS;
     }
-    g_store.dirty = 1;
-    ui_mark_dirty();
-    vendor_reply(cmd, p, 2);
+    memcpy(k.title, title, sizeof(title));
+    if (storage_set_key(pi, ki, &k) != 0) {
+      st = 1;
+    } else {
+      g_store.dirty = 1;
+      ui_mark_dirty();
+    }
+    out[0] = pi;
+    out[1] = ki;
+    out[2] = st;
+    vendor_reply(cmd, out, 3);
     break;
   }
   case CMD_GET_TITLE: {
     uint8_t pi = p[0], ki = p[1];
-    if (pi >= storage_n_profiles() || ki >= LP_N_KEYS) {
+    lp_key_t k;
+    if (storage_get_key(pi, ki, &k) != 0) {
       break;
     }
     out[0] = pi;
     out[1] = ki;
-    memcpy(&out[2], g_store.profiles[pi].keys[ki].title, LP_TITLE_LEN + 1);
+    memcpy(&out[2], k.title, LP_TITLE_LEN + 1);
     vendor_reply(cmd, out, 2 + LP_TITLE_LEN + 1);
     break;
   }
@@ -301,7 +323,9 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
     }
     memset(tmp, 0, sizeof(tmp));
     memcpy(tmp, &p[2], LP_TITLE_LEN);
-    storage_set_key_title(&g_store.profiles[pi].keys[ki], tmp);
+    if (storage_set_key_title_at(pi, ki, tmp) != 0) {
+      break;
+    }
     g_store.dirty = 1;
     ui_mark_dirty();
     vendor_reply(cmd, p, 2);
@@ -312,7 +336,7 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
      * otherwise trip the OLED save prompt on every Alt-Tab. OLED profile
      * edits still call dirty() in ui.c. */
     if (p[0] < storage_n_profiles()) {
-      g_store.active = p[0];
+      storage_set_active(p[0]);
       ui_mark_dirty();
     }
     vendor_reply(cmd, p, 1);

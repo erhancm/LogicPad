@@ -60,6 +60,8 @@ export type Meta = {
   inMenu: boolean;
   usb: boolean;
   nProfiles?: number;
+  storeUsed?: number;
+  storeCap?: number;
 };
 
 export type Snapshot = {
@@ -69,6 +71,7 @@ export type Snapshot = {
   textPool?: { enabled: boolean; used: number; max: number };
   canMutateProfiles?: boolean;
   canTitles?: boolean;
+  canAddProfiles?: boolean;
 };
 
 export type LaunchEntry = {

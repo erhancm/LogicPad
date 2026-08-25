@@ -130,6 +130,10 @@ static void set_hw_contrast(uint8_t level) {
 }
 
 static void dirty(void) {
+  if (storage_commit() != 0) {
+    need_draw = 1;
+    return;
+  }
   g_store.dirty = 1;
   need_draw = 1;
 }
@@ -396,6 +400,39 @@ static void big_menu(const char *const *items, uint8_t n, int16_t sel) {
   }
 }
 
+static void big_menu_profiles(uint8_t nprof, int add, int16_t sel) {
+  uint8_t total = (uint8_t)(nprof + (add ? 1 : 0));
+  int16_t start = 0;
+  uint8_t r;
+  if (total > 3) {
+    if (sel <= 0) {
+      start = 0;
+    } else if (sel >= total - 1) {
+      start = (int16_t)(total - 3);
+    } else {
+      start = (int16_t)(sel - 1);
+    }
+  }
+  for (r = 0; r < 3 && (start + r) < total; r++) {
+    uint8_t idx = (uint8_t)(start + r);
+    uint8_t y = (uint8_t)(r * UI_ROW_H);
+    uint8_t hi = (idx == sel);
+    char line[16];
+    if (hi) {
+      ssd1306_FillRect(0, y, 128, UI_ROW_H, White);
+    }
+    if (idx == nprof) {
+      snprintf(line, sizeof(line), "+ New");
+    } else {
+      char name[LP_NAME_LEN + 1];
+      storage_profile_name(idx, name, sizeof(name));
+      snprintf(line, sizeof(line), "%s%s", name[0] ? name : "--", g_store.active == idx ? "*" : "");
+    }
+    ssd1306_SetCursor(2, y);
+    ssd1306_WriteString2x(line, hi ? Black : White);
+  }
+}
+
 static void value_screen(const char *title, const char *val) {
   header_hint(title, "U/D");
   text2x_center(16, val);
@@ -429,7 +466,10 @@ static uint8_t list_max(void) {
     return storage_n_profiles() > 1 ? 3 : 2;
   case SCR_PROF_LIST: {
     uint8_t n = storage_n_profiles();
-    return (uint8_t)(n < LP_N_PROFILES ? n : (uint8_t)(n - 1));
+    if (storage_can_add_profile()) {
+      return n;
+    }
+    return (uint8_t)(n - 1);
   }
   case SCR_KEY_LIGHT:
     return 4;
@@ -627,7 +667,7 @@ static void commit_value(void) {
     back();
     break;
   case SCR_PROF_NAME:
-    strncpy(g_store.profiles[edit_prof].name, name_buf, LP_NAME_LEN);
+    storage_set_profile_name(edit_prof, name_buf);
     dirty();
     go(SCR_PROF_ACTS);
     break;
@@ -649,7 +689,7 @@ static void ok(void) {
     return;
   }
   if (scr == SCR_PROF_RESET) {
-    memset(&g_store.profiles[edit_prof].keys, 0, sizeof(g_store.profiles[edit_prof].keys));
+    storage_reset_profile_keys(edit_prof);
     dirty();
     go(SCR_HOME);
     return;
@@ -690,12 +730,12 @@ static void ok(void) {
   }
   if (scr == SCR_PROF_LIST) {
     uint8_t n = storage_n_profiles();
-    if ((uint8_t)i == n && n < LP_N_PROFILES) {
+    if ((uint8_t)i == n && storage_can_add_profile()) {
       int idx = storage_add_profile();
       if (idx >= 0) {
         edit_prof = (uint8_t)idx;
         dirty();
-        strncpy(name_buf, g_store.profiles[edit_prof].name, sizeof(name_buf));
+        storage_profile_name(edit_prof, name_buf, sizeof(name_buf));
         name_buf[sizeof(name_buf) - 1] = 0;
         go(SCR_PROF_NAME);
       }
@@ -707,11 +747,12 @@ static void ok(void) {
   }
   if (scr == SCR_PROF_ACTS) {
     if (i == 0) {
-      g_store.active = edit_prof;
+      storage_set_active(edit_prof);
       dirty();
       go(SCR_HOME);
     } else if (i == 1) {
-      strncpy(name_buf, g_store.profiles[edit_prof].name, sizeof(name_buf));
+      storage_profile_name(edit_prof, name_buf, sizeof(name_buf));
+      name_buf[sizeof(name_buf) - 1] = 0;
       i = 0;
       go(SCR_PROF_NAME);
     } else if (i == 2) {
@@ -1093,27 +1134,18 @@ static void draw(void) {
     break;
   }
   case SCR_PROF_LIST: {
-    char nbuf[LP_N_PROFILES][16];
-    const char *it[LP_N_PROFILES + 1];
     uint8_t n = storage_n_profiles();
-    uint8_t m = n;
-    uint8_t p;
-    for (p = 0; p < n; p++) {
-      snprintf(nbuf[p], 16, "%s%s", g_store.profiles[p].name, g_store.active == p ? "*" : "");
-      it[p] = nbuf[p];
-    }
-    if (n < LP_N_PROFILES) {
-      it[m++] = "+ New";
-    }
-    big_menu(it, m, i);
+    big_menu_profiles(n, storage_can_add_profile(), i);
     header("PROFILE");
     break;
   }
   case SCR_PROF_ACTS: {
     const char *it[] = {"Use", "Rename", "Reset", "Delete"};
     uint8_t n = storage_n_profiles() > 1 ? 4 : 3;
+    char pname[LP_NAME_LEN + 1];
     big_menu(it, n, i);
-    header(g_store.profiles[edit_prof].name);
+    storage_profile_name(edit_prof, pname, sizeof(pname));
+    header(pname[0] ? pname : "--");
     break;
   }
   case SCR_PROF_NAME:

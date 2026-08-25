@@ -17,14 +17,14 @@ EP IN/OUT max packet = 64. Poll interval 1 ms.
 
 Byte 0 = report ID `4`. Byte 1 = command. Bytes 2–63 = payload.
 
-PING payload is protocol `0x01, 0x04` (minor `4` = `SET_HOST` idle home). Minor `3` is 12-character key titles; `2` is add/delete profiles; `1` is type-text pool only; `0` is older firmware without the pool.
+PING payload is protocol `0x01, 0x05` (minor `5` = packed flash store, add profiles until the slot is full). Minor `4` is `SET_HOST` idle home; `3` is 12-character key titles; `2` is add/delete profiles; `1` is type-text pool only; `0` is older firmware without the pool.
 
 | Cmd | Name | Host → pad | Pad → host |
 |-----|------|------------|------------|
-| 0x01 | PING | — | version `0x01, 0x04` |
-| 0x02 | GET_META | — | active, dirty, contrast, flip, sleep, in_menu, usb, n_profiles |
+| 0x01 | PING | — | version `0x01, 0x05` |
+| 0x02 | GET_META | — | active, dirty, contrast, flip, sleep, in_menu, usb, n_profiles, used u16le, cap u16le |
 | 0x03 | GET_KEY | profile, key | profile, key, first `LP_KEY_HID_BYTES` (57) of `lp_key_t` |
-| 0x04 | SET_KEY | profile, key, 60-byte HID blob | echo profile, key |
+| 0x04 | SET_KEY | profile, key, 60-byte HID blob | echo profile, key, status |
 | 0x05 | SET_ACTIVE | profile | echo (live slot only; does not mark flash dirty) |
 | 0x06 | SAVE | — | ack |
 | 0x07 | RELOAD | — | ack |
@@ -45,15 +45,13 @@ PING payload is protocol `0x01, 0x04` (minor `4` = `SET_HOST` idle home). Minor 
 
 `SET_ACTIVE` changes the live profile and redraws lights/OLED. It does not set `dirty`, so the host auto-switch in the Tauri app will not pop the OLED save prompt. Persist the slot with **Save**, or change it on the device (OLED still marks dirty). Old firmware that dirties on `SET_ACTIVE` should be updated.
 
-`SET_TEXT` status `0` ok, `1` pool full, `2` longer than 240 bytes, `3` bad args. Offset `0` starts a new write; further packets must continue from the next byte. Empty `total_len` clears that key.
+`SET_KEY` copies only the HID prefix of `lp_key_t` (`label[7]`, LED, action count, 12 actions). It does not touch `title`. `SET_TITLE` stores the 12-character display name and fills `label` with the first 6 non-space characters as a stub for old packets. OLED and the PC app show `title` (fall back to `label` if empty). `SET_KEY` status `0` ok, `1` flash slot full (change discarded). `SET_TEXT` status `0` ok, `1` slot full, `2` longer than 240 bytes, `3` bad args. Offset `0` starts a new write; further packets must continue from the next byte. Empty `total_len` clears that key.
 
-`ADD_PROFILE` appends an empty profile (default name `P1`–`P4`, Solid lights). Status `0` ok, `1` already 4 profiles. `DEL_PROFILE` compact-deletes that slot (typed text for it is freed). Status `0` ok, `2` would leave zero profiles, `3` bad index. Factory still ships four empty profiles; delete one to free a slot. `n_profiles` `0` in flash means a store from before this field existed (treat as 4).
+`ADD_PROFILE` appends an empty profile (default name `P1`, `P2`, …, Solid lights). Status `0` ok, `1` slot full or 255 profiles. `DEL_PROFILE` compact-deletes that slot. Status `0` ok, `2` would leave zero profiles, `3` bad index. Factory still ships four empty profiles; **+ New** adds more until the 4 KB slot fills. Empty keys take no flash. `n_profiles` `0` on older firmware means 4.
 
 `ENTER_BOOTLOADER` acks, then the main loop shows **FLASH / BOOT MODE** on the OLED and resets. Do not wait in the USB callback — USB IRQ priority 0 would hang `HAL_Delay`.
 
-Typed strings live in a **shared 1200-byte pool** (max 240 bytes per key) at the end of `lp_store_t`. `ACT_TEXT` (`8`) is a macro step that types that string as US-HID taps, so later steps can be Enter or a chord. Keys that still have pool text but no `ACT_TEXT` play the string after the other actions (older saves).
-
-`SET_KEY` copies only the HID prefix of `lp_key_t` (`label[7]`, LED, action count, 12 actions). It does not touch `title`. `SET_TITLE` stores the 12-character display name and fills `label` with the first 6 non-space characters as a stub for old packets. OLED and the PC app show `title` (fall back to `label` if empty). Store magic is `LPAH` (`0x4C504148`); older `LPAG` / `LPAF` stores are discarded on boot.
+Profiles, macros, and typed strings share the **packed ping-pong slot** (about 4076 bytes after clock snaps). Max 240 bytes per key. `ACT_TEXT` (`8`) is a macro step that types that string as US-HID taps, so later steps can be Enter or a chord. Keys that still have text but no `ACT_TEXT` play the string after the other actions (older saves). Store magic is `LPAI` (`0x4C504149`). Boot copies an `LPAH` (`0x4C504148`) 4-profile store into the packed layout. Older `LPAG` / `LPAF` stores are discarded.
 
 Structs are in `03 Firmware/Firmware/Core/Inc/storage.h`. OLED USB dot blinks while a vendor command was seen in the last 2 s.
 

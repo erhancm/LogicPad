@@ -32,9 +32,9 @@ npm install
 npm run tauri dev
 ```
 
-Connect with the pad plugged in. Edit profiles, the 3×3 keys, macros, and lights. **New profile** / **Delete** add or remove a profile (1–4 on the pad). **Save** writes flash on the device. **Update firmware** takes the app `LogicPad.bin` (not the factory hex).
+Connect with the pad plugged in. Edit profiles, the 3×3 keys, macros, and lights. **New profile** / **Delete** add or remove a profile (until the pad’s flash slot is full). **Save** writes flash on the device. **Update firmware** takes the app `LogicPad.bin` (not the factory hex).
 
-Drop an `.exe` or shortcut onto a key to launch it from this PC (stored locally, not on the pad). Key labels are 12 characters on current firmware (OLED wraps to two lines past 10). The **Type text** box is what the pad types over USB; a live bar shows the shared 1200-byte pool and the 12-slot macro lists. Flash firmware that includes `GET_TEXT` / `SET_TEXT` (`0x0F` / `0x10`) for strings longer than 12 characters, and `GET_TITLE` / `SET_TITLE` (`0x13` / `0x14`) for 12-character key names. That firmware uses store magic `LPAH` and resets older config.
+Drop an `.exe` or shortcut onto a key to launch it from this PC (stored locally, not on the pad). Key labels are 12 characters on current firmware (OLED wraps to two lines past 10). The **Type text** box is what the pad types over USB; a live bar shows pad flash (profiles + macros + text share one slot) and 240 B max per key. Flash firmware that includes `GET_TEXT` / `SET_TEXT` (`0x0F` / `0x10`) for strings longer than 12 characters, and `GET_TITLE` / `SET_TITLE` (`0x13` / `0x14`) for 12-character key names. Packed-store firmware uses magic `LPAI` and migrates `LPAH` config on boot.
 
 **Launch program** on a key is stored on this PC (not on the pad). Pressing that key opens the file while this app is running. Flash firmware that includes `KEY_EVENT` (`0x0D`).
 

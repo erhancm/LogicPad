@@ -101,7 +101,7 @@ Container_Boundary(fw, "Firmware application") {
     Component(ui, "OLED UI", "ui.c, ssd1306.c", "Menus, clock home, d-pad. Look-and-feel source of truth.")
     Component(macro, "Macro engine", "macro.c", "Up to 16 actions per key. HID taps, delays, mouse, consumer, ACT_TEXT.")
     Component(hid, "HID reports", "hid_reports.c", "Report IDs 1-4. Vendor command table. KEY_EVENT. ENTER_BOOTLOADER.")
-    Component(storage, "Storage", "storage.c", "Ping-pong flash, CRC, profiles, 1200-byte type-text pool.")
+    Component(storage, "Storage", "storage.c", "Ping-pong flash, CRC, packed profiles, sparse keys.")
     Component(leds, "RGB mux", "led_mux.c", "TIM2 soft-PWM. PA0-PA8 anodes, PB8/9/10 color sinks.")
     Component(clock, "Wall clock", "clock.c", "RTC from 8 MHz HSE. Flash snapshot. SET_TIME from app.")
     Component(usbdIf, "Custom HID IF", "usbd_custom_hid_if.c", "Report descriptor: kbd, mouse, consumer, vendor 0xFF00.")

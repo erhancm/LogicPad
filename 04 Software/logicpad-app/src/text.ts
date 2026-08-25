@@ -3,7 +3,6 @@ import { ACT, SEND, type Action, type PadKey, type Snapshot } from "./types";
 export const TEXT_POOL = 1200;
 export const TEXT_MAX = 240;
 export const ACT_SLOTS = 12;
-export const PROFILE_MAX = 4;
 export const TITLE_MAX = 12;
 export const LABEL_HID = 6;
 
@@ -162,24 +161,24 @@ export function moveAct(acts: Action[], index: number, dir: -1 | 1): Action[] {
 export function memoryOf(snap: Snapshot): {
   text: number;
   textMax: number;
-  acts: number;
-  actMax: number;
+  store: number;
+  storeMax: number;
   poolEnabled: boolean;
 } {
   const poolEnabled = snap.textPool?.enabled ?? false;
   let text = 0;
-  let acts = 0;
   for (const row of snap.keys) {
     for (const k of row) {
       if (poolEnabled) text += utf8Len(k.text ?? "");
-      acts += k.acts.length;
     }
   }
+  const storeMax = snap.meta.storeCap ?? 0;
+  const store = snap.meta.storeUsed ?? 0;
   return {
     text,
     textMax: snap.textPool?.max ?? TEXT_POOL,
-    acts,
-    actMax: (snap.keys.length || PROFILE_MAX) * 9 * ACT_SLOTS,
+    store,
+    storeMax,
     poolEnabled,
   };
 }

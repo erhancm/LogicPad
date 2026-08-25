@@ -228,6 +228,8 @@ impl Pad {
             in_menu: p.get(5).copied().unwrap_or(0) != 0,
             usb: p.get(6).copied().unwrap_or(0) != 0,
             n_profiles: p.get(7).copied().unwrap_or(0),
+            store_used: u16::from_le_bytes([p.get(8).copied().unwrap_or(0), p.get(9).copied().unwrap_or(0)]),
+            store_cap: u16::from_le_bytes([p.get(10).copied().unwrap_or(0), p.get(11).copied().unwrap_or(0)]),
         })
     }
 
@@ -257,7 +259,12 @@ impl Pad {
         p[0] = key.profile;
         p[1] = key.index;
         pack_key(key, &mut p[2..2 + KEY_BYTES]);
-        self.rpc(CMD_SET_KEY, &p)?;
+        let rep = self.rpc(CMD_SET_KEY, &p)?;
+        if rep.get(2).copied().unwrap_or(0) == 1 {
+            return Err(PadError::Msg(
+                "The pad is out of memory. Delete a profile or shorten a macro.".into(),
+            ));
+        }
         if self.has_titles() {
             self.set_title(key.profile, key.index, &key.label)?;
         }
@@ -345,7 +352,7 @@ impl Pad {
             let st = *rep.get(3).unwrap_or(&0xFF);
             if st == 1 {
                 return Err(PadError::Msg(
-                    "Not enough type-text memory on the pad. Shorten a key's text.".into(),
+                    "Not enough memory on the pad. Shorten a key's text or delete a profile.".into(),
                 ));
             }
             if st == 2 {
@@ -372,7 +379,7 @@ impl Pad {
         let st = p.get(2).copied().unwrap_or(0xFF);
         if st == 1 {
             return Err(PadError::Msg(
-                "The pad already has 4 profiles. Delete one first.".into(),
+                "The pad is out of memory. Delete a profile or shorten macros / text.".into(),
             ));
         }
         if st != 0 {
@@ -441,9 +448,15 @@ impl Pad {
         if let Ok(mut g) = self.has_host.lock() {
             *g = min >= 4;
         }
+        let has_packed = min >= 5;
         let meta = self.get_meta()?;
         let can_mutate_profiles = min >= 2;
-        let n = if can_mutate_profiles {
+        let n = if has_packed {
+            match meta.n_profiles {
+                1..=255 => meta.n_profiles,
+                _ => 1,
+            }
+        } else if can_mutate_profiles {
             match meta.n_profiles {
                 1..=4 => meta.n_profiles,
                 _ => 4,
@@ -480,10 +493,19 @@ impl Pad {
             text_pool: TextPool {
                 enabled: has_text,
                 used: text_used,
-                max: TEXT_POOL,
+                max: if has_packed && meta.store_cap > 0 {
+                    meta.store_cap.saturating_sub(meta.store_used).saturating_add(text_used)
+                } else {
+                    TEXT_POOL
+                },
             },
             can_mutate_profiles,
             can_titles: has_titles,
+            can_add_profiles: if has_packed {
+                n < 255 && meta.store_cap.saturating_sub(meta.store_used) >= 16
+            } else {
+                can_mutate_profiles && n < 4
+            },
         })
     }
 
@@ -910,7 +932,7 @@ fn pack_key(key: &PadKey, out: &mut [u8]) {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Meta {
     pub active: u8,
@@ -922,6 +944,10 @@ pub struct Meta {
     pub usb: bool,
     #[serde(default)]
     pub n_profiles: u8,
+    #[serde(default)]
+    pub store_used: u16,
+    #[serde(default)]
+    pub store_cap: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -975,6 +1001,8 @@ pub struct Snapshot {
     pub can_mutate_profiles: bool,
     #[serde(default)]
     pub can_titles: bool,
+    #[serde(default)]
+    pub can_add_profiles: bool,
 }
 
 impl Default for TextPool {

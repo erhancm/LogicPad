@@ -42,7 +42,7 @@ In-app firmware update draws **FLASH** (blue) and **BOOT MODE** (yellow) then re
 
 Main menu is Profiles / Keys / Setup. Setup is Lights / Screen / About. One setting per value screen.
 
-Profiles: current list, then **+ New** if fewer than 4. Actions are Use / Rename / Reset, plus Delete when more than one profile remains (confirm like Reset).
+Profiles: current list, then **+ New** if the flash slot has room. Actions are Use / Rename / Reset, plus Delete when more than one profile remains (confirm like Reset). Empty keys take no flash.
 
 Lights → Mode: Off, Solid, React, Breathe, Wave, Ring, Ripple, Rain, Heart, Cross, Twinkle, Full White, Full Red, Full Green, Full Blue. Shows paint their own colors (they do not need per-key LED assignments). **Full White / Full Red / Full Green / Full Blue** light all nine keys plus the selector LED with no 1/9 scan; they stay on Bright (do not fall back to Dim). **React** flashes the pressed key (empty macros still flash). **Ripple** spreads from the pressed key, including SEL. The selector RGB follows animations; in Solid it matches key 7 (the key above it). Bright caps show intensity. Ripple reacts to live key presses.
 

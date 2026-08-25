@@ -41,7 +41,6 @@ import {
   uniqueTitle,
   utf8Len,
   withTextStep,
-  PROFILE_MAX,
 } from "./text";
 
 function emptyKey(profile: number, index: number): PadKey {
@@ -899,7 +898,7 @@ export default function App() {
             {snap.canMutateProfiles ? (
               <div className="add">
                 <button
-                  disabled={busy || snap.profiles.length >= PROFILE_MAX}
+                  disabled={busy || !(snap.canAddProfiles ?? snap.profiles.length < 4)}
                   onClick={() => void onAddProfile()}
                 >
                   New profile
@@ -916,7 +915,10 @@ export default function App() {
               <p className="hint">Update firmware to add or delete profiles.</p>
             )}
             <p className="hint">
-              {snap.profiles.length} / {PROFILE_MAX} profiles on the pad.
+              {snap.profiles.length} profile{snap.profiles.length === 1 ? "" : "s"} on the pad
+              {mem?.storeMax
+                ? ` · ${mem.store} / ${mem.storeMax} B used`
+                : ""}. Empty keys take no flash.
             </p>
             <h3>Auto-switch</h3>
             <label className="row-check">
@@ -1012,6 +1014,9 @@ export default function App() {
             <h2>Keys</h2>
             {mem ? (
               <div className="mem">
+                {mem.storeMax > 0 ? (
+                  <MemBar label="Pad memory" used={mem.store} max={mem.storeMax} unit="B" />
+                ) : null}
                 <MemBar
                   label="Type text"
                   used={mem.text}
@@ -1020,13 +1025,13 @@ export default function App() {
                   warn={
                     mem.poolEnabled
                       ? undefined
-                      : "Update firmware to store longer strings in the shared 1200 B pool."
+                      : "Update firmware to store longer strings in flash."
                   }
                 />
-                <MemBar label="Macros" used={mem.acts} max={mem.actMax} unit="slots" />
                 <p className="hint">
                   Drop a program onto a key to add a launch step, or drag one key onto another to
-                  swap them. Type-text memory is shared by all keys.
+                  swap them. Profiles, macros, and type-text share the pad&apos;s flash slot. Empty
+                  keys use no space.
                 </p>
               </div>
             ) : null}
