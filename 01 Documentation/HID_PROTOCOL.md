@@ -17,15 +17,15 @@ EP IN/OUT max packet = 64. Poll interval 1 ms.
 
 Byte 0 = report ID `4`. Byte 1 = command. Bytes 2–63 = payload.
 
-PING payload is protocol `0x01, 0x03` (minor `3` = 12-character key titles). Minor `2` is add/delete profiles; `1` is type-text pool only; `0` is older firmware without the pool.
+PING payload is protocol `0x01, 0x04` (minor `4` = `SET_HOST` idle home). Minor `3` is 12-character key titles; `2` is add/delete profiles; `1` is type-text pool only; `0` is older firmware without the pool.
 
 | Cmd | Name | Host → pad | Pad → host |
 |-----|------|------------|------------|
-| 0x01 | PING | — | version `0x01, 0x03` |
+| 0x01 | PING | — | version `0x01, 0x04` |
 | 0x02 | GET_META | — | active, dirty, contrast, flip, sleep, in_menu, usb, n_profiles |
 | 0x03 | GET_KEY | profile, key | profile, key, first `LP_KEY_HID_BYTES` (57) of `lp_key_t` |
 | 0x04 | SET_KEY | profile, key, 60-byte HID blob | echo profile, key |
-| 0x05 | SET_ACTIVE | profile | echo |
+| 0x05 | SET_ACTIVE | profile | echo (live slot only; does not mark flash dirty) |
 | 0x06 | SAVE | — | ack |
 | 0x07 | RELOAD | — | ack |
 | 0x08 | FACTORY | — | ack |
@@ -41,6 +41,9 @@ PING payload is protocol `0x01, 0x03` (minor `3` = 12-character key titles). Min
 | 0x12 | DEL_PROFILE | profile | profile, n_profiles, active, status |
 | 0x13 | GET_TITLE | profile, key | profile, key, title (12+NUL) |
 | 0x14 | SET_TITLE | profile, key, title (12, NUL-padded) | echo profile, key |
+| 0x15 | SET_HOST | `1` = PC session in use, `0` = away (locked / logged off) | echo |
+
+`SET_ACTIVE` changes the live profile and redraws lights/OLED. It does not set `dirty`, so the host auto-switch in the Tauri app will not pop the OLED save prompt. Persist the slot with **Save**, or change it on the device (OLED still marks dirty). Old firmware that dirties on `SET_ACTIVE` should be updated.
 
 `SET_TEXT` status `0` ok, `1` pool full, `2` longer than 240 bytes, `3` bad args. Offset `0` starts a new write; further packets must continue from the next byte. Empty `total_len` clears that key.
 
@@ -54,7 +57,7 @@ Typed strings live in a **shared 1200-byte pool** (max 240 bytes per key) at the
 
 Structs are in `03 Firmware/Firmware/Core/Inc/storage.h`. OLED USB dot blinks while a vendor command was seen in the last 2 s.
 
-The pad keeps sending keyboard/mouse/media while the app holds report 4. KEY_EVENT lets the Tauri app launch host programs; that mapping lives on the PC, not in flash. SET_TIME loads the host's local wall clock. The pad then keeps time on its own (STM32 RTC from the 8 MHz crystal) for as long as it has USB power; it does not need the app connected. There is no 32 kHz backup crystal or battery, so a full unplug still loses the seconds the pad was off; a flash snapshot restores the last saved time. Until the first sync, the display starts at 16 Aug 2026 00:00:00. Open the app now and then if it has drifted.
+The pad keeps sending keyboard/mouse/media while the app holds report 4. KEY_EVENT lets the Tauri app launch host programs; that mapping lives on the PC, not in flash. The app can also watch the focused Windows program and send SET_ACTIVE (rules in `profile-rules.json`, not flash). SET_HOST tells the pad whether the Windows session is in use (unlocked) or away (locked, logged off, or fast-user-switched) so home/sleep can show the profile name or the clock. USB unconfigured/suspend is away without the app. SET_TIME loads the host's local wall clock. The pad then keeps time on its own (STM32 RTC from the 8 MHz crystal) for as long as it has USB power; it does not need the app connected. There is no 32 kHz backup crystal or battery, so a full unplug still loses the seconds the pad was off; a flash snapshot restores the last saved time. Until the first sync, the display starts at 16 Aug 2026 00:00:00. Open the app now and then if it has drifted.
 
 ## Field firmware update
 

@@ -1,16 +1,21 @@
+mod focus;
 mod hid;
+mod host;
 mod launch;
+mod profile_switch;
 
 use hid::{Pad, PadKey, ProfileHdr, Snapshot};
 use launch::{LaunchEntry, LaunchStore, ResolvedProgram};
+use profile_switch::{SwitchConfig, SwitchStore};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_autostart::ManagerExt;
 
-struct AppPad(Mutex<Pad>);
+struct AppPad(Arc<Mutex<Pad>>);
 
 #[tauri::command]
 fn connect(pad: State<AppPad>) -> Result<(), String> {
@@ -71,13 +76,15 @@ fn delete_profile(
     app: AppHandle,
     pad: State<AppPad>,
     store: State<Arc<LaunchStore>>,
+    switch: State<Arc<SwitchStore>>,
     profile: u8,
 ) -> Result<Snapshot, String> {
     let g = pad.0.lock().map_err(|e| e.to_string())?;
     g.del_profile(profile).map_err(Into::<String>::into)?;
     drop(g);
     store.shift_after_delete(profile)?;
-    sync_autostart(&app, &store);
+    switch.shift_after_delete(profile)?;
+    sync_autostart(&app, &store, &switch);
     pad.0
         .lock()
         .map_err(|e| e.to_string())?
@@ -156,10 +163,11 @@ fn get_launches(store: State<Arc<LaunchStore>>) -> Vec<LaunchEntry> {
 fn set_launch(
     app: AppHandle,
     store: State<Arc<LaunchStore>>,
+    switch: State<Arc<SwitchStore>>,
     entry: LaunchEntry,
 ) -> Result<(), String> {
     store.set(entry)?;
-    sync_autostart(&app, &store);
+    sync_autostart(&app, &store, &switch);
     Ok(())
 }
 
@@ -171,6 +179,48 @@ fn pick_program() -> Option<String> {
 #[tauri::command]
 fn resolve_program(path: String) -> ResolvedProgram {
     launch::resolve_program(&path)
+}
+
+#[tauri::command]
+fn get_switch_rules(switch: State<Arc<SwitchStore>>) -> SwitchConfig {
+    switch.config()
+}
+
+#[tauri::command]
+fn set_switch_rules(
+    app: AppHandle,
+    store: State<Arc<LaunchStore>>,
+    switch: State<Arc<SwitchStore>>,
+    cfg: SwitchConfig,
+) -> Result<SwitchConfig, String> {
+    let next = switch.set_config(cfg)?;
+    sync_autostart(&app, &store, &switch);
+    Ok(next)
+}
+
+#[tauri::command]
+fn add_switch_program(
+    app: AppHandle,
+    store: State<Arc<LaunchStore>>,
+    switch: State<Arc<SwitchStore>>,
+    profile: u8,
+    path: String,
+) -> Result<SwitchConfig, String> {
+    let next = switch.add_program(profile, &path)?;
+    sync_autostart(&app, &store, &switch);
+    Ok(next)
+}
+
+#[tauri::command]
+fn remove_switch_program(
+    app: AppHandle,
+    store: State<Arc<LaunchStore>>,
+    switch: State<Arc<SwitchStore>>,
+    exe: String,
+) -> Result<SwitchConfig, String> {
+    let next = switch.remove_program(&exe)?;
+    sync_autostart(&app, &store, &switch);
+    Ok(next)
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -192,7 +242,7 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             Some(vec!["--hidden".into()]),
         ))
-        .manage(AppPad(Mutex::new(pad)))
+        .manage(AppPad(Arc::new(Mutex::new(pad))))
         .invoke_handler(tauri::generate_handler![
             connect,
             disconnect,
@@ -212,13 +262,19 @@ pub fn run() {
             get_launches,
             set_launch,
             pick_program,
-            resolve_program
+            resolve_program,
+            get_switch_rules,
+            set_switch_rules,
+            add_switch_program,
+            remove_switch_program
         ])
         .setup(|app| {
             let dir = app.path().app_config_dir().unwrap_or_else(|_| std::env::temp_dir());
             let store = Arc::new(LaunchStore::load(dir.join("launches.json")));
+            let switch = Arc::new(SwitchStore::load(dir.join("profile-rules.json")));
             app.manage(store.clone());
-            sync_autostart(app.handle(), &store);
+            app.manage(switch.clone());
+            sync_autostart(app.handle(), &store, &switch);
 
             let handle = app.handle().clone();
             {
@@ -249,11 +305,36 @@ pub fn run() {
                 }
             }
             let retry = app.handle().clone();
-            std::thread::spawn(move || loop {
-                std::thread::sleep(std::time::Duration::from_secs(2));
-                if let Ok(g) = retry.state::<AppPad>().0.lock() {
-                    if !g.connected() {
-                        let _ = g.connect();
+            host::spawn(app.state::<AppPad>().0.clone());
+            std::thread::spawn(move || {
+                let mut n = 0u32;
+                let mut was_connected = false;
+                let mut last_host: Option<bool> = None;
+                loop {
+                    std::thread::sleep(Duration::from_millis(250));
+                    n = n.wrapping_add(1);
+                    if n % 8 == 0 {
+                        if let Ok(g) = retry.state::<AppPad>().0.lock() {
+                            if !g.connected() {
+                                was_connected = false;
+                                last_host = None;
+                                let _ = g.connect();
+                            }
+                            if g.connected() && !was_connected {
+                                retry.state::<Arc<SwitchStore>>().reset_seen();
+                                was_connected = true;
+                                last_host = None;
+                            }
+                        }
+                    }
+                    if let Ok(g) = retry.state::<AppPad>().0.try_lock() {
+                        retry.state::<Arc<SwitchStore>>().tick(&g, &retry);
+                        if g.connected() {
+                            let present = host::is_present();
+                            if last_host != Some(present) && g.set_host(present).is_ok() {
+                                last_host = Some(present);
+                            }
+                        }
                     }
                 }
             });
@@ -277,8 +358,8 @@ fn show_main(app: &AppHandle) {
     }
 }
 
-fn sync_autostart(app: &AppHandle, store: &LaunchStore) {
-    let _ = if store.has_launches() {
+fn sync_autostart(app: &AppHandle, store: &LaunchStore, switch: &SwitchStore) {
+    let _ = if store.has_launches() || switch.wants_autostart() {
         app.autolaunch().enable()
     } else {
         app.autolaunch().disable()

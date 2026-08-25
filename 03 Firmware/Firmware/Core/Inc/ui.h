@@ -12,5 +12,6 @@ int ui_is_sleeping(void);
 void ui_wake(void);
 void ui_mark_dirty(void);
 void ui_set_clock(uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8_t min, uint8_t sec);
+void ui_set_host_active(int on);
 
 #endif

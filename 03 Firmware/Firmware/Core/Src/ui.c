@@ -66,6 +66,8 @@ static uint8_t clk_hour;
 static uint8_t clk_min;
 static uint8_t clk_sec;
 static uint16_t clk_ms;
+static uint8_t host_active = 1;
+static uint8_t last_usb_cfg = 0xFF;
 
 static const char *const MONS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
@@ -319,6 +321,18 @@ void ui_set_clock(uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8
   need_draw = 1;
 }
 
+void ui_set_host_active(int on) {
+  uint8_t v = on ? 1 : 0;
+  if (host_active != v) {
+    host_active = v;
+    need_draw = 1;
+  }
+}
+
+static int idle_shows_clock(void) {
+  return !hid_configured() || !host_active;
+}
+
 static void draw_idle_clock(void) {
   char t[12];
   char d[16];
@@ -343,6 +357,19 @@ static void draw_idle_clock(void) {
     uint8_t span = 120;
     uint8_t x = (uint8_t)(phase < span ? phase : (uint16_t)(span * 2u - phase));
     ssd1306_FillRect(x, (uint8_t)(UI_YELLOW_Y + 5), 8, 8, White);
+  }
+}
+
+static void draw_idle_home(void) {
+  if (idle_shows_clock()) {
+    draw_idle_clock();
+    return;
+  }
+  {
+    lp_profile_t *p = ap();
+    const char *name = (p && p->name[0]) ? p->name : "--";
+    text2x_title(name, White);
+    header("HOME");
   }
 }
 
@@ -1050,7 +1077,7 @@ static void draw(void) {
     header("v0.1");
     break;
   case SCR_HOME:
-    draw_idle_clock();
+    draw_idle_home();
     break;
   case SCR_TOAST: {
     const char *lab = or_dash(storage_key_title(&p->keys[toast_key]));
@@ -1223,7 +1250,7 @@ static void draw(void) {
     confirm_screen("Erase?");
     break;
   case SCR_SLEEPING:
-    draw_idle_clock();
+    draw_idle_home();
     break;
   case SCR_SAVE_PROMPT:
     confirm_screen("Save?");
@@ -1239,8 +1266,12 @@ void ui_init(void) {
   go(SCR_BOOT);
 }
 
-static int showing_clock(void) {
+static int showing_idle(void) {
   return scr == SCR_SLEEPING || scr == SCR_HOME;
+}
+
+static int showing_clock(void) {
+  return showing_idle() && idle_shows_clock();
 }
 
 void ui_tick(void) {
@@ -1263,6 +1294,15 @@ void ui_tick(void) {
   }
   if (showing_clock() && (clk_ms % 50u) == 0) {
     need_draw = 1;
+  }
+  {
+    uint8_t usb = hid_configured() ? 1 : 0;
+    if (usb != last_usb_cfg) {
+      last_usb_cfg = usb;
+      if (showing_idle()) {
+        need_draw = 1;
+      }
+    }
   }
 
   keypad_event_t e;

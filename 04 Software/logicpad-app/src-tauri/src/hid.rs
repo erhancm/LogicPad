@@ -37,6 +37,7 @@ const CMD_ADD_PROFILE: u8 = 0x11;
 const CMD_DEL_PROFILE: u8 = 0x12;
 const CMD_GET_TITLE: u8 = 0x13;
 const CMD_SET_TITLE: u8 = 0x14;
+const CMD_SET_HOST: u8 = 0x15;
 const CMD_BL_START: u8 = 0x40;
 const CMD_BL_DATA: u8 = 0x41;
 const CMD_BL_FINISH: u8 = 0x42;
@@ -79,6 +80,7 @@ pub struct Pad {
     on_key: Mutex<Option<KeyCallback>>,
     has_text: Mutex<bool>,
     has_titles: Mutex<bool>,
+    has_host: Mutex<bool>,
 }
 
 impl Pad {
@@ -91,6 +93,7 @@ impl Pad {
             on_key: Mutex::new(None),
             has_text: Mutex::new(false),
             has_titles: Mutex::new(false),
+            has_host: Mutex::new(false),
         })
     }
 
@@ -139,13 +142,15 @@ impl Pad {
         found.sort_by_key(|(r, _)| *r);
 
         let mut opened = None;
+        let mut proto_min = 0u8;
         let mut last = PadError::Msg("LogicPad vendor interface not found".into());
         for (_, info) in found {
             match info.open_device(&api) {
                 Ok(dev) => {
                     let _ = dev.set_blocking_mode(true);
                     match xfer(&dev, CMD_PING, &[]) {
-                        Ok(rep) if rep.len() >= 2 && rep[0] == 0x01 => {
+                        Ok(rep) if ping_ok(&rep) => {
+                            proto_min = rep.get(1).copied().unwrap_or(0);
                             opened = Some(dev);
                             break;
                         }
@@ -159,6 +164,9 @@ impl Pad {
 
         let dev = opened.ok_or(last)?;
         drop(api);
+        if let Ok(mut g) = self.has_host.lock() {
+            *g = proto_min >= 4;
+        }
         let on_key = self.on_key.lock().ok().and_then(|g| g.clone());
         let (tx, rx) = mpsc::channel();
         let handle = thread::spawn(move || hid_worker(dev, rx, on_key));
@@ -412,6 +420,14 @@ impl Pad {
         Ok(())
     }
 
+    pub fn set_host(&self, present: bool) -> Result<(), PadError> {
+        if !self.has_host.lock().map(|g| *g).unwrap_or(false) {
+            return Ok(());
+        }
+        self.rpc(CMD_SET_HOST, &[u8::from(present)])?;
+        Ok(())
+    }
+
     pub fn load_all(&self) -> Result<Snapshot, PadError> {
         let (_maj, min) = self.ping()?;
         let has_text = min >= 1;
@@ -421,6 +437,9 @@ impl Pad {
         }
         if let Ok(mut g) = self.has_titles.lock() {
             *g = has_titles;
+        }
+        if let Ok(mut g) = self.has_host.lock() {
+            *g = min >= 4;
         }
         let meta = self.get_meta()?;
         let can_mutate_profiles = min >= 2;

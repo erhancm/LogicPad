@@ -17,7 +17,7 @@ Fonts: Font_6x8 in yellow; 12×16 (2×) list rows in blue (three rows × 16 px =
 
 ## Controls
 
-Live: keys 0–8 fire macros (factory: none assigned). SEL short = menu. SEL long = home. Home is the clock: 24-hour `HH:MM:SS`, date `16 Aug 2026` until the PC app syncs once; after that the pad keeps time while it has power. Sleep timeout keeps that clock on (display stays on); the first wake key is consumed.
+Live: keys 0–8 fire macros (factory: none assigned). SEL short = menu. SEL long = home. Home (and sleep) show the **active profile** name while USB is live and the PC session is in use. They switch to the clock (`HH:MM:SS` + `16 Aug 2026`) when USB is unconfigured or suspended, or when the PC app reports the session locked / logged off. Until SET_TIME once, the clock starts at 16 Aug 2026; after that the pad keeps time while it has power. Sleep timeout keeps that idle home on (display stays on); the first wake key is consumed.
 
 Menus (d-pad; corners unused except +/− on the macro list):
 
@@ -48,4 +48,4 @@ Lights → Mode: Off, Solid, React, Breathe, Wave, Ring, Ripple, Rain, Heart, Cr
 
 ## Timing
 
-SEL long 500 ms. Hold-repeat 400 ms then 12 Hz. Boot 900 ms. Toast 700 ms. Menu idle default 30 s. Live sleep default 1 minute (clock screensaver; first wake key is consumed).
+SEL long 500 ms. Hold-repeat 400 ms then 12 Hz. Boot 900 ms. Toast 700 ms. Menu idle default 30 s. Live sleep default 1 minute (idle home screensaver; first wake key is consumed).

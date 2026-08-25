@@ -7,7 +7,6 @@ import {
   HID_ALPHA,
   HID_DIGIT,
   HID_FN,
-  HID_LETTERS,
   HID_MORE,
   HID_NAV,
   HID_SPECIALS,
@@ -21,7 +20,11 @@ import {
   type PadKey,
   type ProfileHdr,
   type Snapshot,
+  type SwitchConfig,
+  type SwitchFocus,
 } from "./types";
+import { PrintOverlay } from "./PrintSheet";
+import { baseName, fmtAct, launchOf } from "./format";
 import {
   ACT_SLOTS,
   TEXT_MAX,
@@ -41,55 +44,8 @@ import {
   PROFILE_MAX,
 } from "./text";
 
-function hidName(hid: number): string {
-  return HID_LETTERS.find((h) => h.hid === hid)?.name ?? `0x${hid.toString(16)}`;
-}
-
-function fmtAct(a: Action): string {
-  switch (a.type) {
-    case ACT.key: {
-      const send = a.code >> 8;
-      const hid = a.code & 0xff;
-      const mods = [
-        a.mods & 1 ? "Ctrl" : "",
-        a.mods & 2 ? "Shift" : "",
-        a.mods & 4 ? "Alt" : "",
-        a.mods & 8 ? "Win" : "",
-      ]
-        .filter(Boolean)
-        .join("+");
-      const mode = send === SEND.down ? " down" : send === SEND.up ? " up" : "";
-      const key = hid ? hidName(hid) : "";
-      return [mods, key].filter(Boolean).join("+") + mode || "Key";
-    }
-    case ACT.delay:
-      return `Wait ${a.code} ms`;
-    case ACT.consumer:
-      return MEDIA.find((m) => m.usage === a.code)?.name ?? "Media";
-    case ACT.mouseBtn:
-      return "Click";
-    case ACT.mouseMove:
-      return "Move";
-    case ACT.wheel:
-      return "Wheel";
-    case ACT.release:
-      return "Release";
-    case ACT.text:
-      return "Type text";
-    default:
-      return "—";
-  }
-}
-
 function emptyKey(profile: number, index: number): PadKey {
   return { profile, index, label: "", led: 0, acts: [], text: "" };
-}
-
-function launchOf(list: LaunchEntry[], profile: number, key: number): LaunchEntry {
-  const found = list.find((l) => l.profile === profile && l.key === key);
-  return found
-    ? { slot: 0, ...found }
-    : { profile, key, path: "", args: "", slot: 0 };
 }
 
 type Step = { kind: "launch" } | { kind: "act"; i: number; a: Action };
@@ -163,12 +119,6 @@ function MemBar({
   );
 }
 
-function baseName(path: string): string {
-  const p = path.replaceAll("\\", "/");
-  const i = p.lastIndexOf("/");
-  return i >= 0 ? p.slice(i + 1) : p;
-}
-
 function keyAtClient(x: number, y: number): number | null {
   const el = document.elementFromPoint(x, y);
   const node = el?.closest(".grid [data-key]") as HTMLElement | null;
@@ -193,6 +143,8 @@ export default function App() {
   const [sendMode, setSendMode] = useState<number>(SEND.tap);
   const [status, setStatus] = useState("Looking for LogicPad…");
   const [launches, setLaunches] = useState<LaunchEntry[]>([]);
+  const [switchCfg, setSwitchCfg] = useState<SwitchConfig>({ enabled: false, rules: [] });
+  const [focusNow, setFocusNow] = useState<SwitchFocus | null>(null);
   const [flash, setFlash] = useState<{ phase: string; done: number; total: number } | null>(null);
   const [dropHover, setDropHover] = useState<number | null>(null);
   const [linked, setLinked] = useState(false);
@@ -214,6 +166,8 @@ export default function App() {
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
   const [launchDraft, setLaunchDraft] = useState<LaunchEntry | null>(null);
   const [actPick, setActPick] = useState<ActPick>(null);
+  const [printOpen, setPrintOpen] = useState(false);
+  const [printAll, setPrintAll] = useState(true);
   snapRef.current = snap;
   launchesRef.current = launches;
 
@@ -271,9 +225,21 @@ export default function App() {
   useEffect(() => {
     void onConnect();
     void api.getLaunches().then(setLaunches).catch(() => undefined);
+    void api.getSwitchRules().then(setSwitchCfg).catch(() => undefined);
     // Connect once on launch; retry with the button if the pad was unplugged.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "p") return;
+      e.preventDefault();
+      if (printOpen) return;
+      if (snapRef.current) setPrintOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [printOpen]);
 
   useEffect(() => {
     setLaunchDraft(null);
@@ -303,6 +269,35 @@ export default function App() {
       else unlisten = fn;
     });
     void listen<string>("launch-error", (e) => setErr(String(e.payload))).then((fn) => {
+      if (gone) fn();
+      else {
+        const prev = unlisten;
+        unlisten = () => {
+          prev?.();
+          fn();
+        };
+      }
+    });
+    void listen<{ profile: number }>("active-profile", (e) => {
+      const p = e.payload.profile;
+      setSnap((s) => {
+        if (!s || s.meta.active === p) return s;
+        const next = structuredClone(s);
+        next.meta.active = p;
+        return next;
+      });
+      setSel(0);
+    }).then((fn) => {
+      if (gone) fn();
+      else {
+        const prev = unlisten;
+        unlisten = () => {
+          prev?.();
+          fn();
+        };
+      }
+    });
+    void listen<SwitchFocus>("switch-focus", (e) => setFocusNow(e.payload)).then((fn) => {
       if (gone) fn();
       else {
         const prev = unlisten;
@@ -592,6 +587,39 @@ export default function App() {
     }
   }
 
+  async function persistSwitch(next: SwitchConfig) {
+    try {
+      setSwitchCfg(await api.setSwitchRules(next));
+    } catch (e) {
+      setErr(String(e));
+    }
+  }
+
+  async function onAddSwitchProgram() {
+    const path = await api.pickProgram();
+    if (!path) return;
+    try {
+      setSwitchCfg(await api.addSwitchProgram(profile, path));
+    } catch (e) {
+      setErr(String(e));
+    }
+  }
+
+  async function onRemoveSwitchProgram(exe: string) {
+    try {
+      setSwitchCfg(await api.removeSwitchProgram(exe));
+    } catch (e) {
+      setErr(String(e));
+    }
+  }
+
+  const bound = switchCfg.rules.filter((r) => r.profile === profile);
+  const focusLabel = focusNow?.exe
+    ? focusNow.profile != null
+      ? `Now: ${focusNow.exe} → ${snap?.profiles[focusNow.profile]?.name || `P${focusNow.profile + 1}`}`
+      : `Now: ${focusNow.exe}`
+    : null;
+
   async function onAddProfile() {
     await run("Profile added", async () => {
       setSnap(await api.addProfile());
@@ -608,6 +636,7 @@ export default function App() {
     await run("Profile deleted", async () => {
       setSnap(await api.deleteProfile(profile));
       setLaunches(await api.getLaunches());
+      setSwitchCfg(await api.getSwitchRules());
       setSel(0);
     });
   }
@@ -751,6 +780,7 @@ export default function App() {
   const full = key.acts.length >= ACT_SLOTS;
 
   return (
+    <>
     <div className="app">
       <header>
         <div>
@@ -785,6 +815,13 @@ export default function App() {
             }
           >
             Reload
+          </button>
+          <button
+            disabled={!snap}
+            title="Print a paper map of each profile"
+            onClick={() => setPrintOpen(true)}
+          >
+            Print
           </button>
           <button
             className="danger"
@@ -881,6 +918,39 @@ export default function App() {
             <p className="hint">
               {snap.profiles.length} / {PROFILE_MAX} profiles on the pad.
             </p>
+            <h3>Auto-switch</h3>
+            <label className="row-check">
+              <input
+                type="checkbox"
+                checked={switchCfg.enabled}
+                onChange={(e) => void persistSwitch({ ...switchCfg, enabled: e.target.checked })}
+              />
+              Auto-switch with programs
+            </label>
+            <p className="hint">
+              Keep LogicPad in the tray. Starts with Windows when a program is listed.
+            </p>
+            {focusLabel ? <p className="hint now">{focusLabel}</p> : null}
+            <h4>When using</h4>
+            {bound.length ? (
+              <ul className="switch-list">
+                {bound.map((r) => (
+                  <li key={r.exe}>
+                    <span title={r.exe}>{r.exe}</span>
+                    <button type="button" disabled={busy} onClick={() => void onRemoveSwitchProgram(r.exe)}>
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="hint">No programs for this profile.</p>
+            )}
+            <div className="add">
+              <button type="button" disabled={busy} onClick={() => void onAddSwitchProgram()}>
+                Add program
+              </button>
+            </div>
             {hdr ? (
               <>
                 <label>
@@ -1342,5 +1412,16 @@ export default function App() {
         </main>
       )}
     </div>
+    {printOpen && snap ? (
+      <PrintOverlay
+        snap={snap}
+        launches={launches}
+        allProfiles={printAll}
+        onAllProfiles={setPrintAll}
+        onClose={() => setPrintOpen(false)}
+        onPrint={() => window.print()}
+      />
+    ) : null}
+    </>
   );
 }

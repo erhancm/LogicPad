@@ -13,6 +13,7 @@ Agent continuation (locks + next steps): [`AGENTS.md`](../../AGENTS.md) at repo 
 - [x] Tauri configurator (`04 Software/logicpad-app/` — connect, profiles, keys, save, firmware update, drag-drop launch, type-text, memory meter)
 - [x] HID field update (`03 Firmware/bootloader/`, PID `0x5751`; first flash `LogicPad_factory.hex`, then app `LogicPad.bin`; OLED boot screens + in-app reset from main loop)
 - [x] Idle OLED clock (24h `HH:MM:SS`, date `16 Aug 2026`; SET_TIME `0x0E` from the app; HSE RTC keeps time while powered, flash snapshot across power loss)
+- [x] Idle home shows the active profile while USB is live; clock when USB is down or SET_HOST `0x15` reports the PC locked / logged off
 - [ ] Own VID/PID (still ST test IDs 1155/22352 app, 22353 boot)
 
 ## How to use

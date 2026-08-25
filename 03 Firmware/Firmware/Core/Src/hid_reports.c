@@ -79,6 +79,13 @@ void hid_tick(void) {
   if (enter_boot) {
     hid_go_boot();
   }
+  {
+    uint8_t st = hUsbDeviceFS.dev_state;
+    /* Unplug / re-enumerate, not USB suspend: start the next host as in-use. */
+    if (st == USBD_STATE_DEFAULT || st == USBD_STATE_ADDRESSED) {
+      ui_set_host_active(1);
+    }
+  }
   if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED) {
     hid_on_no_host();
     return;
@@ -193,7 +200,7 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
   switch (cmd) {
   case CMD_PING:
     out[0] = 0x01;
-    out[1] = 0x03; /* minor: 12-char key titles */
+    out[1] = 0x04; /* minor: SET_HOST idle home */
     vendor_reply(CMD_PING, out, 2);
     break;
   case CMD_GET_META:
@@ -301,9 +308,11 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
     break;
   }
   case CMD_SET_ACTIVE:
+    /* Runtime slot only. Do not mark flash dirty — host auto-switch would
+     * otherwise trip the OLED save prompt on every Alt-Tab. OLED profile
+     * edits still call dirty() in ui.c. */
     if (p[0] < storage_n_profiles()) {
       g_store.active = p[0];
-      g_store.dirty = 1;
       ui_mark_dirty();
     }
     vendor_reply(cmd, p, 1);
@@ -366,6 +375,10 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
     vendor_reply(cmd, p, 7);
     break;
   }
+  case CMD_SET_HOST:
+    ui_set_host_active(p[0] != 0);
+    vendor_reply(cmd, p, 1);
+    break;
   case CMD_GET_TEXT: {
     uint8_t pi = p[0], ki = p[1], off = p[2];
     uint8_t tlen = 0;

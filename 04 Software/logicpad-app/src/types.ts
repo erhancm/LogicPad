@@ -80,6 +80,21 @@ export type LaunchEntry = {
   slot?: number;
 };
 
+export type SwitchRule = {
+  exe: string;
+  profile: number;
+};
+
+export type SwitchConfig = {
+  enabled: boolean;
+  rules: SwitchRule[];
+};
+
+export type SwitchFocus = {
+  exe: string;
+  profile: number | null;
+};
+
 export type ResolvedProgram = {
   path: string;
   args: string;

@@ -13,9 +13,9 @@ Tracker: [`03 Firmware/Firmware/PROJECT_PROGRESS_TRACKER.md`](03%20Firmware/Firm
 ## Product (locked)
 
 - **Daily use:** plug USB in. Inbox OS HID keyboard/mouse/media. No installer, no driver, no Python, no app required.
-- **On-device config:** 0.96" SSD1306 128×64. Profiles, keys, macros, lights, screen. Home/sleep is a 24-hour clock with seconds.
+- **On-device config:** 0.96" SSD1306 128×64. Profiles, keys, macros, lights, screen. Home/sleep shows the active profile while you are using the PC; the 24-hour clock appears when USB is gone or Windows is locked / logged off (app `SET_HOST`).
 - **Optional PC/Mac/Linux app:** one codebase — **Tauri 2 + React (or similar) + Rust hidapi**. Not Python, not Electron, not browser-only WebHID (WKWebView has no WebHID).
-- App-only extra: live-record of **host** keys, backup/restore, big-screen editor, **launch a PC program** from a pad key (drag a file onto the key; app must be running; mapping is local JSON, not flash). Typed strings live in a 1200-byte flash pool on the pad and are one step in that key’s macro (so Enter or a chord can follow).
+- App-only extra: live-record of **host** keys, backup/restore, big-screen editor, **launch a PC program** from a pad key (drag a file onto the key; app must be running; mapping is local JSON, not flash). Typed strings live in a 1200-byte flash pool on the pad and are one step in that key’s macro (so Enter or a chord can follow). **Auto-switch profile** when a mapped program is focused (Windows; tray app; `profile-rules.json`).
 - All nine pad keys are macros. Selector is **not** a 10th macro. Factory: empty labels and empty actions (no assigned keys). Flash magic `LP_MAGIC` `0x4C504148` (`LPAH`) so older stores without 12-character key titles are discarded on boot.
 - Live: SEL short = menu, SEL long = home. Keys 0–8 fire their macros (empty = no-op toast).
 - Menus: d-pad — key 1 up, key 7 down, key 3 left, key 5 right, key 4 OK. SEL short = Back. SEL long = Home. Corners unused except macro list: key 2 add, key 8 delete. Save prompt: OK = yes, SEL = no.
@@ -52,6 +52,8 @@ USB still uses ST test VID/PID 1155/22352 (app). Bootloader is the same VID, PID
 ## App (when you start it)
 
 Path: `04 Software/logicpad-app/`. Same `lp_store_t` / key structs as flash. HID via Rust hidapi filtered to vendor report 4 (Windows skips the keyboard/mouse collections) so the pad keeps typing. **Update firmware** sends the app `.bin` to the HID bootloader. Linux: udev rule in the app README (include PID `5751`), not a custom driver.
+
+**Auto-switch** (Windows): while the tray app is running, the focused program’s exe can select a pad profile (`SET_ACTIVE`, not saved to flash). Rules live in `profile-rules.json` next to `launches.json`. Autostart enables when a launch mapping or an enabled auto-switch rule exists. `SET_ACTIVE` does not mark the store dirty (update firmware if Alt-Tab pops the OLED save prompt).
 
 Daily Windows use: installed **LogicPad** (`%LOCALAPPDATA%\LogicPad\LogicPad.exe`) — Start menu or desktop shortcut, no terminal. Rebuild with `npm run build:app` or double-click `Build LogicPad.bat`. `npm run tauri dev` is only for live development.
 

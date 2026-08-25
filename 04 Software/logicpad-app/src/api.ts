@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { LaunchEntry, PadKey, ProfileHdr, ResolvedProgram, Snapshot } from "./types";
+import type { LaunchEntry, PadKey, ProfileHdr, ResolvedProgram, Snapshot, SwitchConfig } from "./types";
 
 export const api = {
   connect: () => invoke<void>("connect"),
@@ -28,4 +28,9 @@ export const api = {
   setLaunch: (entry: LaunchEntry) => invoke<void>("set_launch", { entry }),
   pickProgram: () => invoke<string | null>("pick_program"),
   resolveProgram: (path: string) => invoke<ResolvedProgram>("resolve_program", { path }),
+  getSwitchRules: () => invoke<SwitchConfig>("get_switch_rules"),
+  setSwitchRules: (cfg: SwitchConfig) => invoke<SwitchConfig>("set_switch_rules", { cfg }),
+  addSwitchProgram: (profile: number, path: string) =>
+    invoke<SwitchConfig>("add_switch_program", { profile, path }),
+  removeSwitchProgram: (exe: string) => invoke<SwitchConfig>("remove_switch_program", { exe }),
 };
