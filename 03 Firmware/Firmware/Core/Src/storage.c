@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <string.h>
 
-#define LP_MAGIC 0x4C504147u /* LPAG: shared type-text pool */
+#define LP_MAGIC 0x4C504148u /* LPAH: 12-char key titles */
 #define STORE_PAGES 4
 #define STORE_BYTES (STORE_PAGES * 1024u)
 #define SLOT0 ((uint32_t)(FLASH_BASE + 0xE000u))
@@ -28,6 +28,8 @@ typedef struct __attribute__((packed)) {
 _Static_assert(sizeof(lp_store_t) <= STORE_BYTES, "store exceeds ping-pong slot");
 _Static_assert(sizeof(lp_clk_snap_t) == 10, "clock snap size");
 _Static_assert(CLK_MAX >= 2, "store slot has no room for clock snaps");
+_Static_assert(offsetof(lp_key_t, title) == LP_KEY_HID_BYTES, "title must follow HID key blob");
+_Static_assert(LP_KEY_HID_BYTES <= 60, "HID key blob exceeds vendor packet");
 
 lp_store_t g_store;
 static uint32_t live_slot = SLOT0;
@@ -325,6 +327,38 @@ const uint8_t *storage_text(uint8_t profile, uint8_t key, uint8_t *len) {
 
 uint16_t storage_pool_used(void) {
   return g_store.pool_n;
+}
+
+void storage_fill_label(char *label, const char *title) {
+  uint8_t n = 0;
+  memset(label, 0, LP_LABEL_LEN + 1);
+  if (!title) {
+    return;
+  }
+  while (*title && n < LP_LABEL_LEN) {
+    if (*title != ' ') {
+      label[n++] = *title;
+    }
+    title++;
+  }
+}
+
+void storage_set_key_title(lp_key_t *k, const char *title) {
+  uint8_t n = 0;
+  memset(k->title, 0, sizeof(k->title));
+  if (title) {
+    while (*title && n < LP_TITLE_LEN) {
+      unsigned char c = (unsigned char)*title++;
+      if (c >= 32 && c <= 126) {
+        k->title[n++] = (char)c;
+      }
+    }
+  }
+  storage_fill_label(k->label, k->title);
+}
+
+const char *storage_key_title(const lp_key_t *k) {
+  return k->title[0] ? k->title : k->label;
 }
 
 static int snap_ok(const lp_clk_snap_t *s) {

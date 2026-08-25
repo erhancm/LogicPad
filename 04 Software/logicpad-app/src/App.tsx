@@ -25,13 +25,17 @@ import {
 import {
   ACT_SLOTS,
   TEXT_MAX,
+  TITLE_MAX,
+  LABEL_HID,
   applyTypedText,
   hasTextAct,
   memoryOf,
   moveAct,
   roomForText,
   stemName,
+  titleConflict,
   typedDisplay,
+  uniqueTitle,
   utf8Len,
   withTextStep,
   PROFILE_MAX,
@@ -217,6 +221,7 @@ export default function App() {
   const hdr = snap?.profiles[profile];
   const keys = snap?.keys[profile] ?? [];
   const poolOn = snap?.textPool?.enabled ?? false;
+  const titleMax = snap?.canTitles ? TITLE_MAX : LABEL_HID;
   const key = withTextStep(keys[sel] ?? emptyKey(profile, sel), poolOn);
   const storedLaunch = launchOf(launches, profile, sel);
   const showLaunch = Boolean(storedLaunch.path) || launchDraft != null;
@@ -432,6 +437,12 @@ export default function App() {
   async function pushKey(next: PadKey) {
     const cur = snapRef.current;
     if (!cur) return;
+    const row = cur.keys[next.profile] ?? [];
+    const clash = titleConflict(row, next);
+    if (clash != null) {
+      setErr(`Key ${clash + 1} already uses “${next.label.trim()}”. Pick a different name.`);
+      return;
+    }
     const copy: Snapshot = structuredClone(cur);
     copy.keys[next.profile][next.index] = next;
     copy.meta.dirty = true;
@@ -543,7 +554,13 @@ export default function App() {
     await saveLaunch(next);
     setActPick("launch");
     if (!k.label.trim()) {
-      await pushKey({ ...k, label: stemName(next.path) });
+      const name = uniqueTitle(
+        cur.keys[p] ?? [],
+        index,
+        stemName(next.path, titleMax),
+        titleMax,
+      );
+      await pushKey({ ...k, label: name });
     }
     setStatus(`Linked ${baseName(next.path)} to key ${index + 1}`);
   }
@@ -977,7 +994,9 @@ export default function App() {
                     onPointerCancel={endKeyDrag}
                   >
                     <span className="idx">{i + 1}</span>
-                    <span className="lab">{k.label || "—"}</span>
+                    <span className={k.label.length > 8 ? "lab long" : "lab"}>
+                      {k.label || "—"}
+                    </span>
                     <span className="tags">
                       {launchOf(launches, profile, i).path ? <span className="run">app</span> : null}
                       {tlen ? <span className="run">text</span> : null}
@@ -1006,13 +1025,14 @@ export default function App() {
             <label>
               Label
               <input
-                maxLength={6}
+                maxLength={titleMax}
                 value={key.label}
                 onChange={(e) => {
                   const next = { ...key, label: e.target.value };
                   const copy = structuredClone(snap);
                   copy.keys[profile][sel] = next;
                   setSnap(copy);
+                  setErr("");
                 }}
                 onBlur={() => pushKey(key)}
               />

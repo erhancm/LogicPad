@@ -13,7 +13,7 @@ Firmware `ui.c` is the in-repo look-and-feel source of truth.
 
 Default orientation (`SEG A0` + `COM C0`) keeps text upright relative to the keys. Screen → Flip adds an extra 180°.
 
-Fonts: Font_6x8 in yellow; 12×16 (2×) list rows in blue (three rows × 16 px = full blue band).
+Fonts: Font_6x8 in yellow; 12×16 (2×) list rows in blue (three rows × 16 px = full blue band). Key press toast uses the same 12×16 glyphs: one centered line for up to 10 characters, two lines for 11–12 (split on a space, else at the midpoint).
 
 ## Controls
 

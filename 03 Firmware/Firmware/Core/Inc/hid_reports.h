@@ -28,6 +28,8 @@
 #define CMD_SET_TEXT 0x10
 #define CMD_ADD_PROFILE 0x11
 #define CMD_DEL_PROFILE 0x12
+#define CMD_GET_TITLE 0x13
+#define CMD_SET_TITLE 0x14
 
 void hid_init(void);
 void hid_tick(void);

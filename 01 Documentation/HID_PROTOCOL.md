@@ -17,14 +17,14 @@ EP IN/OUT max packet = 64. Poll interval 1 ms.
 
 Byte 0 = report ID `4`. Byte 1 = command. Bytes 2–63 = payload.
 
-PING payload is protocol `0x01, 0x02` (minor `2` = add/delete profiles). Minor `1` is type-text pool only; `0` is older firmware without the pool.
+PING payload is protocol `0x01, 0x03` (minor `3` = 12-character key titles). Minor `2` is add/delete profiles; `1` is type-text pool only; `0` is older firmware without the pool.
 
 | Cmd | Name | Host → pad | Pad → host |
 |-----|------|------------|------------|
-| 0x01 | PING | — | version `0x01, 0x02` |
+| 0x01 | PING | — | version `0x01, 0x03` |
 | 0x02 | GET_META | — | active, dirty, contrast, flip, sleep, in_menu, usb, n_profiles |
-| 0x03 | GET_KEY | profile, key | profile, key, first 60 bytes of `lp_key_t` |
-| 0x04 | SET_KEY | profile, key, 60 bytes | echo profile, key |
+| 0x03 | GET_KEY | profile, key | profile, key, first `LP_KEY_HID_BYTES` (57) of `lp_key_t` |
+| 0x04 | SET_KEY | profile, key, 60-byte HID blob | echo profile, key |
 | 0x05 | SET_ACTIVE | profile | echo |
 | 0x06 | SAVE | — | ack |
 | 0x07 | RELOAD | — | ack |
@@ -39,6 +39,8 @@ PING payload is protocol `0x01, 0x02` (minor `2` = add/delete profiles). Minor `
 | 0x10 | SET_TEXT | profile, key, offset, total_len, data (58) | profile, key, offset, status, pool_used u16le |
 | 0x11 | ADD_PROFILE | — | index, n_profiles, status |
 | 0x12 | DEL_PROFILE | profile | profile, n_profiles, active, status |
+| 0x13 | GET_TITLE | profile, key | profile, key, title (12+NUL) |
+| 0x14 | SET_TITLE | profile, key, title (12, NUL-padded) | echo profile, key |
 
 `SET_TEXT` status `0` ok, `1` pool full, `2` longer than 240 bytes, `3` bad args. Offset `0` starts a new write; further packets must continue from the next byte. Empty `total_len` clears that key.
 
@@ -46,7 +48,9 @@ PING payload is protocol `0x01, 0x02` (minor `2` = add/delete profiles). Minor `
 
 `ENTER_BOOTLOADER` acks, then the main loop shows **FLASH / BOOT MODE** on the OLED and resets. Do not wait in the USB callback — USB IRQ priority 0 would hang `HAL_Delay`.
 
-Typed strings live in a **shared 1200-byte pool** (max 240 bytes per key) at the end of `lp_store_t`. `ACT_TEXT` (`8`) is a macro step that types that string as US-HID taps, so later steps can be Enter or a chord. Keys that still have pool text but no `ACT_TEXT` play the string after the other actions (older saves). Store magic is `LPAG` (`0x4C504147`); older `LPAF` stores are discarded on boot.
+Typed strings live in a **shared 1200-byte pool** (max 240 bytes per key) at the end of `lp_store_t`. `ACT_TEXT` (`8`) is a macro step that types that string as US-HID taps, so later steps can be Enter or a chord. Keys that still have pool text but no `ACT_TEXT` play the string after the other actions (older saves).
+
+`SET_KEY` copies only the HID prefix of `lp_key_t` (`label[7]`, LED, action count, 12 actions). It does not touch `title`. `SET_TITLE` stores the 12-character display name and fills `label` with the first 6 non-space characters as a stub for old packets. OLED and the PC app show `title` (fall back to `label` if empty). Store magic is `LPAH` (`0x4C504148`); older `LPAG` / `LPAF` stores are discarded on boot.
 
 Structs are in `03 Firmware/Firmware/Core/Inc/storage.h`. OLED USB dot blinks while a vendor command was seen in the last 2 s.
 

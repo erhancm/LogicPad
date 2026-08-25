@@ -57,7 +57,7 @@ Person(operator, "Operator", "Uses pad and optional app.")
 System_Boundary(device, "LogicPad STM32F103C8") {
     Container(boot, "HID bootloader", "C, 4 KB at 0x08000000", "PID 0x5751 LogicPad Boot. Bare-metal USB. Writes app flash.")
     Container(fw, "Firmware application", "C, Cube HAL, 52 KB at 0x08001000", "PID 0x5750. 1 ms loop: scan, UI, macros, HID, RGB.")
-    ContainerDb(store, "Config store", "Flash ping-pong 8 KB at 0x0800E000", "lp_store_t, magic LPAG. Profiles, keys, type-text pool, clock snapshot.")
+    ContainerDb(store, "Config store", "Flash ping-pong 8 KB at 0x0800E000", "lp_store_t, magic LPAH. Profiles, keys, 12-char titles, type-text pool, clock snapshot.")
 }
 
 System_Boundary(host, "Host computer") {
@@ -230,7 +230,7 @@ STM32F103C8: 64 KB flash, 20 KB SRAM. ROM bootloader is USART-only, so field upd
 
 App vendor commands: `HID_PROTOCOL.md`. Bootloader: `0x40–0x43` (`BL_START`, `BL_DATA`, `BL_FINISH`, `BL_ABORT`).
 
-Store schema: `03 Firmware/Firmware/Core/Inc/storage.h` (`lp_store_t`, magic `0x4C504147`).
+Store schema: `03 Firmware/Firmware/Core/Inc/storage.h` (`lp_store_t`, magic `0x4C504148`).
 
 ---
 

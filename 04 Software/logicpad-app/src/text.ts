@@ -4,6 +4,8 @@ export const TEXT_POOL = 1200;
 export const TEXT_MAX = 240;
 export const ACT_SLOTS = 12;
 export const PROFILE_MAX = 4;
+export const TITLE_MAX = 12;
+export const LABEL_HID = 6;
 
 type HidCh = { hid: number; mods: number; ch: string };
 
@@ -188,9 +190,51 @@ export function roomForText(snap: Snapshot, profile: number, index: number): num
   return Math.max(0, mem.textMax - (mem.text - cur));
 }
 
-export function stemName(path: string): string {
+export function stemName(path: string, max = TITLE_MAX): string {
   const p = path.replaceAll("\\", "/");
   const base = p.slice(p.lastIndexOf("/") + 1);
   const dot = base.lastIndexOf(".");
-  return (dot > 0 ? base.slice(0, dot) : base).slice(0, 6);
+  return (dot > 0 ? base.slice(0, dot) : base).slice(0, max);
+}
+
+export function macrosEqual(a: PadKey, b: PadKey): boolean {
+  if (a.acts.length !== b.acts.length) return false;
+  if ((a.text ?? "") !== (b.text ?? "")) return false;
+  return a.acts.every(
+    (act, i) =>
+      act.type === b.acts[i].type && act.mods === b.acts[i].mods && act.code === b.acts[i].code,
+  );
+}
+
+/** Index of another key in the same profile with this title and a different macro, or null. */
+export function titleConflict(row: PadKey[], next: PadKey): number | null {
+  const t = next.label.trim();
+  if (!t) return null;
+  for (const k of row) {
+    if (k.index === next.index) continue;
+    if (k.label.trim() !== t) continue;
+    if (!macrosEqual(k, next)) return k.index;
+  }
+  return null;
+}
+
+export function uniqueTitle(row: PadKey[], index: number, wanted: string, max = TITLE_MAX): string {
+  const base = wanted.trim().slice(0, max);
+  if (!base) return "";
+  const at = row[index] ?? {
+    profile: 0,
+    index,
+    label: "",
+    led: 0,
+    acts: [],
+    text: "",
+  };
+  const draft = { ...at, index, label: base };
+  if (titleConflict(row, draft) == null) return base;
+  for (let n = 2; n <= 9; n++) {
+    const suffix = String(n);
+    const cut = base.slice(0, Math.max(1, max - suffix.length)) + suffix;
+    if (titleConflict(row, { ...draft, label: cut }) == null) return cut;
+  }
+  return base;
 }

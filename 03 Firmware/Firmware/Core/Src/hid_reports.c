@@ -181,7 +181,7 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
   switch (cmd) {
   case CMD_PING:
     out[0] = 0x01;
-    out[1] = 0x02; /* minor: type-text pool + add/delete profiles */
+    out[1] = 0x03; /* minor: 12-char key titles */
     vendor_reply(CMD_PING, out, 2);
     break;
   case CMD_GET_META:
@@ -235,21 +235,54 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
   }
   case CMD_GET_KEY: {
     uint8_t pi = p[0], ki = p[1];
+    lp_key_t *k;
     if (pi >= storage_n_profiles() || ki >= LP_N_KEYS) {
       break;
     }
+    k = &g_store.profiles[pi].keys[ki];
     out[0] = pi;
     out[1] = ki;
-    memcpy(&out[2], &g_store.profiles[pi].keys[ki], 60);
+    memcpy(&out[2], k, LP_KEY_HID_BYTES);
     vendor_reply(cmd, out, 62);
     break;
   }
   case CMD_SET_KEY: {
     uint8_t pi = p[0], ki = p[1];
+    lp_key_t *k;
     if (pi >= storage_n_profiles() || ki >= LP_N_KEYS) {
       break;
     }
-    memcpy(&g_store.profiles[pi].keys[ki], &p[2], 60);
+    k = &g_store.profiles[pi].keys[ki];
+    memcpy(k, &p[2], LP_KEY_HID_BYTES);
+    k->label[LP_LABEL_LEN] = 0;
+    if (k->n > LP_MAX_ACTIONS) {
+      k->n = LP_MAX_ACTIONS;
+    }
+    g_store.dirty = 1;
+    ui_mark_dirty();
+    vendor_reply(cmd, p, 2);
+    break;
+  }
+  case CMD_GET_TITLE: {
+    uint8_t pi = p[0], ki = p[1];
+    if (pi >= storage_n_profiles() || ki >= LP_N_KEYS) {
+      break;
+    }
+    out[0] = pi;
+    out[1] = ki;
+    memcpy(&out[2], g_store.profiles[pi].keys[ki].title, LP_TITLE_LEN + 1);
+    vendor_reply(cmd, out, 2 + LP_TITLE_LEN + 1);
+    break;
+  }
+  case CMD_SET_TITLE: {
+    uint8_t pi = p[0], ki = p[1];
+    char tmp[LP_TITLE_LEN + 1];
+    if (pi >= storage_n_profiles() || ki >= LP_N_KEYS) {
+      break;
+    }
+    memset(tmp, 0, sizeof(tmp));
+    memcpy(tmp, &p[2], LP_TITLE_LEN);
+    storage_set_key_title(&g_store.profiles[pi].keys[ki], tmp);
     g_store.dirty = 1;
     ui_mark_dirty();
     vendor_reply(cmd, p, 2);

@@ -68,6 +68,7 @@ export type Snapshot = {
   keys: PadKey[][];
   textPool?: { enabled: boolean; used: number; max: number };
   canMutateProfiles?: boolean;
+  canTitles?: boolean;
 };
 
 export type LaunchEntry = {

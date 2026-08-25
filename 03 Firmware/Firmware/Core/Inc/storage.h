@@ -6,9 +6,12 @@
 #define LP_N_PROFILES 4
 #define LP_N_KEYS 9
 #define LP_N_LIGHT_MODES 15 /* Off, Solid, React, 8 shows, Full White/Red/Green/Blue */
-#define LP_MAX_ACTIONS 16
+#define LP_MAX_ACTIONS 12
 #define LP_NAME_LEN 12
 #define LP_LABEL_LEN 6
+#define LP_TITLE_LEN 12
+/* label + led + n + acts — GET_KEY / SET_KEY copy. title follows and is not in that blob. */
+#define LP_KEY_HID_BYTES (LP_LABEL_LEN + 1 + 1 + 1 + (LP_MAX_ACTIONS * 4))
 #define LP_TEXT_POOL 1200
 #define LP_TEXT_MAX 240
 #define LP_TEXT_SLOTS (LP_N_PROFILES * LP_N_KEYS)
@@ -38,6 +41,7 @@ typedef struct __attribute__((packed)) {
   uint8_t led;
   uint8_t n;
   lp_action_t acts[LP_MAX_ACTIONS];
+  char title[LP_TITLE_LEN + 1];
 } lp_key_t;
 
 typedef struct __attribute__((packed)) {
@@ -84,6 +88,9 @@ int storage_del_profile(uint8_t idx);
 int storage_set_text(uint8_t profile, uint8_t key, const uint8_t *data, uint8_t len);
 const uint8_t *storage_text(uint8_t profile, uint8_t key, uint8_t *len);
 uint16_t storage_pool_used(void);
+void storage_fill_label(char *label, const char *title);
+void storage_set_key_title(lp_key_t *k, const char *title);
+const char *storage_key_title(const lp_key_t *k);
 
 /* Clock snapshots live in the unused tail of the active store slot (not in
  * lp_store_t, so old saves stay valid). force=1 may use the last slot. */

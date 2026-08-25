@@ -182,12 +182,75 @@ static void footer(const char *s) {
   ssd1306_WriteString(s, Font_6x8, White);
 }
 
-static void text2x_center(uint8_t y, const char *s) {
+static void text2x_center_c(uint8_t y, const char *s, SSD1306_COLOR color) {
   uint8_t n = (uint8_t)strlen(s);
   uint8_t w = (uint8_t)(n * 12);
-  uint8_t x = (uint8_t)((128 - w) / 2);
+  uint8_t x = n ? (uint8_t)((128 - w) / 2) : 0;
   ssd1306_SetCursor(x, y);
-  ssd1306_WriteString2x(s, White);
+  ssd1306_WriteString2x(s, color);
+}
+
+static void text2x_center(uint8_t y, const char *s) {
+  text2x_center_c(y, s, White);
+}
+
+/* 12×16 glyphs: 10 columns on 128px. Split longer names onto two lines. */
+#define TITLE_2X_COLS 10
+
+static void split_title_2x(const char *s, char a[TITLE_2X_COLS + 1], char b[TITLE_2X_COLS + 1]) {
+  size_t n = strlen(s);
+  int sp = -1;
+  size_t i;
+  memset(a, 0, TITLE_2X_COLS + 1);
+  memset(b, 0, TITLE_2X_COLS + 1);
+  if (n <= TITLE_2X_COLS) {
+    memcpy(a, s, n);
+    return;
+  }
+  for (i = 1; i < n && i <= TITLE_2X_COLS; i++) {
+    if (s[i] == ' ') {
+      sp = (int)i;
+    }
+  }
+  if (sp > 0) {
+    size_t left = (size_t)sp;
+    size_t right;
+    if (left > TITLE_2X_COLS) {
+      left = TITLE_2X_COLS;
+    }
+    memcpy(a, s, left);
+    right = n - (size_t)sp - 1;
+    if (right > TITLE_2X_COLS) {
+      right = TITLE_2X_COLS;
+    }
+    memcpy(b, s + sp + 1, right);
+    return;
+  }
+  {
+    size_t left = n / 2;
+    size_t right;
+    if (left > TITLE_2X_COLS) {
+      left = TITLE_2X_COLS;
+    }
+    memcpy(a, s, left);
+    right = n - left;
+    if (right > TITLE_2X_COLS) {
+      right = TITLE_2X_COLS;
+    }
+    memcpy(b, s + left, right);
+  }
+}
+
+static void text2x_title(const char *s, SSD1306_COLOR color) {
+  char a[TITLE_2X_COLS + 1];
+  char b[TITLE_2X_COLS + 1];
+  split_title_2x(s, a, b);
+  if (!b[0]) {
+    text2x_center_c(16, a, color);
+    return;
+  }
+  text2x_center_c(8, a, color);
+  text2x_center_c(24, b, color);
 }
 
 static uint8_t month_days(uint16_t y, uint8_t m) {
@@ -542,7 +605,7 @@ static void commit_value(void) {
     go(SCR_PROF_ACTS);
     break;
   case SCR_KEY_NAME:
-    strncpy(p->keys[edit_key].label, name_buf, LP_LABEL_LEN);
+    storage_set_key_title(&p->keys[edit_key], name_buf);
     dirty();
     go(SCR_KEY_EDIT);
     break;
@@ -633,7 +696,8 @@ static void ok(void) {
   }
   if (scr == SCR_KEY_EDIT) {
     if (i == 0) {
-      strncpy(name_buf, p->keys[edit_key].label, sizeof(name_buf));
+      strncpy(name_buf, storage_key_title(&p->keys[edit_key]), sizeof(name_buf));
+      name_buf[sizeof(name_buf) - 1] = 0;
       go(SCR_KEY_NAME);
     } else if (i == 1) {
       i = p->keys[edit_key].led;
@@ -989,10 +1053,9 @@ static void draw(void) {
     draw_idle_clock();
     break;
   case SCR_TOAST: {
-    const char *lab = or_dash(p->keys[toast_key].label);
+    const char *lab = or_dash(storage_key_title(&p->keys[toast_key]));
     ssd1306_FillRect(0, 0, 128, UI_BLUE_H, White);
-    ssd1306_SetCursor((uint8_t)((128 - strlen(lab) * 12) / 2), 16);
-    ssd1306_WriteString2x(lab, Black);
+    text2x_title(lab, Black);
     header(p->name);
     break;
   }
@@ -1027,7 +1090,7 @@ static void draw(void) {
     break;
   }
   case SCR_PROF_NAME:
-    text2x_center(8, name_buf);
+    text2x_title(name_buf, White);
     footer("U/D letter");
     header_hint("NAME", "OK");
     break;
@@ -1045,11 +1108,11 @@ static void draw(void) {
   case SCR_KEY_EDIT: {
     const char *it[] = {"Name", "Light", "Macro"};
     big_menu(it, 3, i);
-    header(or_dash(p->keys[edit_key].label));
+    header(or_dash(storage_key_title(&p->keys[edit_key])));
     break;
   }
   case SCR_KEY_NAME:
-    text2x_center(8, name_buf);
+    text2x_title(name_buf, White);
     footer("U/D letter");
     header_hint("NAME", "OK");
     break;

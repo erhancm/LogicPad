@@ -35,6 +35,8 @@ const CMD_GET_TEXT: u8 = 0x0F;
 const CMD_SET_TEXT: u8 = 0x10;
 const CMD_ADD_PROFILE: u8 = 0x11;
 const CMD_DEL_PROFILE: u8 = 0x12;
+const CMD_GET_TITLE: u8 = 0x13;
+const CMD_SET_TITLE: u8 = 0x14;
 const CMD_BL_START: u8 = 0x40;
 const CMD_BL_DATA: u8 = 0x41;
 const CMD_BL_FINISH: u8 = 0x42;
@@ -43,6 +45,8 @@ pub const TEXT_POOL: u16 = 1200;
 pub const TEXT_MAX: usize = 240;
 const TEXT_SET_CHUNK: usize = 58;
 const TEXT_GET_CHUNK: usize = 56;
+pub const TITLE_MAX: usize = 12;
+pub const LABEL_HID: usize = 6;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PadError {
@@ -74,6 +78,7 @@ pub struct Pad {
     worker: Mutex<Option<JoinHandle<()>>>,
     on_key: Mutex<Option<KeyCallback>>,
     has_text: Mutex<bool>,
+    has_titles: Mutex<bool>,
 }
 
 impl Pad {
@@ -85,6 +90,7 @@ impl Pad {
             worker: Mutex::new(None),
             on_key: Mutex::new(None),
             has_text: Mutex::new(false),
+            has_titles: Mutex::new(false),
         })
     }
 
@@ -244,6 +250,9 @@ impl Pad {
         p[1] = key.index;
         pack_key(key, &mut p[2..2 + KEY_BYTES]);
         self.rpc(CMD_SET_KEY, &p)?;
+        if self.has_titles() {
+            self.set_title(key.profile, key.index, &key.label)?;
+        }
         if self.has_text_pool() {
             self.set_text(key.profile, key.index, &key.text)?;
         }
@@ -252,6 +261,36 @@ impl Pad {
 
     fn has_text_pool(&self) -> bool {
         self.has_text.lock().map(|g| *g).unwrap_or(false)
+    }
+
+    fn has_titles(&self) -> bool {
+        self.has_titles.lock().map(|g| *g).unwrap_or(false)
+    }
+
+    fn get_title(&self, profile: u8, key: u8) -> Result<String, PadError> {
+        let p = self.rpc(CMD_GET_TITLE, &[profile, key])?;
+        if p.len() < 2 {
+            return Err(PadError::Msg("short title".into()));
+        }
+        Ok(cstr(p.get(2..).unwrap_or(&[])))
+    }
+
+    fn set_title(&self, profile: u8, key: u8, title: &str) -> Result<(), PadError> {
+        let mut p = [0u8; 2 + TITLE_MAX];
+        p[0] = profile;
+        p[1] = key;
+        let mut n = 0;
+        for b in title.as_bytes() {
+            if n >= TITLE_MAX {
+                break;
+            }
+            if *b >= 32 && *b <= 126 {
+                p[2 + n] = *b;
+                n += 1;
+            }
+        }
+        self.rpc(CMD_SET_TITLE, &p)?;
+        Ok(())
     }
 
     fn get_text(&self, profile: u8, key: u8) -> Result<String, PadError> {
@@ -376,8 +415,12 @@ impl Pad {
     pub fn load_all(&self) -> Result<Snapshot, PadError> {
         let (_maj, min) = self.ping()?;
         let has_text = min >= 1;
+        let has_titles = min >= 3;
         if let Ok(mut g) = self.has_text.lock() {
             *g = has_text;
+        }
+        if let Ok(mut g) = self.has_titles.lock() {
+            *g = has_titles;
         }
         let meta = self.get_meta()?;
         let can_mutate_profiles = min >= 2;
@@ -401,6 +444,12 @@ impl Pad {
                     key.text = self.get_text(p, k)?;
                     text_used = text_used.saturating_add(key.text.len() as u16);
                 }
+                if has_titles {
+                    let title = self.get_title(p, k)?;
+                    if !title.is_empty() {
+                        key.label = title;
+                    }
+                }
                 row.push(key);
             }
             keys.push(row);
@@ -415,6 +464,7 @@ impl Pad {
                 max: TEXT_POOL,
             },
             can_mutate_profiles,
+            can_titles: has_titles,
         })
     }
 
@@ -818,9 +868,16 @@ fn parse_key(p: &[u8]) -> Result<PadKey, PadError> {
 
 fn pack_key(key: &PadKey, out: &mut [u8]) {
     out.fill(0);
-    let lab = key.label.as_bytes();
-    let n = lab.len().min(6);
-    out[..n].copy_from_slice(&lab[..n]);
+    let mut n = 0;
+    for b in key.label.as_bytes() {
+        if n >= LABEL_HID {
+            break;
+        }
+        if *b != b' ' {
+            out[n] = *b;
+            n += 1;
+        }
+    }
     out[7] = key.led;
     let count = key.acts.len().min(MAX_ACTS);
     out[8] = count as u8;
@@ -897,6 +954,8 @@ pub struct Snapshot {
     pub text_pool: TextPool,
     #[serde(default)]
     pub can_mutate_profiles: bool,
+    #[serde(default)]
+    pub can_titles: bool,
 }
 
 impl Default for TextPool {
