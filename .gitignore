@@ -8,6 +8,12 @@
 **/*.pro
 **/*.log
 **/*-bak
+**/*.kicad_prl
+**/*-backups/
+fp-info-cache
+
+# Local coding-agent project files
+.serena/
 
 # Firmware build artifacts and IDE project files
 03 Firmware/Firmware/3x3/Debug/
