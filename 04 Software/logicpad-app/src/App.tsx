@@ -24,20 +24,53 @@ import {
   type SwitchFocus,
 } from "./types";
 import { PrintOverlay } from "./PrintSheet";
-import { baseName, fmtAct, launchOf } from "./format";
+import { ClearAllButton, clearedKeys } from "./ClearAllButton";
+import {
+  KeyContextMenu,
+  preventGridMenu,
+  type KeyMenuTarget,
+} from "./KeyContextMenu";
+import { RunningPicker, type OpenProgram } from "./RunningPicker";
+import { SyncBadge } from "./SyncBadge";
+import { PackDialog } from "./PackDialog";
+import {
+  applyPack,
+  buildPack,
+  packToYaml,
+  suggestedFileName,
+  yamlToPack,
+  type LogicPadPack,
+  type PackOptions,
+} from "./pack";
+import { cloneSnap, syncStatus } from "./syncState";
+import { baseName, fmtAct, launchesOf } from "./format";
+import { buildSteps, type Step } from "./steps";
+import {
+  addLaunchDraft,
+  keyHasLaunch,
+  makeLaunch,
+  nudgeLaunchSlot,
+  onActRemoved,
+  remapKeyLaunches,
+  removeKeyLaunches,
+  tombstonesForKey,
+  upsertLaunch,
+  withLaunchId,
+} from "./launches";
 import {
   ACT_SLOTS,
   TEXT_MAX,
   TITLE_MAX,
   LABEL_HID,
-  applyTypedText,
-  hasTextAct,
+  addTextAct,
   memoryOf,
   moveAct,
+  removeAct,
   roomForText,
+  segmentOf,
+  setSegment,
   stemName,
-  titleConflict,
-  typedDisplay,
+  typedDisplayAt,
   uniqueTitle,
   utf8Len,
   withTextStep,
@@ -47,19 +80,7 @@ function emptyKey(profile: number, index: number): PadKey {
   return { profile, index, label: "", led: 0, acts: [], text: "" };
 }
 
-type Step = { kind: "launch" } | { kind: "act"; i: number; a: Action };
-type ActPick = "launch" | number | null;
-
-function clampSlot(slot: number, nActs: number): number {
-  return Math.max(0, Math.min(nActs, slot));
-}
-
-function buildSteps(acts: Action[], showLaunch: boolean, slot: number): Step[] {
-  const pad: Step[] = acts.map((a, i) => ({ kind: "act", i, a }));
-  if (!showLaunch) return pad;
-  const at = clampSlot(slot, pad.length);
-  return [...pad.slice(0, at), { kind: "launch" }, ...pad.slice(at)];
-}
+type ActPick = { kind: "launch"; id: string } | number | null;
 
 function HidPad({
   keys,
@@ -163,10 +184,17 @@ export default function App() {
   const dragKeyRef = useRef<number | null>(null);
   const dragOrigin = useRef<{ x: number; y: number; i: number } | null>(null);
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
-  const [launchDraft, setLaunchDraft] = useState<LaunchEntry | null>(null);
   const [actPick, setActPick] = useState<ActPick>(null);
   const [printOpen, setPrintOpen] = useState(false);
   const [printAll, setPrintAll] = useState(true);
+  const [baseline, setBaseline] = useState<Snapshot | null>(null);
+  const [keyMenu, setKeyMenu] = useState<KeyMenuTarget | null>(null);
+  const [runningOpen, setRunningOpen] = useState(false);
+  const [running, setRunning] = useState<OpenProgram[]>([]);
+  const [runningLoad, setRunningLoad] = useState(false);
+  const [runningErr, setRunningErr] = useState("");
+  const [packMode, setPackMode] = useState<"export" | "import" | null>(null);
+  const [importDraft, setImportDraft] = useState<LogicPadPack | null>(null);
   snapRef.current = snap;
   launchesRef.current = launches;
 
@@ -176,12 +204,17 @@ export default function App() {
   const poolOn = snap?.textPool?.enabled ?? false;
   const titleMax = snap?.canTitles ? TITLE_MAX : LABEL_HID;
   const key = withTextStep(keys[sel] ?? emptyKey(profile, sel), poolOn);
-  const storedLaunch = launchOf(launches, profile, sel);
-  const showLaunch = Boolean(storedLaunch.path) || launchDraft != null;
-  const launch: LaunchEntry = storedLaunch.path
-    ? storedLaunch
-    : (launchDraft ?? storedLaunch);
-  const steps = buildSteps(key.acts, showLaunch, launch.slot ?? 0);
+  const mine = launchesOf(launches, profile, sel);
+  const steps = buildSteps(key.acts, mine);
+  const pickedLaunch =
+    typeof actPick === "object" && actPick?.kind === "launch"
+      ? mine.find((l) => l.id === actPick.id)
+      : undefined;
+
+  function takePad(next: Snapshot) {
+    setSnap(next);
+    setBaseline(cloneSnap(next));
+  }
 
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(true);
@@ -216,7 +249,7 @@ export default function App() {
       } catch {
         /* old firmware / app without SET_TIME */
       }
-      setSnap(await api.loadPad());
+      takePad(await api.loadPad());
       setLinked(true);
     });
   }
@@ -241,18 +274,36 @@ export default function App() {
   }, [printOpen]);
 
   useEffect(() => {
-    setLaunchDraft(null);
     setActPick(null);
   }, [profile, sel]);
 
   useEffect(() => {
+    setKeyMenu(null);
+  }, [profile]);
+
+  useEffect(() => {
     if (!linked || busy || flash) return;
     const id = window.setInterval(() => {
-      void api.ping().catch((e) => {
-        if (String(e).toLowerCase().includes("busy")) return;
-        setLinked(false);
-        setStatus("Pad disconnected");
-      });
+      void api
+        .ping()
+        .then(async () => {
+          try {
+            const meta = await api.getMeta();
+            setSnap((s) => {
+              if (!s || s.meta.dirty === meta.dirty) return s;
+              const next = structuredClone(s);
+              next.meta.dirty = meta.dirty;
+              return next;
+            });
+          } catch {
+            /* GET_META missing on old firmware */
+          }
+        })
+        .catch((e) => {
+          if (String(e).toLowerCase().includes("busy")) return;
+          setLinked(false);
+          setStatus("Pad disconnected");
+        });
     }, 2000);
     return () => window.clearInterval(id);
   }, [linked, busy, flash]);
@@ -431,12 +482,6 @@ export default function App() {
   async function pushKey(next: PadKey) {
     const cur = snapRef.current;
     if (!cur) return;
-    const row = cur.keys[next.profile] ?? [];
-    const clash = titleConflict(row, next);
-    if (clash != null) {
-      setErr(`Key ${clash + 1} already uses “${next.label.trim()}”. Pick a different name.`);
-      return;
-    }
     const copy: Snapshot = structuredClone(cur);
     copy.keys[next.profile][next.index] = next;
     copy.meta.dirty = true;
@@ -458,8 +503,7 @@ export default function App() {
     const toRect = toEl?.getBoundingClientRect();
     const a = cur.keys[p]?.[from] ?? emptyKey(p, from);
     const b = cur.keys[p]?.[to] ?? emptyKey(p, to);
-    const la = launchOf(launchesRef.current, p, from);
-    const lb = launchOf(launchesRef.current, p, to);
+    const remapped = remapKeyLaunches(launchesRef.current, p, from, to);
     const aAtTo: PadKey = { ...a, profile: p, index: to };
     const bAtFrom: PadKey = { ...b, profile: p, index: from };
     const copy: Snapshot = structuredClone(cur);
@@ -473,8 +517,12 @@ export default function App() {
     }
     await pushKey(bAtFrom);
     await pushKey(aAtTo);
-    await saveLaunch({ ...la, profile: p, key: to });
-    await saveLaunch({ ...lb, profile: p, key: from });
+    launchesRef.current = remapped;
+    setLaunches(remapped);
+    for (const l of remapped) {
+      if (l.profile !== p || (l.key !== from && l.key !== to) || !l.path.trim()) continue;
+      await saveLaunch(l);
+    }
     setStatus(`Swapped key ${from + 1} and key ${to + 1}`);
   }
 
@@ -535,18 +583,16 @@ export default function App() {
       setErr(String(e));
       return;
     }
-    const prev = launchOf(launchesRef.current, p, index);
     const k = cur.keys[p]?.[index] ?? emptyKey(p, index);
-    const next: LaunchEntry = {
-      profile: p,
-      key: index,
-      path: resolved.path,
-      args: resolved.args.trim() ? resolved.args : prev.args,
-      slot: prev.path ? (prev.slot ?? 0) : k.acts.length,
-    };
-    setLaunchDraft(null);
+    const next = makeLaunch(
+      p,
+      index,
+      resolved.path,
+      resolved.args.trim() ? resolved.args : "",
+      k.acts.length,
+    );
     await saveLaunch(next);
-    setActPick("launch");
+    setActPick({ kind: "launch", id: next.id ?? "" });
     if (!k.label.trim()) {
       const name = uniqueTitle(
         cur.keys[p] ?? [],
@@ -604,12 +650,100 @@ export default function App() {
     }
   }
 
+  async function refreshRunning() {
+    setRunningLoad(true);
+    setRunningErr("");
+    try {
+      setRunning(await api.listOpenPrograms());
+    } catch (e) {
+      setRunningErr(String(e));
+    } finally {
+      setRunningLoad(false);
+    }
+  }
+
+  async function onPickRunning(program: OpenProgram) {
+    setRunningOpen(false);
+    try {
+      setSwitchCfg(await api.addSwitchProgram(profile, program.path));
+    } catch (e) {
+      setErr(String(e));
+    }
+  }
+
   async function onRemoveSwitchProgram(exe: string) {
     try {
       setSwitchCfg(await api.removeSwitchProgram(exe));
     } catch (e) {
       setErr(String(e));
     }
+  }
+
+  async function onExportPack(opts: PackOptions) {
+    if (!snap) return;
+    const pack = buildPack(snap, launches, switchCfg, opts);
+    try {
+      const path = await api.saveTextFile(suggestedFileName(pack), packToYaml(pack));
+      if (path) {
+        setStatus(`Saved ${path}`);
+        setPackMode(null);
+      }
+    } catch (e) {
+      setErr(String(e));
+    }
+  }
+
+  async function onImportPick() {
+    try {
+      const loaded = await api.loadTextFile();
+      if (!loaded) return;
+      setImportDraft(yamlToPack(loaded[1]));
+      setPackMode("import");
+    } catch (e) {
+      setErr(String(e));
+    }
+  }
+
+  async function onImportPack(opts: PackOptions) {
+    if (!snap || !importDraft) return;
+    const result = applyPack(snap, launches, switchCfg, importDraft, opts);
+    await run("Imported", async () => {
+      const dests = new Set(opts.profileIndices);
+      if (opts.names || opts.lights) {
+        for (const hdr of result.snap.profiles) {
+          if (dests.has(hdr.index)) await api.applyProfile(hdr);
+        }
+      }
+      if (opts.names || opts.actions || opts.leds) {
+        for (const idx of dests) {
+          for (const key of result.snap.keys[idx] ?? []) {
+            await api.applyKey(key);
+          }
+        }
+      }
+      if (opts.launches) {
+        const tagged = result.launches.map((l) => withLaunchId(l));
+        for (const idx of dests) {
+          for (let k = 0; k < 9; k++) {
+            for (const t of tombstonesForKey(launchesRef.current, idx, k)) {
+              await api.setLaunch(t);
+            }
+            for (const l of tagged.filter((x) => x.profile === idx && x.key === k && x.path.trim())) {
+              await api.setLaunch(l);
+            }
+          }
+        }
+        launchesRef.current = tagged;
+        setLaunches(tagged);
+      }
+      if (opts.autoSwitch) {
+        setSwitchCfg(await api.setSwitchRules(result.switchCfg));
+      }
+      snapRef.current = result.snap;
+      setSnap(result.snap);
+    });
+    setPackMode(null);
+    setImportDraft(null);
   }
 
   const bound = switchCfg.rules.filter((r) => r.profile === profile);
@@ -621,7 +755,7 @@ export default function App() {
 
   async function onAddProfile() {
     await run("Profile added", async () => {
-      setSnap(await api.addProfile());
+      takePad(await api.addProfile());
       setSel(0);
     });
   }
@@ -633,7 +767,7 @@ export default function App() {
       return;
     }
     await run("Profile deleted", async () => {
-      setSnap(await api.deleteProfile(profile));
+      takePad(await api.deleteProfile(profile));
       setLaunches(await api.getLaunches());
       setSwitchCfg(await api.getSwitchRules());
       setSel(0);
@@ -653,13 +787,14 @@ export default function App() {
         setStatus("Firmware written. Reconnecting…");
         setLinked(false);
         setSnap(null);
+        setBaseline(null);
         await api.connect();
         try {
           await syncPadTime();
         } catch {
           /* old firmware / app without SET_TIME */
         }
-        setSnap(await api.loadPad());
+        takePad(await api.loadPad());
         setLinked(true);
       } finally {
         setFlash(null);
@@ -669,14 +804,14 @@ export default function App() {
 
   const flashPct = flash && flash.total ? Math.round((flash.done / flash.total) * 100) : 0;
   const mem = snap ? memoryOf(snap) : null;
-  const typeValue = typedDisplay(key);
+  const typeValue = typeof actPick === "number" ? typedDisplayAt(key, actPick) : "";
   const typeBytes = utf8Len(poolOn ? key.text : typeValue);
   const typeRoom = snap ? roomForText(snap, profile, sel) : TEXT_MAX;
   const typeOver = poolOn && typeBytes > typeRoom;
   const typeHint = poolOn
     ? typeOver
       ? `Needs ${typeBytes} B, ${typeRoom} B free on the pad. Shorten this or another key.`
-      : `One step in the macro (move it like any other). Then add Enter or a shortcut. Shared ${mem?.textMax ?? TEXT_MAX} B, ${TEXT_MAX} B max on this key.`
+      : `One step in the macro (you can add more). Then add Enter or a shortcut. Shared ${mem?.textMax ?? TEXT_MAX} B, ${TEXT_MAX} B max on this key.`
     : typeValue.length > ACT_SLOTS
       ? `Only the first ${ACT_SLOTS} characters fit until you update firmware.`
       : `This firmware stores one tap per character (${ACT_SLOTS} max on this key). Update firmware for longer text.`;
@@ -695,45 +830,19 @@ export default function App() {
   }
 
   function addLaunch() {
-    if (showLaunch) {
-      setActPick("launch");
-      return;
-    }
-    setLaunchDraft({
-      profile,
-      key: sel,
-      path: "",
-      args: "",
-      slot: key.acts.length,
-    });
-    setActPick("launch");
-  }
-
-  function clearLaunch() {
-    setLaunchDraft(null);
-    setActPick(null);
-    void saveLaunch({ profile, key: sel, path: "", args: "", slot: 0 });
+    const { list, draft } = addLaunchDraft(launches, profile, sel, key.acts.length);
+    setLaunches(list);
+    setActPick({ kind: "launch", id: draft.id ?? "" });
   }
 
   function writeLaunch(next: LaunchEntry) {
-    const slot = clampSlot(next.slot ?? 0, key.acts.length);
-    const entry = { ...next, slot };
-    if (!entry.path.trim()) {
-      setLaunchDraft(entry);
-      setLaunches((list) => list.filter((l) => !(l.profile === profile && l.key === sel)));
-      return;
-    }
-    setLaunchDraft(null);
-    setLaunches((list) => {
-      const rest = list.filter((l) => !(l.profile === entry.profile && l.key === entry.key));
-      return [...rest, entry];
-    });
+    setLaunches((list) => upsertLaunch(list, next, key.acts.length));
   }
 
-  function persistLaunch(next: LaunchEntry = launch) {
-    const entry = { ...next, slot: clampSlot(next.slot ?? 0, key.acts.length) };
+  function persistLaunch(next: LaunchEntry) {
+    const entry = withLaunchId({ ...next, slot: next.slot ?? 0 });
     writeLaunch(entry);
-    void saveLaunch(entry);
+    if (entry.path.trim() || (entry.id ?? "").trim()) void saveLaunch(entry);
   }
 
   function moveStep(idx: number, dir: -1 | 1) {
@@ -741,13 +850,37 @@ export default function App() {
     if (j < 0 || j >= steps.length) return;
     const a = steps[idx];
     const b = steps[j];
-    if (a.kind === "launch" || b.kind === "launch") {
-      const slot = clampSlot(launch.slot ?? 0, key.acts.length);
-      const nextSlot = a.kind === "launch" ? slot + dir : slot - dir;
-      const entry = { ...launch, slot: clampSlot(nextSlot, key.acts.length) };
-      writeLaunch(entry);
+    const n = key.acts.length;
+    if (a.kind === "launch" && b.kind === "launch") {
+      let mover = a.launch;
+      if ((a.launch.slot ?? 0) === (b.launch.slot ?? 0)) {
+        mover = nudgeLaunchSlot(a.launch, dir, n);
+      } else {
+        mover = { ...a.launch, slot: b.launch.slot };
+        const other = { ...b.launch, slot: a.launch.slot };
+        setLaunches((list) => upsertLaunch(upsertLaunch(list, mover, n), other, n));
+        if (mover.path.trim()) void saveLaunch(mover);
+        if (other.path.trim()) void saveLaunch(other);
+        setActPick({ kind: "launch", id: mover.id ?? "" });
+        return;
+      }
+      setLaunches((list) => upsertLaunch(list, mover, n));
+      if (mover.path.trim()) void saveLaunch(mover);
+      setActPick({ kind: "launch", id: mover.id ?? "" });
+      return;
+    }
+    if (a.kind === "launch") {
+      const entry = nudgeLaunchSlot(a.launch, dir, n);
+      setLaunches((list) => upsertLaunch(list, entry, n));
       if (entry.path.trim()) void saveLaunch(entry);
-      setActPick("launch");
+      setActPick({ kind: "launch", id: entry.id ?? "" });
+      return;
+    }
+    if (b.kind === "launch") {
+      const entry = nudgeLaunchSlot(b.launch, (dir === 1 ? -1 : 1) as -1 | 1, n);
+      setLaunches((list) => upsertLaunch(list, entry, n));
+      if (entry.path.trim()) void saveLaunch(entry);
+      setActPick(a.i);
       return;
     }
     setActPick(dir === 1 ? a.i + 1 : a.i - 1);
@@ -756,18 +889,21 @@ export default function App() {
 
   function removeStep(step: Step) {
     if (step.kind === "launch") {
-      clearLaunch();
+      const id = step.launch.id ?? "";
+      setLaunches((list) => list.filter((l) => l.id !== id));
+      if (id) void saveLaunch({ ...step.launch, path: "" });
+      setActPick(null);
       return;
     }
-    const acts = key.acts.filter((_, j) => j !== step.i);
-    const dropText = step.a.type === ACT.text && !hasTextAct(acts);
-    if (showLaunch && step.i < (launch.slot ?? 0)) {
-      const entry = { ...launch, slot: clampSlot((launch.slot ?? 0) - 1, acts.length) };
-      writeLaunch(entry);
-      if (entry.path.trim()) void saveLaunch(entry);
+    const next = removeAct(key, step.i);
+    const list = onActRemoved(launches, profile, sel, step.i, next.acts.length);
+    setLaunches(list);
+    for (const l of launchesOf(list, profile, sel)) {
+      const old = mine.find((x) => x.id === l.id);
+      if (old && old.slot !== l.slot && l.path.trim()) void saveLaunch(l);
     }
     setActPick(null);
-    void pushKey({ ...key, acts, text: dropText ? "" : key.text });
+    void pushKey(next);
   }
 
   function pickHid(hid: number) {
@@ -799,7 +935,7 @@ export default function App() {
             onClick={() =>
               run("Saved", async () => {
                 await api.save();
-                setSnap(await api.loadPad());
+                takePad(await api.loadPad());
               })
             }
           >
@@ -809,7 +945,7 @@ export default function App() {
             disabled={busy || !snap}
             onClick={() =>
               run("Reloaded", async () => {
-                setSnap(await api.reload());
+                takePad(await api.reload());
               })
             }
           >
@@ -823,12 +959,26 @@ export default function App() {
             Print
           </button>
           <button
+            disabled={!snap}
+            title="Save selected profiles to a YAML file"
+            onClick={() => setPackMode("export")}
+          >
+            Save as…
+          </button>
+          <button
+            disabled={!snap || busy}
+            title="Import a YAML setup file"
+            onClick={() => void onImportPick()}
+          >
+            Import…
+          </button>
+          <button
             className="danger"
             disabled={busy || !snap}
             onClick={() => {
               if (!confirm("Reset all profiles to empty factory keys?")) return;
               run("Factory reset", async () => {
-                setSnap(await api.factory());
+                takePad(await api.factory());
               });
             }}
           >
@@ -851,7 +1001,7 @@ export default function App() {
               if (f) void onFlashFile(f);
             }}
           />
-          {snap?.meta.dirty ? <span className="dirty">unsaved</span> : null}
+          <SyncBadge status={syncStatus({ linked, snap, baseline })} />
         </div>
       </header>
       {flash ? (
@@ -884,7 +1034,6 @@ export default function App() {
                       await api.setActive(p.index);
                       const next = structuredClone(snap);
                       next.meta.active = p.index;
-                      next.meta.dirty = true;
                       setSnap(next);
                       setSel(0);
                     })
@@ -918,7 +1067,7 @@ export default function App() {
               {snap.profiles.length} profile{snap.profiles.length === 1 ? "" : "s"} on the pad
               {mem?.storeMax
                 ? ` · ${mem.store} / ${mem.storeMax} B used`
-                : ""}. Empty keys take no flash.
+                : ""}.
             </p>
             <h3>Auto-switch</h3>
             <label className="row-check">
@@ -930,7 +1079,8 @@ export default function App() {
               Auto-switch with programs
             </label>
             <p className="hint">
-              Keep LogicPad in the tray. Starts with Windows when a program is listed.
+              Keep LogicPad in the tray. Focus the listed program (not this window) to switch.
+              Starts with Windows when a program is listed.
             </p>
             {focusLabel ? <p className="hint now">{focusLabel}</p> : null}
             <h4>When using</h4>
@@ -950,7 +1100,17 @@ export default function App() {
             )}
             <div className="add">
               <button type="button" disabled={busy} onClick={() => void onAddSwitchProgram()}>
-                Add program
+                Browse…
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setRunningOpen(true);
+                  void refreshRunning();
+                }}
+              >
+                From open window…
               </button>
             </div>
             {hdr ? (
@@ -1011,7 +1171,30 @@ export default function App() {
           </aside>
 
           <section className="pad">
-            <h2>Keys</h2>
+            <div className="keys-head">
+              <h2>Keys</h2>
+              <ClearAllButton
+                disabled={busy || !snap}
+                profileName={hdr?.name || `P${profile + 1}`}
+                onClear={() =>
+                  run("Cleared keys", async () => {
+                    for (const key of clearedKeys(profile)) {
+                      await api.applyKey(key);
+                      const tombs = tombstonesForKey(launchesRef.current, profile, key.index);
+                      for (const t of tombs) await api.setLaunch(t);
+                      launchesRef.current = removeKeyLaunches(
+                        launchesRef.current,
+                        profile,
+                        key.index,
+                      );
+                    }
+                    setLaunches(await api.getLaunches());
+                    takePad(await api.loadPad());
+                    setActPick(null);
+                  })
+                }
+              />
+            </div>
             {mem ? (
               <div className="mem">
                 {mem.storeMax > 0 ? (
@@ -1030,12 +1213,18 @@ export default function App() {
                 />
                 <p className="hint">
                   Drop a program onto a key to add a launch step, or drag one key onto another to
-                  swap them. Profiles, macros, and type-text share the pad&apos;s flash slot. Empty
-                  keys use no space.
+                  swap them. Profiles, macros, and type-text share the pad&apos;s flash slot.
                 </p>
               </div>
             ) : null}
-            <div className="grid">
+            <div
+              className="grid"
+              onContextMenu={(e) => {
+                const t = preventGridMenu(e);
+                setKeyMenu(t);
+                if (t) setSel(t.index);
+              }}
+            >
               {Array.from({ length: 9 }, (_, i) => {
                 const k = keys[i] ?? emptyKey(profile, i);
                 const tlen = utf8Len(k.text);
@@ -1073,7 +1262,7 @@ export default function App() {
                       {k.label || "—"}
                     </span>
                     <span className="tags">
-                      {launchOf(launches, profile, i).path ? <span className="run">app</span> : null}
+                      {keyHasLaunch(launches, profile, i) ? <span className="run">app</span> : null}
                       {tlen ? <span className="run">text</span> : null}
                     </span>
                     {fill > 0 ? (
@@ -1092,6 +1281,53 @@ export default function App() {
               >
                 {keys[dragKey]?.label || `Key ${dragKey + 1}`}
               </div>
+            ) : null}
+            {keyMenu ? (
+              <KeyContextMenu
+                open={keyMenu}
+                keyData={keys[keyMenu.index] ?? emptyKey(profile, keyMenu.index)}
+                launches={launches.filter(
+                  (l) => l.profile === profile && l.key === keyMenu.index,
+                )}
+                profileKeys={keys}
+                profileLaunches={launches.filter((l) => l.profile === profile)}
+                onClose={() => setKeyMenu(null)}
+                onClear={(index) => {
+                  void pushKey(emptyKey(profile, index));
+                  const tombs = tombstonesForKey(launchesRef.current, profile, index);
+                  for (const t of tombs) void saveLaunch(t);
+                  const next = removeKeyLaunches(launchesRef.current, profile, index);
+                  launchesRef.current = next;
+                  setLaunches(next);
+                }}
+                onApply={(index, nextKey, nextLaunches) => {
+                  const cur = snapRef.current;
+                  if (!cur) return;
+                  const labeled = { ...nextKey, index };
+                  const copy: Snapshot = structuredClone(cur);
+                  copy.keys[nextKey.profile][index] = labeled;
+                  copy.meta.dirty = true;
+                  snapRef.current = copy;
+                  setSnap(copy);
+                  void api.applyKey(labeled).catch((e) => setErr(String(e)));
+                  const tombs = tombstonesForKey(launchesRef.current, nextKey.profile, index);
+                  for (const t of tombs) void api.setLaunch(t);
+                  let list = removeKeyLaunches(launchesRef.current, nextKey.profile, index);
+                  for (const l of nextLaunches.filter((x) => x.path.trim())) {
+                    const entry = makeLaunch(
+                      nextKey.profile,
+                      index,
+                      l.path,
+                      l.args,
+                      l.slot ?? 0,
+                    );
+                    list = upsertLaunch(list, entry, labeled.acts.length);
+                    void api.setLaunch(entry);
+                  }
+                  launchesRef.current = list;
+                  setLaunches(list);
+                }}
+              />
             ) : null}
           </section>
 
@@ -1134,20 +1370,46 @@ export default function App() {
               {steps.length === 0 ? <li className="empty">No actions</li> : null}
               {steps.map((step, i) => {
                 const selected =
-                  step.kind === "launch" ? actPick === "launch" : actPick === step.i;
+                  step.kind === "launch"
+                    ? typeof actPick === "object" &&
+                      actPick?.kind === "launch" &&
+                      actPick.id === step.launch.id
+                    : actPick === step.i;
+                const clip = (s: string) => {
+                  const t = s.replace(/\s+/g, " ").trim();
+                  return t.length <= 40 ? t : `${t.slice(0, 39).trimEnd()}…`;
+                };
                 const label =
                   step.kind === "launch"
-                    ? launch.path
-                      ? `Launch ${baseName(launch.path)}`
+                    ? step.launch.path
+                      ? `Launch ${baseName(step.launch.path)}`
                       : "Launch program"
-                    : fmtAct(step.a);
+                    : step.a.type === ACT.text
+                      ? (() => {
+                          const t = clip(segmentOf(key, step.i));
+                          return t ? `Type “${t}”` : "Type text";
+                        })()
+                      : fmtAct(step.a);
                 return (
                   <li
-                    key={step.kind === "launch" ? "launch" : `act-${step.i}-${step.a.type}-${step.a.code}`}
+                    key={
+                      step.kind === "launch"
+                        ? `launch-${step.launch.id}`
+                        : `act-${step.i}-${step.a.type}-${step.a.code}`
+                    }
                     className={selected ? "on" : ""}
-                    onClick={() => setActPick(step.kind === "launch" ? "launch" : step.i)}
+                    onClick={() =>
+                      setActPick(
+                        step.kind === "launch"
+                          ? { kind: "launch", id: step.launch.id ?? "" }
+                          : step.i,
+                      )
+                    }
                   >
-                    <span className="act-name" title={step.kind === "launch" ? launch.path : label}>
+                    <span
+                      className="act-name"
+                      title={step.kind === "launch" ? step.launch.path : label}
+                    >
                       {step.kind === "launch" ? <span className="run">pc</span> : null}
                       <span className="act-label">{label}</span>
                     </span>
@@ -1183,7 +1445,7 @@ export default function App() {
                 );
               })}
             </ul>
-            {actPick === "launch" ? (
+            {pickedLaunch ? (
               <div className="step-edit">
                 <p className="hint">
                   Drop a program or shortcut onto the key, or browse. Shortcuts resolve to the real
@@ -1192,10 +1454,10 @@ export default function App() {
                 <label>
                   Program
                   <input
-                    value={launch.path}
+                    value={pickedLaunch.path}
                     placeholder="C:\Path\app.exe"
-                    onChange={(e) => writeLaunch({ ...launch, path: e.target.value })}
-                    onBlur={(e) => persistLaunch({ ...launch, path: e.target.value })}
+                    onChange={(e) => writeLaunch({ ...pickedLaunch, path: e.target.value })}
+                    onBlur={(e) => persistLaunch({ ...pickedLaunch, path: e.target.value })}
                   />
                 </label>
                 <div className="add">
@@ -1203,7 +1465,16 @@ export default function App() {
                     onClick={async () => {
                       const path = await api.pickProgram();
                       if (!path) return;
-                      await linkProgram(sel, path);
+                      try {
+                        const resolved = await api.resolveProgram(path);
+                        persistLaunch({
+                          ...pickedLaunch,
+                          path: resolved.path,
+                          args: resolved.args.trim() ? resolved.args : pickedLaunch.args,
+                        });
+                      } catch (e) {
+                        setErr(String(e));
+                      }
                     }}
                   >
                     Browse…
@@ -1212,10 +1483,10 @@ export default function App() {
                 <label>
                   Arguments
                   <input
-                    value={launch.args}
+                    value={pickedLaunch.args}
                     placeholder="optional"
-                    onChange={(e) => writeLaunch({ ...launch, args: e.target.value })}
-                    onBlur={(e) => persistLaunch({ ...launch, args: e.target.value })}
+                    onChange={(e) => writeLaunch({ ...pickedLaunch, args: e.target.value })}
+                    onBlur={(e) => persistLaunch({ ...pickedLaunch, args: e.target.value })}
                   />
                 </label>
               </div>
@@ -1230,8 +1501,8 @@ export default function App() {
                   placeholder="Typed as its own step in the list"
                   value={typeValue}
                   onChange={(e) => {
-                    if (!snap) return;
-                    const next = applyTypedText(key, e.target.value, poolOn);
+                    if (!snap || typeof actPick !== "number") return;
+                    const next = setSegment(key, actPick, e.target.value, poolOn, typeRoom);
                     const copy = structuredClone(snap);
                     copy.keys[profile][sel] = next;
                     copy.meta.dirty = true;
@@ -1241,7 +1512,7 @@ export default function App() {
                   onBlur={() => {
                     if (typeOver) return;
                     const k = snapRef.current?.keys[profile]?.[sel];
-                    if (k) void pushKey(withTextStep(k, poolOn));
+                    if (k) void pushKey(k);
                   }}
                 />
                 <p className="mem-lab tight">
@@ -1279,7 +1550,7 @@ export default function App() {
               <div className="pal-row">
                 <span>Program</span>
                 <div className="add">
-                  <button disabled={showLaunch} onClick={() => addLaunch()}>
+                  <button onClick={() => addLaunch()}>
                     Launch
                   </button>
                 </div>
@@ -1288,8 +1559,17 @@ export default function App() {
                 <span>Text</span>
                 <div className="add">
                   <button
-                    disabled={full || (poolOn && hasTextAct(key.acts))}
-                    onClick={() => addAct({ type: ACT.text, mods: 0, code: 0 })}
+                    disabled={full}
+                    title={
+                      full
+                        ? `This key already has ${ACT_SLOTS} pad steps.`
+                        : "Add another string to type"
+                    }
+                    onClick={() => {
+                      const next = addTextAct(key, poolOn);
+                      setActPick(next.acts.length - 1);
+                      void pushKey(next);
+                    }}
                   >
                     Type text
                   </button>
@@ -1425,6 +1705,30 @@ export default function App() {
         onAllProfiles={setPrintAll}
         onClose={() => setPrintOpen(false)}
         onPrint={() => window.print()}
+      />
+    ) : null}
+    <RunningPicker
+      open={runningOpen}
+      programs={running}
+      loading={runningLoad}
+      error={runningErr || undefined}
+      onClose={() => setRunningOpen(false)}
+      onPick={(p) => void onPickRunning(p)}
+      onRefresh={() => void refreshRunning()}
+    />
+    {snap ? (
+      <PackDialog
+        mode={packMode}
+        snap={snap}
+        launches={launches}
+        switchCfg={switchCfg}
+        importDraft={importDraft}
+        onClose={() => {
+          setPackMode(null);
+          setImportDraft(null);
+        }}
+        onExport={(opts) => void onExportPack(opts)}
+        onImport={(opts) => void onImportPack(opts)}
       />
     ) : null}
     </>

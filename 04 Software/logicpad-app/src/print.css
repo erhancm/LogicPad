@@ -38,12 +38,22 @@
   gap: 6px;
 }
 
+.print-toolbar .bar {
+  flex: 0 0 auto;
+}
+
 .print-mode button,
 .print-toolbar .bar button {
   background: #1c212c;
   border: 1px solid #3a4150;
   border-radius: 6px;
-  padding: 7px 12px;
+  padding: 7px 14px;
+  color: #e8e4d8;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  flex-shrink: 0;
   cursor: pointer;
 }
 
@@ -53,11 +63,10 @@
   color: #f0d060;
 }
 
-.print-toolbar .primary {
+.print-toolbar .bar button.primary {
   background: #f0d060;
   color: #12141a;
-  border: none;
-  font-weight: 600;
+  border-color: #f0d060;
 }
 
 .print-stage {

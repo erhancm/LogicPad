@@ -1,0 +1,29 @@
+.sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.sync-badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.sync-badge.synced {
+  color: #6bcb8b;
+}
+
+.sync-badge.unsaved {
+  color: #f0d060;
+}
+
+.sync-badge.offline {
+  color: #6b7380;
+}

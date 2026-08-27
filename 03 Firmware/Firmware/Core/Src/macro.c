@@ -14,6 +14,7 @@ static uint8_t live_keys[6];
 static uint8_t in_text;
 static uint8_t text_i;
 static uint8_t text_len;
+static uint8_t text_end; /* exclusive end of the current ACT_TEXT slice */
 static const uint8_t *text_p;
 static uint8_t text_last_hid; /* 0 = nothing held; same usage needs a break */
 static uint8_t text_resume; /* 1 = continue the macro after the string */
@@ -119,7 +120,23 @@ static uint8_t ascii_hid(uint8_t c, uint8_t *mods) {
 static void load_text(uint8_t key_idx) {
   text_p = storage_text(g_store.active, key_idx, &text_len);
   text_i = 0;
+  text_end = text_len;
   text_last_hid = 0;
+}
+
+static void begin_text_slice(uint16_t off, uint8_t len) {
+  if (off > text_len) {
+    off = text_len;
+  }
+  text_i = (uint8_t)off;
+  if (len == 0) {
+    text_end = text_len;
+  } else {
+    uint16_t end = (uint16_t)off + len;
+    text_end = (end > text_len) ? text_len : (uint8_t)end;
+  }
+  text_last_hid = 0;
+  in_text = 1;
 }
 
 static int key_has_text_act(const lp_key_t *k) {
@@ -156,7 +173,7 @@ void macro_play(uint8_t key_idx) {
 }
 
 static int tick_text(void) {
-  if (text_i >= text_len) {
+  if (text_i >= text_end) {
     if (hid_kbd_release() != 0) {
       return 1;
     }
@@ -233,6 +250,7 @@ void macro_tick(uint16_t elapsed_ms) {
       in_text = 1;
       text_resume = 0;
       text_i = 0;
+      text_end = text_len;
       text_last_hid = 0;
       return;
     }
@@ -317,9 +335,9 @@ void macro_tick(uint16_t elapsed_ms) {
       act_i++;
       break;
     }
-    text_i = 0;
-    text_last_hid = 0;
-    in_text = 1;
+    /* off = a.code, len = a.mods. len==0 types from off to end of blob
+     * (OLED / old saves: mods=0, code=0 still types everything). */
+    begin_text_slice(a.code, a.mods);
     text_resume = 1;
     break;
   case ACT_KEY:

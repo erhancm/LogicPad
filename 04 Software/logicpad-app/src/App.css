@@ -90,6 +90,11 @@ h4 {
   align-items: center;
 }
 
+header .bar {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .bar button,
 .add button,
 .profiles button,

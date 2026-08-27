@@ -1,12 +1,13 @@
+mod file_dialog;
 mod focus;
 mod hid;
 mod host;
 mod launch;
 mod profile_switch;
 
-use hid::{Pad, PadKey, ProfileHdr, Snapshot};
+use hid::{Meta, Pad, PadKey, ProfileHdr, Snapshot};
 use launch::{LaunchEntry, LaunchStore, ResolvedProgram};
-use profile_switch::{SwitchConfig, SwitchStore};
+use profile_switch::{ActiveEvt, SwitchConfig, SwitchStore};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::menu::{Menu, MenuItem};
@@ -37,6 +38,11 @@ fn is_connected(pad: State<AppPad>) -> bool {
 #[tauri::command]
 fn ping(pad: State<AppPad>) -> Result<(u8, u8), String> {
     pad.0.lock().map_err(|e| e.to_string())?.ping().map_err(Into::into)
+}
+
+#[tauri::command]
+fn get_meta(pad: State<AppPad>) -> Result<Meta, String> {
+    pad.0.lock().map_err(|e| e.to_string())?.get_meta().map_err(Into::into)
 }
 
 #[tauri::command]
@@ -177,6 +183,11 @@ fn pick_program() -> Option<String> {
 }
 
 #[tauri::command]
+fn list_open_programs() -> Vec<focus::OpenProgram> {
+    focus::list_open_programs()
+}
+
+#[tauri::command]
 fn resolve_program(path: String) -> ResolvedProgram {
     launch::resolve_program(&path)
 }
@@ -201,6 +212,7 @@ fn set_switch_rules(
 #[tauri::command]
 fn add_switch_program(
     app: AppHandle,
+    pad: State<AppPad>,
     store: State<Arc<LaunchStore>>,
     switch: State<Arc<SwitchStore>>,
     profile: u8,
@@ -208,7 +220,22 @@ fn add_switch_program(
 ) -> Result<SwitchConfig, String> {
     let next = switch.add_program(profile, &path)?;
     sync_autostart(&app, &store, &switch);
+    if let Ok(g) = pad.0.lock() {
+        if g.connected() && g.set_active(profile).is_ok() {
+            let _ = app.emit("active-profile", ActiveEvt { profile });
+        }
+    }
     Ok(next)
+}
+
+#[tauri::command]
+fn save_text_file(name: String, contents: String) -> Option<String> {
+    file_dialog::save_text_file(&name, &contents)
+}
+
+#[tauri::command]
+fn load_text_file() -> Option<(String, String)> {
+    file_dialog::load_text_file()
 }
 
 #[tauri::command]
@@ -248,6 +275,7 @@ pub fn run() {
             disconnect,
             is_connected,
             ping,
+            get_meta,
             load_pad,
             apply_key,
             apply_profile,
@@ -262,11 +290,14 @@ pub fn run() {
             get_launches,
             set_launch,
             pick_program,
+            list_open_programs,
             resolve_program,
             get_switch_rules,
             set_switch_rules,
             add_switch_program,
-            remove_switch_program
+            remove_switch_program,
+            save_text_file,
+            load_text_file
         ])
         .setup(|app| {
             let dir = app.path().app_config_dir().unwrap_or_else(|_| std::env::temp_dir());

@@ -75,6 +75,8 @@ export type Snapshot = {
 };
 
 export type LaunchEntry = {
+  /** Stable id for upsert/delete. Generated on load if missing from launches.json. */
+  id?: string;
   profile: number;
   key: number;
   path: string;

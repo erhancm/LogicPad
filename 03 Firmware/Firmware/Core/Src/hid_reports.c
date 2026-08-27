@@ -213,7 +213,8 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
     out[2] = g_store.contrast;
     out[3] = g_store.flip;
     out[4] = g_store.sleep;
-    out[5] = (uint8_t)(ui_is_live() ? 0 : 1);
+    /* Config menus only. Home / toast / sleep stay 0 so the tray app can auto-switch. */
+    out[5] = (uint8_t)((ui_is_live() || ui_is_sleeping()) ? 0 : 1);
     out[6] = hid_configured() ? 1 : 0;
     out[7] = storage_n_profiles();
     out[8] = (uint8_t)used;

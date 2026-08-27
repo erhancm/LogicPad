@@ -94,15 +94,17 @@ pub fn exe_basename(path: &str) -> String {
         .to_string()
 }
 
+fn exe_stem(path: &str) -> String {
+    let b = exe_basename(path).to_ascii_lowercase();
+    b.strip_suffix(".exe").unwrap_or(&b).to_string()
+}
+
 fn match_profile(rules: &[SwitchRule], exe: &str) -> Option<u8> {
-    let needle = exe_basename(exe);
+    let needle = exe_stem(exe);
     if needle.is_empty() {
         return None;
     }
-    rules
-        .iter()
-        .find(|r| exe_basename(&r.exe).eq_ignore_ascii_case(&needle))
-        .map(|r| r.profile)
+    rules.iter().find(|r| exe_stem(&r.exe) == needle).map(|r| r.profile)
 }
 
 impl SwitchStore {
@@ -271,9 +273,6 @@ impl SwitchStore {
         let Ok(meta) = pad.get_meta() else {
             return;
         };
-        if meta.in_menu {
-            return;
-        }
         let n = if meta.n_profiles == 0 {
             4
         } else {
@@ -381,6 +380,7 @@ mod tests {
             Some(2)
         );
         assert_eq!(match_profile(&rules, "chrome.exe"), None);
+        assert_eq!(match_profile(&rules, "SLDWORKS"), Some(2));
     }
 
     fn rt() -> Runtime {

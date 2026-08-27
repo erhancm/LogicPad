@@ -22,7 +22,7 @@ PING payload is protocol `0x01, 0x05` (minor `5` = packed flash store, add profi
 | Cmd | Name | Host → pad | Pad → host |
 |-----|------|------------|------------|
 | 0x01 | PING | — | version `0x01, 0x05` |
-| 0x02 | GET_META | — | active, dirty, contrast, flip, sleep, in_menu, usb, n_profiles, used u16le, cap u16le |
+| 0x02 | GET_META | — | active, dirty, contrast, flip, sleep, in_menu (OLED config screens only; 0 on home/toast/sleep), usb, n_profiles, used u16le, cap u16le |
 | 0x03 | GET_KEY | profile, key | profile, key, first `LP_KEY_HID_BYTES` (57) of `lp_key_t` |
 | 0x04 | SET_KEY | profile, key, 60-byte HID blob | echo profile, key, status |
 | 0x05 | SET_ACTIVE | profile | echo (live slot only; does not mark flash dirty) |

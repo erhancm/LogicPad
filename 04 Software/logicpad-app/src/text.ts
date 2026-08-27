@@ -120,28 +120,161 @@ export function actsToText(acts: Action[]): string | null {
   return out;
 }
 
-export function typedDisplay(key: PadKey): string {
-  if (key.text) return key.text;
-  return actsToText(key.acts) ?? "";
+function nl(s: string): string {
+  return s.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
+}
+
+function decodeSlice(blob: string, off: number, len: number): string {
+  const b = new TextEncoder().encode(blob ?? "");
+  if (off >= b.length || len <= 0) return "";
+  const end = Math.min(b.length, off + len);
+  return new TextDecoder().decode(b.slice(off, end));
+}
+
+export function textActIndices(acts: Action[]): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < acts.length; i++) {
+    if (acts[i].type === ACT.text) out.push(i);
+  }
+  return out;
 }
 
 export function hasTextAct(acts: Action[]): boolean {
   return acts.some((a) => a.type === ACT.text);
 }
 
-export function withTextStep(key: PadKey, poolOn: boolean): PadKey {
-  if (!poolOn) return key;
-  const has = hasTextAct(key.acts);
-  if (key.text && !has && key.acts.length < ACT_SLOTS) {
-    return { ...key, acts: [...key.acts, { type: ACT.text, mods: 0, code: 0 }] };
-  }
-  return key;
+/**
+ * Bytes [code, code+mods) of key.text. mods==0 is "to end of blob" when this is
+ * the only text act (OLED / old saves: mods=0,code=0 types everything). With
+ * several text acts, mods==0 is an empty slice (packed at blob end).
+ */
+export function segmentOf(key: PadKey, actIndex: number): string {
+  const a = key.acts[actIndex];
+  if (!a || a.type !== ACT.text) return "";
+  const blob = key.text ?? "";
+  const blobN = utf8Len(blob);
+  const off = a.code & 0xffff;
+  if (a.mods > 0) return decodeSlice(blob, off, a.mods);
+  const nText = textActIndices(key.acts).length;
+  if (nText <= 1) return decodeSlice(blob, off, Math.max(0, blobN - off));
+  return "";
 }
 
-export function applyTypedText(key: PadKey, raw: string, poolEnabled: boolean): PadKey {
-  const str = raw.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
+/** Whole blob, or tap-decoded text when the pool is off. */
+export function typedDisplay(key: PadKey): string {
+  if (key.text) return key.text;
+  return actsToText(key.acts) ?? "";
+}
+
+/** Per-step string for the Type text editor. Prefer this over typedDisplay. */
+export function typedDisplayAt(key: PadKey, actIndex: number): string {
+  const a = key.acts[actIndex];
+  if (!a) return "";
+  if (a.type === ACT.text) return segmentOf(key, actIndex);
+  return "";
+}
+
+function packFromParts(key: PadKey, parts: string[], room: number): PadKey {
+  const idxs = textActIndices(key.acts);
+  const cap = Math.min(TEXT_MAX, Math.max(0, room));
+  const packed: string[] = [];
+  let used = 0;
+  const n = Math.min(idxs.length, parts.length);
+  for (let i = 0; i < n; i++) {
+    const avail = Math.max(0, cap - used);
+    const t = utf8Truncate(parts[i] ?? "", avail);
+    packed.push(t);
+    used += utf8Len(t);
+  }
+  while (packed.length < idxs.length) packed.push("");
+  const blob = packed.join("");
+  const blobLen = utf8Len(blob);
+  const acts = key.acts.slice();
+  let off = 0;
+  for (let i = 0; i < idxs.length; i++) {
+    const len = utf8Len(packed[i] ?? "");
+    if (len === 0) {
+      acts[idxs[i]] = { type: ACT.text, mods: 0, code: blobLen };
+    } else {
+      acts[idxs[i]] = { type: ACT.text, mods: Math.min(255, len), code: off };
+      off += len;
+    }
+  }
+  return { ...key, acts, text: blob };
+}
+
+export function withTextStep(key: PadKey, poolOn: boolean): PadKey {
+  if (!poolOn) return key;
+  if (hasTextAct(key.acts)) return key;
+  if (!(key.text ?? "") || key.acts.length >= ACT_SLOTS) return key;
+  const n = utf8Len(key.text ?? "");
+  return {
+    ...key,
+    acts: [...key.acts, { type: ACT.text, mods: n > 0 && n <= 255 ? n : 0, code: 0 }],
+  };
+}
+
+export function setSegment(
+  key: PadKey,
+  actIndex: number,
+  raw: string,
+  poolEnabled: boolean,
+  room = TEXT_MAX,
+): PadKey {
+  const str = nl(raw);
+  const a = key.acts[actIndex];
+  if (!a || a.type !== ACT.text) return key;
+  if (!poolEnabled) {
+    const others = key.acts.length - 1;
+    const maxTaps = Math.max(0, ACT_SLOTS - others);
+    const { acts: taps } = textToActions(str, maxTaps);
+    const acts = [...key.acts.slice(0, actIndex), ...taps, ...key.acts.slice(actIndex + 1)];
+    return { ...key, acts: acts.slice(0, ACT_SLOTS), text: str };
+  }
+  const idxs = textActIndices(key.acts);
+  const others = idxs
+    .filter((i) => i !== actIndex)
+    .reduce((n, i) => n + utf8Len(segmentOf(key, i)), 0);
+  const cap = Math.min(TEXT_MAX, room);
+  const thisPart = utf8Truncate(str, Math.max(0, cap - others));
+  const parts = idxs.map((i) => (i === actIndex ? thisPart : segmentOf(key, i)));
+  return packFromParts(key, parts, room);
+}
+
+export function addTextAct(key: PadKey, poolEnabled: boolean): PadKey {
+  if (key.acts.length >= ACT_SLOTS) return key;
+  if (!poolEnabled) {
+    return { ...key, acts: [...key.acts, { type: ACT.text, mods: 0, code: 0 }] };
+  }
+  const parts = textActIndices(key.acts).map((i) => segmentOf(key, i));
+  parts.push("");
+  const acts = [...key.acts, { type: ACT.text, mods: 0, code: 0 }];
+  return packFromParts({ ...key, acts }, parts, TEXT_MAX);
+}
+
+export function removeAct(key: PadKey, index: number): PadKey {
+  if (index < 0 || index >= key.acts.length) return key;
+  const a = key.acts[index];
+  const acts = key.acts.filter((_, i) => i !== index);
+  if (a.type !== ACT.text) return { ...key, acts };
+  const parts = textActIndices(key.acts)
+    .filter((i) => i !== index)
+    .map((i) => segmentOf(key, i));
+  if (parts.length === 0) return { ...key, acts, text: "" };
+  return packFromParts({ ...key, acts }, parts, TEXT_MAX);
+}
+
+export function applyTypedText(
+  key: PadKey,
+  raw: string,
+  poolEnabled: boolean,
+  room = TEXT_MAX,
+): PadKey {
+  const str = nl(raw);
+  const idxs = textActIndices(key.acts);
+  if (idxs.length >= 1) return setSegment(key, idxs[0], str, poolEnabled, room);
   if (poolEnabled) {
-    const text = utf8Truncate(str, TEXT_MAX);
+    const text = utf8Truncate(str, Math.min(TEXT_MAX, room));
     return withTextStep({ ...key, text }, true);
   }
   const { acts } = textToActions(str, ACT_SLOTS);

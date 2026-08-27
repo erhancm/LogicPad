@@ -7,6 +7,11 @@ import {
   type LaunchEntry,
   type PadKey,
 } from "./types";
+import { launchesOf } from "./launches";
+import { buildSteps } from "./steps";
+import { segmentOf } from "./text";
+
+export { launchesOf };
 
 export function hidName(hid: number): string {
   return HID_LETTERS.find((h) => h.hid === hid)?.name ?? `0x${hid.toString(16)}`;
@@ -54,15 +59,13 @@ export function baseName(path: string): string {
   return i >= 0 ? p.slice(i + 1) : p;
 }
 
+/** First launch on this key (path preferred). Back-compat for a single LaunchEntry. */
 export function launchOf(list: LaunchEntry[], profile: number, key: number): LaunchEntry {
-  const found = list.find((l) => l.profile === profile && l.key === key);
+  const all = launchesOf(list, profile, key);
+  const found = all.find((l) => l.path.trim()) ?? all[0];
   return found
     ? { slot: 0, ...found }
     : { profile, key, path: "", args: "", slot: 0 };
-}
-
-function clampSlot(slot: number, nActs: number): number {
-  return Math.max(0, Math.min(nActs, slot));
 }
 
 function clip(s: string, max: number): string {
@@ -76,28 +79,23 @@ function fmtText(raw: string): string {
   return t ? `Type “${t}”` : "Type text";
 }
 
-/** Macro steps in the order the pad runs them, including a PC launch if linked. */
-export function keySteps(key: PadKey, launch: LaunchEntry): string[] {
+/** Macro steps in the order the pad / PC run them. Pass one launch or the full list. */
+export function keySteps(key: PadKey, launch: LaunchEntry | LaunchEntry[]): string[] {
+  const launches = (Array.isArray(launch) ? launch : [launch]).filter((l) => l.path.trim());
+  const steps = buildSteps(key.acts, launches);
   const lines: string[] = [];
-  const showLaunch = Boolean(launch.path);
-  const at = showLaunch ? clampSlot(launch.slot ?? 0, key.acts.length) : -1;
   let typed = false;
-
-  const pushAct = (a: Action) => {
-    if (a.type === ACT.text) {
-      typed = true;
-      lines.push(fmtText(key.text ?? ""));
-      return;
+  for (const s of steps) {
+    if (s.kind === "launch") {
+      lines.push(`Launch ${baseName(s.launch.path)}`);
+      continue;
     }
-    lines.push(fmtAct(a));
-  };
-
-  key.acts.forEach((a, i) => {
-    if (i === at) lines.push(`Launch ${baseName(launch.path)}`);
-    pushAct(a);
-  });
-  if (showLaunch && at >= key.acts.length) {
-    lines.push(`Launch ${baseName(launch.path)}`);
+    if (s.a.type === ACT.text) {
+      typed = true;
+      lines.push(fmtText(segmentOf(key, s.i)));
+      continue;
+    }
+    lines.push(fmtAct(s.a));
   }
   if (!typed && (key.text ?? "").trim()) lines.push(fmtText(key.text));
   return lines;

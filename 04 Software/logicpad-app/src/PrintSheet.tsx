@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { LEDS, LIGHT_MODES, type LaunchEntry, type PadKey, type ProfileHdr, type Snapshot } from "./types";
-import { keySteps, launchOf } from "./format";
+import { keySteps, launchesOf } from "./format";
 import "./print.css";
 
 const LED_CLASS = ["off", "white", "red", "green", "blue"] as const;
@@ -64,8 +64,7 @@ function ProfileCard({
         </div>
         {Array.from({ length: 9 }, (_, i) => {
           const key = keys[i] ?? emptyKey(hdr.index, i);
-          const launch = launchOf(launches, hdr.index, i);
-          const steps = keySteps(key, launch);
+          const steps = keySteps(key, launchesOf(launches, hdr.index, i));
           const empty = steps.length === 0 && !key.label.trim();
           const title = key.label.trim() || (empty ? "Empty" : `Key ${i + 1}`);
           const led = LED_CLASS[key.led] ?? "off";
@@ -171,8 +170,8 @@ export function PrintOverlay({
     : snap.profiles.filter((p) => p.index === snap.meta.active);
   const landscape = profiles.length > 1;
   const paper = landscape
-    ? "Set the printer to A4, landscape. Two profiles per sheet."
-    : "Set the printer to A5, portrait. One profile per sheet.";
+    ? "A4 landscape — two profiles per sheet. Set the printer to match."
+    : "A5 portrait — one profile per sheet. Set the printer to match.";
 
   useEffect(() => {
     const prev = document.getElementById("lp-print-page");
@@ -204,21 +203,35 @@ export function PrintOverlay({
       <div className="print-toolbar">
         <h2>Print profiles</h2>
         {many ? (
-          <div className="print-mode">
-            <button className={allProfiles ? "on" : ""} onClick={() => onAllProfiles(true)}>
+          <div className="print-mode" role="group" aria-label="Which profiles to print">
+            <button
+              type="button"
+              className={allProfiles ? "on" : ""}
+              aria-label="All profiles"
+              aria-pressed={allProfiles}
+              onClick={() => onAllProfiles(true)}
+            >
               All profiles
             </button>
-            <button className={!allProfiles ? "on" : ""} onClick={() => onAllProfiles(false)}>
+            <button
+              type="button"
+              className={!allProfiles ? "on" : ""}
+              aria-label="This profile"
+              aria-pressed={!allProfiles}
+              onClick={() => onAllProfiles(false)}
+            >
               This profile
             </button>
           </div>
         ) : null}
         <p className="hint">{paper}</p>
         <div className="bar">
-          <button className="primary" onClick={onPrint}>
+          <button type="button" className="primary" aria-label="Print" onClick={onPrint}>
             Print
           </button>
-          <button onClick={onClose}>Close</button>
+          <button type="button" aria-label="Close" onClick={onClose}>
+            Close
+          </button>
         </div>
       </div>
       <div className="print-stage">

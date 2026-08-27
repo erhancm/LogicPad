@@ -1,9 +1,11 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
@@ -11,6 +13,8 @@ use std::os::windows::ffi::OsStrExt;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LaunchEntry {
+    #[serde(default)]
+    pub id: String,
     pub profile: u8,
     pub key: u8,
     pub path: String,
@@ -26,93 +30,140 @@ struct LaunchFile {
 
 pub struct LaunchStore {
     file: PathBuf,
-    map: Mutex<HashMap<(u8, u8), LaunchEntry>>,
+    entries: Mutex<Vec<LaunchEntry>>,
+}
+
+fn new_launch_id() -> String {
+    static SEQ: AtomicU64 = AtomicU64::new(1);
+    let n = SEQ.fetch_add(1, Ordering::Relaxed);
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    format!("l{t:012x}-{n:04x}")
+}
+
+fn ensure_id(entry: &mut LaunchEntry, used: &mut HashSet<String>) {
+    if entry.id.trim().is_empty() || used.contains(&entry.id) {
+        loop {
+            let id = new_launch_id();
+            if !used.contains(&id) {
+                entry.id = id;
+                break;
+            }
+        }
+    }
+    used.insert(entry.id.clone());
 }
 
 impl LaunchStore {
     pub fn load(file: PathBuf) -> Self {
-        let mut map = HashMap::new();
+        let mut entries = Vec::new();
+        let mut used = HashSet::new();
         if let Ok(raw) = fs::read_to_string(&file) {
             if let Ok(parsed) = serde_json::from_str::<LaunchFile>(&raw) {
-                for e in parsed.entries {
-                    map.insert((e.profile, e.key), e);
+                for mut e in parsed.entries {
+                    ensure_id(&mut e, &mut used);
+                    entries.push(e);
                 }
             }
         }
         Self {
             file,
-            map: Mutex::new(map),
+            entries: Mutex::new(entries),
         }
     }
 
-    fn persist(&self, map: &HashMap<(u8, u8), LaunchEntry>) -> Result<(), String> {
+    fn persist(&self, entries: &[LaunchEntry]) -> Result<(), String> {
         if let Some(dir) = self.file.parent() {
             fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         }
         let file = LaunchFile {
-            entries: map.values().cloned().collect(),
+            entries: entries.to_vec(),
         };
-        fs::write(&self.file, serde_json::to_string_pretty(&file).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())
+        fs::write(
+            &self.file,
+            serde_json::to_string_pretty(&file).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())
     }
 
     pub fn list(&self) -> Vec<LaunchEntry> {
-        self.map
-            .lock()
-            .map(|g| g.values().cloned().collect())
-            .unwrap_or_default()
+        self.entries.lock().map(|g| g.clone()).unwrap_or_default()
     }
 
     pub fn has_launches(&self) -> bool {
-        self.map
+        self.entries
             .lock()
-            .map(|g| g.values().any(|e| !e.path.trim().is_empty()))
+            .map(|g| g.iter().any(|e| !e.path.trim().is_empty()))
             .unwrap_or(false)
     }
 
-    pub fn set(&self, entry: LaunchEntry) -> Result<(), String> {
-        let mut g = self.map.lock().map_err(|_| "lock".to_string())?;
+    pub fn set(&self, mut entry: LaunchEntry) -> Result<(), String> {
+        let mut g = self.entries.lock().map_err(|_| "lock".to_string())?;
         if entry.path.trim().is_empty() {
-            g.remove(&(entry.profile, entry.key));
+            if entry.id.trim().is_empty() {
+                return Ok(());
+            }
+            g.retain(|e| e.id != entry.id);
+            return self.persist(&g);
+        }
+        if entry.id.trim().is_empty() {
+            entry.id = new_launch_id();
+        }
+        if let Some(i) = g.iter().position(|e| e.id == entry.id) {
+            g[i] = entry;
         } else {
-            g.insert((entry.profile, entry.key), entry);
+            g.push(entry);
         }
         self.persist(&g)
     }
 
     pub fn shift_after_delete(&self, idx: u8) -> Result<(), String> {
-        let mut g = self.map.lock().map_err(|_| "lock".to_string())?;
-        let mut next = HashMap::new();
-        for ((p, k), e) in g.drain() {
-            if p == idx {
-                continue;
+        let mut g = self.entries.lock().map_err(|_| "lock".to_string())?;
+        g.retain(|e| e.profile != idx);
+        for e in g.iter_mut() {
+            if e.profile > idx {
+                e.profile -= 1;
             }
-            let np = if p > idx { p - 1 } else { p };
-            let mut e = e;
-            e.profile = np;
-            next.insert((np, k), e);
         }
-        *g = next;
         self.persist(&g)
     }
 
     pub fn launch(&self, profile: u8, key: u8) -> Result<(), String> {
-        let g = self.map.lock().map_err(|_| "lock".to_string())?;
-        let Some(e) = g.get(&(profile, key)) else {
-            return Ok(());
+        let batch: Vec<LaunchEntry> = {
+            let g = self.entries.lock().map_err(|_| "lock".to_string())?;
+            let mut v: Vec<LaunchEntry> = g
+                .iter()
+                .filter(|e| e.profile == profile && e.key == key && !e.path.trim().is_empty())
+                .cloned()
+                .collect();
+            v.sort_by(|a, b| a.slot.cmp(&b.slot).then_with(|| a.id.cmp(&b.id)));
+            v
         };
-        let resolved = resolve_program(&e.path);
-        let path = if Path::new(&resolved.path).exists() {
-            &resolved.path
-        } else {
-            &e.path
-        };
-        let args = if e.args.trim().is_empty() {
-            &resolved.args
-        } else {
-            &e.args
-        };
-        spawn(path, args)
+        let mut first_err = None;
+        for e in batch {
+            let resolved = resolve_program(&e.path);
+            let path = if Path::new(&resolved.path).exists() {
+                &resolved.path
+            } else {
+                &e.path
+            };
+            let args = if e.args.trim().is_empty() {
+                &resolved.args
+            } else {
+                &e.args
+            };
+            if let Err(err) = spawn(path, args) {
+                if first_err.is_none() {
+                    first_err = Some(err);
+                }
+            }
+        }
+        match first_err {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     }
 }
 

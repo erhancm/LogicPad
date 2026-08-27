@@ -1,0 +1,28 @@
+.keys-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.keys-head h2 {
+  margin: 0;
+}
+
+.clear-all {
+  background: #1c212c;
+  border: 1px solid #8a3a3a;
+  border-radius: 6px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.clear-all:hover:not(:disabled) {
+  border-color: #8a3a3a;
+}
+
+.clear-all:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
