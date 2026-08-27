@@ -1,9 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { OpenProgram, OpenWindow } from "./RunningPicker";
-import type { LaunchEntry, Meta, PadKey, ProfileHdr, ResolvedProgram, Snapshot, SwitchConfig } from "./types";
+import type { LaunchEntry, Meta, PadInfo, PadKey, ProfileHdr, ResolvedProgram, Snapshot, SwitchConfig } from "./types";
 
 export const api = {
   connect: () => invoke<void>("connect"),
+  connectTo: (id: string) => invoke<void>("connect_to", { id }),
+  listPads: () => invoke<PadInfo[]>("list_pads"),
+  currentPad: () => invoke<PadInfo>("current_pad"),
   disconnect: () => invoke<void>("disconnect"),
   isConnected: () => invoke<boolean>("is_connected"),
   ping: () => invoke<[number, number]>("ping"),

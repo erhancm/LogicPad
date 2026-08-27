@@ -64,6 +64,15 @@ export type Meta = {
   storeCap?: number;
 };
 
+export type PadInfo = {
+  id: string;
+  kind: "usb" | "simulated" | string;
+  label: string;
+  serial?: string | null;
+  simulated: boolean;
+  selected: boolean;
+};
+
 export type Snapshot = {
   meta: Meta;
   profiles: ProfileHdr[];

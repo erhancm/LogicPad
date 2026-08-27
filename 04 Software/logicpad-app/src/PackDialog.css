@@ -36,6 +36,16 @@
   line-height: 1.45;
 }
 
+.pack-target {
+  margin: 0 0 12px;
+  color: #c8d0bc;
+  font-size: 12px;
+}
+
+.pack-target strong {
+  color: #e8e4d8;
+}
+
 .pack-warn {
   margin: 0 0 12px;
   padding: 8px 10px;

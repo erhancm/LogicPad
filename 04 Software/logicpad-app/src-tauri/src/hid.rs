@@ -1,5 +1,9 @@
+use crate::sim::{SimPad, SIM_ID, SIM_LABEL};
 use hidapi::{HidApi, HidDevice};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -81,6 +85,11 @@ pub struct Pad {
     has_text: Mutex<bool>,
     has_titles: Mutex<bool>,
     has_host: Mutex<bool>,
+    sim: Mutex<SimPad>,
+    current_id: Mutex<String>,
+    user_pick: Mutex<bool>,
+    last_path: Mutex<PathBuf>,
+    flashing: Mutex<bool>,
 }
 
 impl Pad {
@@ -94,7 +103,21 @@ impl Pad {
             has_text: Mutex::new(false),
             has_titles: Mutex::new(false),
             has_host: Mutex::new(false),
+            sim: Mutex::new(SimPad::new()),
+            current_id: Mutex::new(String::new()),
+            user_pick: Mutex::new(false),
+            last_path: Mutex::new(PathBuf::new()),
+            flashing: Mutex::new(false),
         })
+    }
+
+    pub fn set_config_dir(&self, dir: &Path) {
+        if let Ok(mut sim) = self.sim.lock() {
+            sim.set_path(dir.join("simulated-pad.json"));
+        }
+        if let Ok(mut p) = self.last_path.lock() {
+            *p = dir.join("last-pad.txt");
+        }
     }
 
     pub fn set_on_key(&self, cb: KeyCallback) {
@@ -104,78 +127,203 @@ impl Pad {
     }
 
     pub fn connected(&self) -> bool {
+        if self.is_simulated() {
+            return true;
+        }
         self.tx.lock().ok().map(|g| g.is_some()).unwrap_or(false)
     }
 
+    pub fn is_simulated(&self) -> bool {
+        self.current_id() == SIM_ID
+    }
+
+    pub fn flashing(&self) -> bool {
+        self.flashing.lock().ok().map(|g| *g).unwrap_or(false)
+    }
+
+    pub fn current_id(&self) -> String {
+        self.current_id.lock().ok().map(|g| g.clone()).unwrap_or_default()
+    }
+
+    pub fn list_pads(&self) -> Vec<PadInfo> {
+        let current = self.current_id();
+        let mut out = vec![PadInfo::simulated(current == SIM_ID)];
+        for usb in self.list_usb() {
+            let selected = usb.id == current;
+            out.push(usb.into_info(selected));
+        }
+        out
+    }
+
+    pub fn current_pad(&self) -> PadInfo {
+        let id = self.current_id();
+        self.list_pads()
+            .into_iter()
+            .find(|p| p.id == id)
+            .unwrap_or_else(|| PadInfo::simulated(id == SIM_ID))
+    }
+
+    /// Auto-pick: 0 USB → simulated, 1 USB → that pad, 2+ → last used USB if still plugged.
     pub fn connect(&self) -> Result<(), PadError> {
-        self.disconnect();
+        if let Ok(mut g) = self.user_pick.lock() {
+            *g = false;
+        }
+        let want = self.auto_id();
+        match self.connect_id(&want) {
+            Ok(()) => Ok(()),
+            Err(_) if want != SIM_ID => self.connect_id(SIM_ID),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// User picked this pad from the list (including the simulator).
+    pub fn connect_to(&self, id: &str) -> Result<(), PadError> {
+        self.connect_id(id)?;
+        if let Ok(mut g) = self.user_pick.lock() {
+            *g = true;
+        }
+        Ok(())
+    }
+
+    /// Plug/unplug: keep an explicit choice if it is still available, otherwise auto-pick.
+    pub fn maintain(&self) -> Result<bool, PadError> {
+        if self.flashing() {
+            return Ok(false);
+        }
+        let usb = self.list_usb();
+        let usb_ids: Vec<String> = usb.iter().map(|u| u.id.clone()).collect();
+        let current = self.current_id();
+        let user = self.user_pick.lock().ok().map(|g| *g).unwrap_or(false);
+        let connected = self.connected();
+
+        if user && current == SIM_ID {
+            if connected {
+                return Ok(false);
+            }
+            self.connect_id(SIM_ID)?;
+            return Ok(true);
+        }
+        if connected && current != SIM_ID {
+            if usb_ids.iter().any(|id| id == &current) {
+                return Ok(false);
+            }
+            if usb_ids.is_empty() {
+                match self.ping() {
+                    Ok(_) => return Ok(false),
+                    Err(e) if e.to_string().to_ascii_lowercase().contains("busy") => {
+                        return Ok(false);
+                    }
+                    Err(_) => {}
+                }
+            }
+        }
+        if user && usb_ids.iter().any(|id| id == &current) {
+            if connected {
+                return Ok(false);
+            }
+            self.connect_id(&current)?;
+            return Ok(true);
+        }
+
+        let want = self.auto_id_from(&usb_ids);
+        if connected && current == want {
+            return Ok(false);
+        }
+        self.connect_id(&want)?;
+        Ok(true)
+    }
+
+    pub fn disconnect(&self) {
+        self.disconnect_usb();
+    }
+
+    fn auto_id(&self) -> String {
+        let ids: Vec<String> = self.list_usb().into_iter().map(|u| u.id).collect();
+        self.auto_id_from(&ids)
+    }
+
+    fn auto_id_from(&self, usb_ids: &[String]) -> String {
+        let current = self.current_id();
+        let hint = if current != SIM_ID && usb_ids.iter().any(|id| id == &current) {
+            Some(current)
+        } else {
+            self.remembered_id()
+        };
+        pick_pad_id(usb_ids, hint.as_deref())
+    }
+
+    fn connect_id(&self, id: &str) -> Result<(), PadError> {
+        if self.connected() && self.current_id() == id {
+            return Ok(());
+        }
+        if id == SIM_ID {
+            self.disconnect_usb();
+            self.enter_sim();
+            return Ok(());
+        }
+        self.disconnect_usb();
+        self.open_usb(id)?;
+        Ok(())
+    }
+
+    fn enter_sim(&self) {
+        if let Ok(mut g) = self.has_text.lock() {
+            *g = true;
+        }
+        if let Ok(mut g) = self.has_titles.lock() {
+            *g = true;
+        }
+        if let Ok(mut g) = self.has_host.lock() {
+            *g = true;
+        }
+        self.remember(SIM_ID);
+    }
+
+    fn open_usb(&self, id: &str) -> Result<(), PadError> {
         let mut api = self.api.lock().map_err(|_| PadError::Msg("lock".into()))?;
         api.refresh_devices()
             .map_err(|e| PadError::Msg(e.to_string()))?;
-
-        let mut found: Vec<(u8, hidapi::DeviceInfo)> = Vec::new();
-        for info in api.device_list() {
-            if info.vendor_id() != VID || info.product_id() != PID {
-                continue;
-            }
-            let page = info.usage_page();
-            #[cfg(windows)]
-            let usage = info.usage();
-            #[cfg(windows)]
-            {
-                if page == USAGE_PAGE_DESKTOP && (usage == 6 || usage == 2) {
-                    continue;
-                }
-                if page == USAGE_PAGE_CONSUMER {
-                    continue;
-                }
-            }
-            let rank = if page == USAGE_PAGE_VENDOR {
-                0u8
-            } else if page == 0 {
-                1u8
-            } else {
-                2u8
-            };
-            found.push((rank, info.clone()));
-        }
-        found.sort_by_key(|(r, _)| *r);
-
-        let mut opened = None;
-        let mut proto_min = 0u8;
-        let mut last = PadError::Msg("LogicPad vendor interface not found".into());
-        for (_, info) in found {
-            match info.open_device(&api) {
-                Ok(dev) => {
-                    let _ = dev.set_blocking_mode(true);
-                    match xfer(&dev, CMD_PING, &[]) {
-                        Ok(rep) if ping_ok(&rep) => {
-                            proto_min = rep.get(1).copied().unwrap_or(0);
-                            opened = Some(dev);
-                            break;
-                        }
-                        Ok(_) => last = PadError::Msg("unexpected ping reply".into()),
-                        Err(e) => last = e,
+        let pads = collect_usb(&api);
+        let pad = pads
+            .iter()
+            .find(|p| p.id == id)
+            .ok_or_else(|| PadError::Msg("That LogicPad is not connected.".into()))?;
+        let opened = pad.info.open_device(&api);
+        match opened {
+            Ok(dev) => {
+                let _ = dev.set_blocking_mode(true);
+                match xfer(&dev, CMD_PING, &[]) {
+                    Ok(rep) if ping_ok(&rep) => {
+                        let proto_min = rep.get(1).copied().unwrap_or(0);
+                        drop(api);
+                        self.bind_usb(dev, proto_min);
+                        self.remember(id);
+                        Ok(())
                     }
+                    Ok(_) => Err(PadError::Msg("unexpected ping reply".into())),
+                    Err(e) => Err(e),
                 }
-                Err(e) => last = PadError::Msg(e.to_string()),
             }
+            Err(e) => Err(PadError::Msg(e.to_string())),
         }
+    }
 
-        let dev = opened.ok_or(last)?;
-        drop(api);
+    fn bind_usb(&self, dev: HidDevice, proto_min: u8) {
         if let Ok(mut g) = self.has_host.lock() {
             *g = proto_min >= 4;
         }
         let on_key = self.on_key.lock().ok().and_then(|g| g.clone());
         let (tx, rx) = mpsc::channel();
         let handle = thread::spawn(move || hid_worker(dev, rx, on_key));
-        *self.tx.lock().map_err(|_| PadError::Msg("lock".into()))? = Some(tx);
-        *self.worker.lock().map_err(|_| PadError::Msg("lock".into()))? = Some(handle);
-        Ok(())
+        if let Ok(mut g) = self.tx.lock() {
+            *g = Some(tx);
+        }
+        if let Ok(mut g) = self.worker.lock() {
+            *g = Some(handle);
+        }
     }
 
-    pub fn disconnect(&self) {
+    fn disconnect_usb(&self) {
         if let Ok(mut g) = self.tx.lock() {
             if let Some(tx) = g.take() {
                 let _ = tx.send(HidReq::Stop);
@@ -186,6 +334,53 @@ impl Pad {
                 let _ = h.join();
             }
         }
+    }
+
+    fn list_usb(&self) -> Vec<UsbPad> {
+        let Ok(mut api) = self.api.lock() else {
+            return Vec::new();
+        };
+        let _ = api.refresh_devices();
+        collect_usb(&api)
+    }
+
+    fn remembered_id(&self) -> Option<String> {
+        let path = self.last_path.lock().ok()?;
+        let text = fs::read_to_string(&*path).ok()?;
+        let id = text.trim();
+        if id.is_empty() {
+            None
+        } else {
+            Some(id.to_string())
+        }
+    }
+
+    fn remember(&self, id: &str) {
+        if let Ok(mut g) = self.current_id.lock() {
+            *g = id.to_string();
+        }
+        if let Ok(path) = self.last_path.lock() {
+            if !path.as_os_str().is_empty() {
+                let _ = fs::write(&*path, id);
+            }
+        }
+    }
+
+    fn usb_serial(&self) -> Option<String> {
+        let id = self.current_id();
+        id.strip_prefix("sn:").map(|s| s.to_string())
+    }
+
+    fn with_sim<T>(&self, f: impl FnOnce(&mut SimPad) -> Result<T, PadError>) -> Option<Result<T, PadError>> {
+        if !self.is_simulated() {
+            return None;
+        }
+        Some(
+            self.sim
+                .lock()
+                .map_err(|_| PadError::Msg("lock".into()))
+                .and_then(|mut g| f(&mut g)),
+        )
     }
 
     fn rpc(&self, cmd: u8, payload: &[u8]) -> Result<Vec<u8>, PadError> {
@@ -213,11 +408,17 @@ impl Pad {
     }
 
     pub fn ping(&self) -> Result<(u8, u8), PadError> {
+        if let Some(r) = self.with_sim(|_| Ok(SimPad::ping())) {
+            return r;
+        }
         let p = self.rpc(CMD_PING, &[])?;
         Ok((p.first().copied().unwrap_or(0), p.get(1).copied().unwrap_or(0)))
     }
 
     pub fn get_meta(&self) -> Result<Meta, PadError> {
+        if let Some(r) = self.with_sim(|s| Ok(s.meta())) {
+            return r;
+        }
         let p = self.rpc(CMD_GET_META, &[])?;
         Ok(Meta {
             active: p.first().copied().unwrap_or(0),
@@ -234,10 +435,16 @@ impl Pad {
     }
 
     pub fn get_profile(&self, idx: u8) -> Result<ProfileHdr, PadError> {
+        if let Some(r) = self.with_sim(|s| s.get_profile(idx)) {
+            return r;
+        }
         parse_profile(&self.rpc(CMD_GET_PROFILE_HDR, &[idx])?)
     }
 
     pub fn set_profile(&self, hdr: &ProfileHdr) -> Result<(), PadError> {
+        if let Some(r) = self.with_sim(|s| s.set_profile(hdr)) {
+            return r;
+        }
         let mut p = [0u8; 17];
         p[0] = hdr.index;
         let name = hdr.name.as_bytes();
@@ -255,6 +462,9 @@ impl Pad {
     }
 
     pub fn set_key(&self, key: &PadKey) -> Result<(), PadError> {
+        if let Some(r) = self.with_sim(|s| s.set_key(key)) {
+            return r;
+        }
         let mut p = [0u8; 62];
         p[0] = key.profile;
         p[1] = key.index;
@@ -370,11 +580,17 @@ impl Pad {
     }
 
     pub fn set_active(&self, profile: u8) -> Result<(), PadError> {
+        if let Some(r) = self.with_sim(|s| s.set_active(profile)) {
+            return r;
+        }
         self.rpc(CMD_SET_ACTIVE, &[profile])?;
         Ok(())
     }
 
     pub fn add_profile(&self) -> Result<u8, PadError> {
+        if let Some(r) = self.with_sim(|s| s.add_profile()) {
+            return r;
+        }
         let p = self.rpc(CMD_ADD_PROFILE, &[])?;
         let st = p.get(2).copied().unwrap_or(0xFF);
         if st == 1 {
@@ -389,6 +605,9 @@ impl Pad {
     }
 
     pub fn del_profile(&self, idx: u8) -> Result<u8, PadError> {
+        if let Some(r) = self.with_sim(|s| s.del_profile(idx)) {
+            return r;
+        }
         let p = self.rpc(CMD_DEL_PROFILE, &[idx])?;
         let st = p.get(3).copied().unwrap_or(0xFF);
         match st {
@@ -400,21 +619,33 @@ impl Pad {
     }
 
     pub fn save(&self) -> Result<(), PadError> {
+        if let Some(r) = self.with_sim(|s| s.save()) {
+            return r;
+        }
         self.rpc(CMD_SAVE, &[])?;
         Ok(())
     }
 
     pub fn reload(&self) -> Result<(), PadError> {
+        if let Some(r) = self.with_sim(|s| s.reload()) {
+            return r;
+        }
         self.rpc(CMD_RELOAD, &[])?;
         Ok(())
     }
 
     pub fn factory(&self) -> Result<(), PadError> {
+        if let Some(r) = self.with_sim(|s| s.factory()) {
+            return r;
+        }
         self.rpc(CMD_FACTORY, &[])?;
         Ok(())
     }
 
     pub fn set_time(&self, year: u16, month: u8, day: u8, hour: u8, min: u8, sec: u8) -> Result<(), PadError> {
+        if self.is_simulated() {
+            return Ok(());
+        }
         let mut p = [0u8; 7];
         p[0] = year as u8;
         p[1] = (year >> 8) as u8;
@@ -428,6 +659,9 @@ impl Pad {
     }
 
     pub fn set_host(&self, present: bool) -> Result<(), PadError> {
+        if self.is_simulated() {
+            return Ok(());
+        }
         if !self.has_host.lock().map(|g| *g).unwrap_or(false) {
             return Ok(());
         }
@@ -436,6 +670,9 @@ impl Pad {
     }
 
     pub fn load_all(&self) -> Result<Snapshot, PadError> {
+        if let Some(r) = self.with_sim(|s| Ok(s.snapshot())) {
+            return r;
+        }
         let (_maj, min) = self.ping()?;
         let has_text = min >= 1;
         let has_titles = min >= 3;
@@ -514,6 +751,12 @@ impl Pad {
         image: &[u8],
         mut progress: impl FnMut(&str, u32, u32),
     ) -> Result<(), PadError> {
+        if self.is_simulated() {
+            return Err(PadError::Msg(
+                "Can't update firmware on the simulated LogicPad. Plug in a pad and select it first."
+                    .into(),
+            ));
+        }
         if image.len() < 16 || image.len() > APP_MAX {
             return Err(PadError::Msg(
                 "Not a LogicPad app image. Use LogicPad.bin from the firmware Release build (not the factory hex)."
@@ -533,6 +776,9 @@ impl Pad {
             ));
         }
 
+        let serial = self.usb_serial();
+        let _busy = FlashBusy::arm(&self.flashing);
+
         progress("reboot", 0, 1);
         if self.connected() {
             let _ = self.rpc_to(CMD_ENTER_BOOTLOADER, &[], 300);
@@ -543,7 +789,7 @@ impl Pad {
         progress("wait", 0, 1);
         let mut api = self.api.lock().map_err(|_| PadError::Msg("lock".into()))?;
         *api = HidApi::new().map_err(|e| PadError::Msg(e.to_string()))?;
-        let boot = wait_boot(&mut api)?;
+        let boot = wait_boot(&mut api, serial.as_deref())?;
 
         let crc = crc32_ieee(image);
         let mut start = [0u8; 8];
@@ -713,7 +959,7 @@ fn bl_ok(payload: &[u8], step: &str) -> Result<(), PadError> {
     Err(PadError::Msg(format!("firmware {step} failed ({why})")))
 }
 
-fn wait_boot(api: &mut HidApi) -> Result<HidDevice, PadError> {
+fn wait_boot(api: &mut HidApi, serial: Option<&str>) -> Result<HidDevice, PadError> {
     let start = Instant::now();
     let mut last = PadError::Msg(
         "LogicPad Boot not found. ST-Link LogicPad_factory.hex once, or hold SEL while plugging USB."
@@ -731,12 +977,17 @@ fn wait_boot(api: &mut HidApi) -> Result<HidDevice, PadError> {
         }
         n += 1;
 
-        match open_vid_pid_to(api, VID, PID_BOOT, 800) {
+        match open_vid_pid_to(api, VID, PID_BOOT, 800, serial) {
             Ok(d) => return Ok(d),
             Err(e) => last = e,
         }
+        if serial.is_some() {
+            if let Ok(d) = open_vid_pid_to(api, VID, PID_BOOT, 800, None) {
+                return Ok(d);
+            }
+        }
         if last_kick.elapsed() >= Duration::from_millis(2500) {
-            if let Ok(app) = open_vid_pid_to(api, VID, PID, 250) {
+            if let Ok(app) = open_vid_pid_to(api, VID, PID, 250, serial) {
                 let _ = xfer_to(&app, CMD_ENTER_BOOTLOADER, &[], 400);
                 drop(app);
                 last_kick = Instant::now();
@@ -771,7 +1022,7 @@ fn wait_open(api: &mut HidApi, vid: u16, pid: u16, ms: u64) -> Result<HidDevice,
 }
 
 fn open_vid_pid(api: &HidApi, vid: u16, pid: u16) -> Result<HidDevice, PadError> {
-    open_vid_pid_to(api, vid, pid, 80)
+    open_vid_pid_to(api, vid, pid, 80, None)
 }
 
 fn hid_snapshot(api: &HidApi) -> String {
@@ -808,35 +1059,26 @@ fn open_and_ping(dev: HidDevice, ping_ms: i32) -> Result<HidDevice, PadError> {
     }
 }
 
-fn open_vid_pid_to(api: &HidApi, vid: u16, pid: u16, ping_ms: i32) -> Result<HidDevice, PadError> {
+fn open_vid_pid_to(
+    api: &HidApi,
+    vid: u16,
+    pid: u16,
+    ping_ms: i32,
+    serial: Option<&str>,
+) -> Result<HidDevice, PadError> {
     let skip_iface_filter = pid == PID_BOOT;
     let mut found: Vec<(u8, hidapi::DeviceInfo)> = Vec::new();
     for info in api.device_list() {
         if info.vendor_id() != vid || info.product_id() != pid {
             continue;
         }
-        let page = info.usage_page();
-        #[cfg(windows)]
-        let usage = info.usage();
-        #[cfg(windows)]
-        {
-            if !skip_iface_filter {
-                if page == USAGE_PAGE_DESKTOP && (usage == 6 || usage == 2) {
-                    continue;
-                }
-                if page == USAGE_PAGE_CONSUMER {
-                    continue;
-                }
-            }
+        if !serial_matches(info.serial_number(), serial) {
+            continue;
         }
-        let rank = if page == USAGE_PAGE_VENDOR {
-            0u8
-        } else if page == 0 {
-            1u8
-        } else {
-            2u8
-        };
-        found.push((rank, info.clone()));
+        if !skip_iface_filter && !keep_app_iface(info) {
+            continue;
+        }
+        found.push((iface_rank(info), info.clone()));
     }
     found.sort_by_key(|(r, _)| *r);
     let mut last = PadError::Msg("HID interface not found".into());
@@ -848,6 +1090,9 @@ fn open_vid_pid_to(api: &HidApi, vid: u16, pid: u16, ping_ms: i32) -> Result<Hid
             },
             Err(e) => last = PadError::Msg(e.to_string()),
         }
+    }
+    if serial.is_some() {
+        return Err(last);
     }
     match api.open(vid, pid) {
         Ok(dev) => open_and_ping(dev, ping_ms),
@@ -1012,5 +1257,208 @@ impl Default for TextPool {
             used: 0,
             max: TEXT_POOL,
         }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PadInfo {
+    pub id: String,
+    pub kind: String,
+    pub label: String,
+    pub serial: Option<String>,
+    pub simulated: bool,
+    pub selected: bool,
+}
+
+impl PadInfo {
+    fn simulated(selected: bool) -> Self {
+        Self {
+            id: SIM_ID.into(),
+            kind: "simulated".into(),
+            label: SIM_LABEL.into(),
+            serial: None,
+            simulated: true,
+            selected,
+        }
+    }
+}
+
+struct UsbPad {
+    id: String,
+    serial: Option<String>,
+    label: String,
+    rank: u8,
+    info: hidapi::DeviceInfo,
+}
+
+impl UsbPad {
+    fn into_info(self, selected: bool) -> PadInfo {
+        PadInfo {
+            id: self.id,
+            kind: "usb".into(),
+            label: self.label,
+            serial: self.serial,
+            simulated: false,
+            selected,
+        }
+    }
+}
+
+/// 0 USB → simulated, 1 USB → that pad, 2+ → last used USB if still plugged in.
+pub fn pick_pad_id(usb_ids: &[String], last: Option<&str>) -> String {
+    match usb_ids.len() {
+        0 => SIM_ID.to_string(),
+        1 => usb_ids[0].clone(),
+        _ => {
+            if let Some(last) = last {
+                if usb_ids.iter().any(|id| id == last) {
+                    return last.to_string();
+                }
+            }
+            usb_ids[0].clone()
+        }
+    }
+}
+
+struct FlashBusy<'a>(&'a Mutex<bool>);
+
+impl<'a> FlashBusy<'a> {
+    fn arm(flag: &'a Mutex<bool>) -> Self {
+        if let Ok(mut g) = flag.lock() {
+            *g = true;
+        }
+        Self(flag)
+    }
+}
+
+impl Drop for FlashBusy<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut g) = self.0.lock() {
+            *g = false;
+        }
+    }
+}
+
+fn collect_usb(api: &HidApi) -> Vec<UsbPad> {
+    let mut by_id: BTreeMap<String, UsbPad> = BTreeMap::new();
+    for info in api.device_list() {
+        if info.vendor_id() != VID || info.product_id() != PID {
+            continue;
+        }
+        if !keep_app_iface(info) {
+            continue;
+        }
+        let id = usb_id(info);
+        let rank = iface_rank(info);
+        let serial = nonempty_serial(info.serial_number());
+        let next = UsbPad {
+            id: id.clone(),
+            serial,
+            label: String::new(),
+            rank,
+            info: info.clone(),
+        };
+        match by_id.get(&id) {
+            Some(old) if old.rank <= rank => {}
+            _ => {
+                by_id.insert(id, next);
+            }
+        }
+    }
+    let mut pads: Vec<UsbPad> = by_id.into_values().collect();
+    pads.sort_by(|a, b| {
+        a.serial
+            .as_deref()
+            .unwrap_or("")
+            .cmp(b.serial.as_deref().unwrap_or(""))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    let n = pads.len();
+    for (i, p) in pads.iter_mut().enumerate() {
+        p.label = usb_label(p, i, n);
+    }
+    pads
+}
+
+fn usb_id(info: &hidapi::DeviceInfo) -> String {
+    if let Some(s) = nonempty_serial(info.serial_number()) {
+        format!("sn:{}", s.to_ascii_uppercase())
+    } else {
+        format!("path:{}", info.path().to_string_lossy())
+    }
+}
+
+fn usb_label(pad: &UsbPad, index: usize, count: usize) -> String {
+    if let Some(s) = pad.serial.as_deref() {
+        format!("LogicPad · {s}")
+    } else if count > 1 {
+        format!("LogicPad {}", index + 1)
+    } else {
+        "LogicPad".into()
+    }
+}
+
+fn nonempty_serial(s: Option<&str>) -> Option<String> {
+    s.map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+}
+
+fn serial_matches(got: Option<&str>, want: Option<&str>) -> bool {
+    let Some(want) = want else {
+        return true;
+    };
+    let want = want.trim();
+    if want.is_empty() {
+        return true;
+    }
+    got.map(str::trim)
+        .is_some_and(|g| g.eq_ignore_ascii_case(want))
+}
+
+fn keep_app_iface(info: &hidapi::DeviceInfo) -> bool {
+    let page = info.usage_page();
+    #[cfg(windows)]
+    {
+        let usage = info.usage();
+        if page == USAGE_PAGE_DESKTOP && (usage == 6 || usage == 2) {
+            return false;
+        }
+        if page == USAGE_PAGE_CONSUMER {
+            return false;
+        }
+    }
+    true
+}
+
+fn iface_rank(info: &hidapi::DeviceInfo) -> u8 {
+    let page = info.usage_page();
+    if page == USAGE_PAGE_VENDOR {
+        0
+    } else if page == 0 {
+        1
+    } else {
+        2
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pick_zero_one_many() {
+        assert_eq!(pick_pad_id(&[], None), SIM_ID);
+        assert_eq!(pick_pad_id(&["sn:A".into()], Some("sn:B")), "sn:A");
+        assert_eq!(
+            pick_pad_id(&["sn:A".into(), "sn:B".into()], Some("sn:B")),
+            "sn:B"
+        );
+        assert_eq!(
+            pick_pad_id(&["sn:A".into(), "sn:B".into()], Some(SIM_ID)),
+            "sn:A"
+        );
+        assert_eq!(pick_pad_id(&["sn:A".into(), "sn:B".into()], None), "sn:A");
     }
 }

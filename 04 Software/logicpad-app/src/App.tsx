@@ -17,6 +17,7 @@ import {
   type Action,
   type HidKey,
   type LaunchEntry,
+  type PadInfo,
   type PadKey,
   type ProfileHdr,
   type Snapshot,
@@ -239,6 +240,7 @@ export default function App() {
   const [flash, setFlash] = useState<{ phase: string; done: number; total: number } | null>(null);
   const [dropHover, setDropHover] = useState<number | null>(null);
   const [linked, setLinked] = useState(false);
+  const [pads, setPads] = useState<PadInfo[]>([]);
   const [dragKey, setDragKey] = useState<number | null>(null);
   const [swapAnim, setSwapAnim] = useState<{
     from: number;
@@ -279,6 +281,21 @@ export default function App() {
     typeof actPick === "object" && actPick?.kind === "launch"
       ? mine.find((l) => l.id === actPick.id)
       : undefined;
+  const padOptions =
+    pads.length > 0
+      ? pads
+      : [
+          {
+            id: "sim",
+            kind: "simulated",
+            label: "Simulated LogicPad",
+            serial: null,
+            simulated: true,
+            selected: false,
+          } satisfies PadInfo,
+        ];
+  const activePad = padOptions.find((p) => p.selected) ?? (linked ? padOptions[0] : undefined);
+  const simulated = Boolean(linked && activePad?.simulated);
 
   function takePad(next: Snapshot) {
     setSnap(next);
@@ -290,7 +307,7 @@ export default function App() {
     setErr("");
     try {
       await fn();
-      setStatus(label);
+      if (label) setStatus(label);
     } catch (e) {
       const msg = String(e);
       if (!/reading 'invoke'|__TAURI_INTERNALS__/i.test(msg)) setErr(msg);
@@ -311,16 +328,58 @@ export default function App() {
     });
   }
 
+  async function afterLink(label: string) {
+    try {
+      await syncPadTime();
+    } catch {
+      /* old firmware / app without SET_TIME */
+    }
+    takePad(await api.loadPad());
+    setLinked(true);
+    try {
+      setPads(await api.listPads());
+    } catch {
+      /* list_pads missing on an old backend */
+    }
+    setStatus(label);
+  }
+
   async function onConnect() {
-    await run("Connected", async () => {
-      await api.connect();
+    await run("", async () => {
       try {
-        await syncPadTime();
+        await api.connect();
       } catch {
-        /* old firmware / app without SET_TIME */
+        await api.connectTo("sim");
       }
-      takePad(await api.loadPad());
-      setLinked(true);
+      const pad = await api.currentPad().catch(() => undefined);
+      const sim = pad?.simulated ?? false;
+      if (sim) setFwVer(null);
+      await afterLink(sim ? "Using simulated LogicPad" : "Connected");
+    });
+  }
+
+  async function selectPad(id: string) {
+    if (activePad?.id === id && linked && snap) return;
+    if (snap && syncStatus({ linked, snap, baseline }) === "unsaved") {
+      if (!confirm("Unsaved changes on this pad. Switch anyway?")) return;
+    }
+    const sim = id === "sim";
+    await run(sim ? "Using simulated LogicPad" : "Connected", async () => {
+      await api.connectTo(id);
+      if (sim) setFwVer(null);
+      await afterLink(sim ? "Using simulated LogicPad" : "Connected");
+    });
+  }
+
+  async function activateProfile(index: number) {
+    await run("Active profile", async () => {
+      await api.setActive(index);
+      const cur = snapRef.current;
+      if (!cur) return;
+      const next = structuredClone(cur);
+      next.meta.active = index;
+      setSnap(next);
+      setSel(0);
     });
   }
 
@@ -357,7 +416,9 @@ export default function App() {
       void api
         .ping()
         .then(async (ver) => {
-          if (Array.isArray(ver) && ver.length >= 2) setFwVer(`${ver[0]}.${ver[1]}`);
+          if (!simulated && Array.isArray(ver) && ver.length >= 2) {
+            setFwVer(`${ver[0]}.${ver[1]}`);
+          }
           try {
             const meta = await api.getMeta();
             setSnap((s) => {
@@ -372,13 +433,14 @@ export default function App() {
         })
         .catch((e) => {
           if (String(e).toLowerCase().includes("busy")) return;
+          if (simulated) return;
           setLinked(false);
           setFwVer(null);
           setStatus("Pad disconnected");
         });
     }, 2000);
     return () => window.clearInterval(id);
-  }, [linked, busy, flash]);
+  }, [linked, busy, flash, simulated]);
 
   useEffect(() => {
     let gone = false;
@@ -448,6 +510,43 @@ export default function App() {
                     ? "Firmware written"
                     : phase;
       setStatus(label);
+    }).then((fn) => {
+      if (gone) fn();
+      else {
+        const prev = unlisten;
+        unlisten = () => {
+          prev?.();
+          fn();
+        };
+      }
+    });
+    return () => {
+      gone = true;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let gone = false;
+    let unlisten: (() => void) | undefined;
+    void tauriListen<PadInfo[]>("pads", (e) => {
+      setPads(e.payload);
+    }).then((fn) => {
+      if (gone) fn();
+      else unlisten = fn;
+    });
+    void tauriListen<PadInfo>("pad-session", (e) => {
+      setPads((list) => {
+        if (list.length === 0) return [e.payload];
+        return list.map((p) => ({ ...p, selected: p.id === e.payload.id }));
+      });
+      setLinked(true);
+      if (e.payload.simulated) setFwVer(null);
+      setStatus(e.payload.simulated ? "Using simulated LogicPad" : "Connected");
+      void api
+        .loadPad()
+        .then((next) => takePad(next))
+        .catch(() => undefined);
     }).then((fn) => {
       if (gone) fn();
       else {
@@ -732,7 +831,11 @@ export default function App() {
     try {
       const path = await api.saveTextFile(suggestedFileName(pack), packToYaml(pack));
       if (path) {
-        setStatus(`Saved ${path}`);
+        setStatus(
+          simulated
+            ? `Saved ${path}. Select a LogicPad, then Import… to program it.`
+            : `Saved ${path}`,
+        );
         setPackMode(null);
       }
     } catch (e) {
@@ -753,12 +856,34 @@ export default function App() {
 
   async function onImportPack(opts: PackOptions) {
     if (!snap || !importDraft) return;
-    const result = applyPack(snap, launches, switchCfg, importDraft, opts);
-    await run("Imported", async () => {
-      const dests = new Set(opts.profileIndices);
+    await run("", async () => {
+      const packCount = importDraft.profiles?.length ?? 0;
+      let destSnap = snap;
+      const dests = [...opts.profileIndices];
+      const keepActive = destSnap.meta.active;
+      const wantSlots = opts.names || opts.actions || opts.leds || opts.lights || opts.launches;
+      if (wantSlots) {
+        while (packCount > dests.length) {
+          const canAdd = destSnap.canAddProfiles ?? destSnap.profiles.length < 4;
+          if (!canAdd) break;
+          destSnap = await api.addProfile();
+          const added = destSnap.profiles[destSnap.profiles.length - 1]?.index;
+          if (added == null || dests.includes(added)) break;
+          dests.push(added);
+        }
+        if (destSnap.meta.active !== keepActive) {
+          await api.setActive(keepActive);
+          destSnap = { ...destSnap, meta: { ...destSnap.meta, active: keepActive } };
+        }
+      }
+      const result = applyPack(destSnap, launches, switchCfg, importDraft, {
+        ...opts,
+        profileIndices: dests,
+      });
+      const destSet = new Set(dests);
       if (opts.names || opts.lights) {
         for (const hdr of result.snap.profiles) {
-          if (dests.has(hdr.index)) await api.applyProfile(hdr);
+          if (destSet.has(hdr.index)) await api.applyProfile(hdr);
         }
       }
       if (opts.names || opts.actions || opts.leds) {
@@ -788,6 +913,14 @@ export default function App() {
       }
       snapRef.current = result.snap;
       setSnap(result.snap);
+      const mapped = Math.min(packCount, dests.length);
+      const onto = activePad?.label ?? "this pad";
+      const saveHint = simulated ? "Save to keep this draft." : "Save to write the pad.";
+      setStatus(
+        wantSlots && packCount > mapped
+          ? `Imported ${mapped} of ${packCount} profiles onto ${onto}. The pad is full — extra profiles were skipped. ${saveHint}`
+          : `Imported onto ${onto}. ${saveHint}`,
+      );
     });
     setPackMode(null);
     setImportDraft(null);
@@ -822,9 +955,14 @@ export default function App() {
   }
 
   async function onFlashFile(file: File) {
+    if (simulated) {
+      setErr("Can't update firmware on the simulated LogicPad. Plug in a pad and select it first.");
+      return;
+    }
     if (!confirm("Update firmware? The pad will reboot. Do not unplug until it reconnects.")) {
       return;
     }
+    const targetId = activePad?.simulated ? null : activePad?.id;
     await run("Firmware updated", async () => {
       setFlash({ phase: "start", done: 0, total: 1 });
       setStatus("Starting firmware update…");
@@ -835,14 +973,21 @@ export default function App() {
         setLinked(false);
         setSnap(null);
         setBaseline(null);
-        await api.connect();
-        try {
-          await syncPadTime();
-        } catch {
-          /* old firmware / app without SET_TIME */
+        let linkedOk = false;
+        if (targetId) {
+          for (let i = 0; i < 25; i++) {
+            try {
+              await api.connectTo(targetId);
+              linkedOk = true;
+              break;
+            } catch {
+              await new Promise((r) => window.setTimeout(r, 250));
+            }
+          }
         }
-        takePad(await api.loadPad());
-        setLinked(true);
+        if (!linkedOk) await api.connect();
+        const pad = await api.currentPad().catch(() => undefined);
+        await afterLink(pad?.simulated ? "Using simulated LogicPad" : "Connected");
       } finally {
         setFlash(null);
       }
@@ -988,12 +1133,17 @@ export default function App() {
           ))}
         </div>
         <div className="nav-foot">
-          <p className={`nav-link ${linked ? "ok" : ""}`}>
+          <p className={`nav-link ${linked ? (simulated ? "sim" : "ok") : ""}`}>
             <span className="nav-dot" aria-hidden="true" />
-            {linked ? "LogicPad connected" : "Disconnected"}
+            {simulated ? "Simulated LogicPad" : linked ? "LogicPad connected" : "Disconnected"}
           </p>
+          {simulated ? (
+            <p className="nav-meta">Draft on this PC — Save as… then Import on a pad</p>
+          ) : activePad && !activePad.simulated ? (
+            <p className="nav-meta">{activePad.label}</p>
+          ) : null}
           <p className="nav-meta">{status}</p>
-          {fwVer ? <p className="nav-meta">Firmware {fwVer}</p> : null}
+          {fwVer && !simulated ? <p className="nav-meta">Firmware {fwVer}</p> : null}
         </div>
       </nav>
       <div className="stage">
@@ -1024,15 +1174,26 @@ export default function App() {
             <p className="topbar-status">{hdr ? hdr.name || `P${profile + 1}` : "LogicPad"}</p>
           )}
           <div className="bar">
-            {tab !== "switch" ? (
-            <button
-              disabled={busy || linked}
-              title={linked ? "Already connected" : "Connect to LogicPad"}
-              onClick={onConnect}
-            >
-              {linked ? "Connected" : "Connect"}
-            </button>
-            ) : null}
+            <label className={`pad-pick-wrap${simulated ? " sim" : ""}`}>
+              <span>Pad</span>
+              <select
+                className={`pad-pick${simulated ? " sim" : ""}`}
+                value={activePad?.id ?? "sim"}
+                disabled={busy || Boolean(flash)}
+                title={
+                  simulated
+                    ? "Simulated LogicPad — not a USB device"
+                    : activePad?.label || "Select a LogicPad"
+                }
+                onChange={(e) => void selectPad(e.target.value)}
+              >
+                {padOptions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.simulated ? "Simulated LogicPad" : p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
               disabled={busy || !snap}
               onClick={() =>
@@ -1043,6 +1204,12 @@ export default function App() {
               }
             >
               Save
+            </button>
+            <button type="button" disabled={!snap} onClick={() => setPackMode("export")}>
+              Save as…
+            </button>
+            <button type="button" disabled={!snap || busy} onClick={() => void onImportPick()}>
+              Import…
             </button>
             <details className="more">
               <summary>More</summary>
@@ -1061,12 +1228,6 @@ export default function App() {
                 <button type="button" disabled={!snap} onClick={() => setPrintOpen(true)}>
                   Print
                 </button>
-                <button type="button" disabled={!snap} onClick={() => setPackMode("export")}>
-                  Save as…
-                </button>
-                <button type="button" disabled={!snap || busy} onClick={() => void onImportPick()}>
-                  Import…
-                </button>
                 <button
                   type="button"
                   className="danger"
@@ -1080,7 +1241,16 @@ export default function App() {
                 >
                   Factory
                 </button>
-                <button type="button" disabled={busy} onClick={() => fwInput.current?.click()}>
+                <button
+                  type="button"
+                  disabled={busy || simulated}
+                  title={
+                    simulated
+                      ? "Can't update firmware on the simulated LogicPad"
+                      : "Write LogicPad.bin to the selected pad"
+                  }
+                  onClick={() => fwInput.current?.click()}
+                >
                   {flash ? `Updating ${flashPct}%` : "Update firmware"}
                 </button>
               </div>
@@ -1099,6 +1269,13 @@ export default function App() {
             <SyncBadge status={syncStatus({ linked, snap, baseline })} />
           </div>
         </header>
+        {simulated && snap ? (
+          <div className="sim-banner" role="status">
+            Simulated LogicPad — a draft on this PC, not USB. Use <strong>Save as…</strong> for a
+            YAML file, pick a LogicPad in <strong>Pad</strong>, then <strong>Import…</strong> to
+            program it.
+          </div>
+        ) : null}
         {flash ? (
           <div className="flash">
             <div className="flash-track">
@@ -1131,9 +1308,16 @@ export default function App() {
             />
       ) : !snap ? (
         <section className="hero">
-          <p>Plug the pad in over USB, then connect. The editor loads profiles and keys from the device.</p>
-          <button className="primary" disabled={busy} onClick={onConnect}>
-            {busy ? "Connecting…" : "Connect to LogicPad"}
+          <p>
+            {busy
+              ? "Loading the pad…"
+              : "Plug a LogicPad in over USB, or open the simulated pad to program keys and profiles on this PC."}
+          </p>
+          <button className="primary" disabled={busy} onClick={() => void selectPad("sim")}>
+            {busy ? "Connecting…" : "Open simulated LogicPad"}
+          </button>
+          <button disabled={busy} onClick={() => void onConnect()}>
+            {busy ? "Connecting…" : "Connect USB pad"}
           </button>
         </section>
       ) : (
@@ -1165,6 +1349,32 @@ export default function App() {
                 }
               />
             </div>
+            <div className="keys-profiles">
+              {snap.profiles.map((p) => (
+                <button
+                  key={p.index}
+                  type="button"
+                  className={p.index === profile ? "on" : ""}
+                  disabled={busy}
+                  onClick={() => void activateProfile(p.index)}
+                >
+                  {p.name || `P${p.index + 1}`}
+                </button>
+              ))}
+              {snap.canMutateProfiles ? (
+                <button
+                  type="button"
+                  className="keys-new-profile"
+                  disabled={busy || !(snap.canAddProfiles ?? snap.profiles.length < 4)}
+                  onClick={() => void onAddProfile()}
+                >
+                  New profile
+                </button>
+              ) : null}
+            </div>
+            <p className="hint">
+              Click a key, then add a tap, chord, or typed text on the right.
+            </p>
             {mem ? (
               <div className="mem">
                 {mem.storeMax > 0 ? (
@@ -1679,15 +1889,7 @@ export default function App() {
                   <button
                     key={p.index}
                     className={p.index === profile ? "on" : ""}
-                    onClick={() =>
-                      run("Active profile", async () => {
-                        await api.setActive(p.index);
-                        const next = structuredClone(snap);
-                        next.meta.active = p.index;
-                        setSnap(next);
-                        setSel(0);
-                      })
-                    }
+                    onClick={() => void activateProfile(p.index)}
                   >
                     {p.name || `P${p.index + 1}`}
                     {p.index === profile ? " *" : ""}
@@ -1761,15 +1963,7 @@ export default function App() {
                   <button
                     key={p.index}
                     className={p.index === profile ? "on" : ""}
-                    onClick={() =>
-                      run("Active profile", async () => {
-                        await api.setActive(p.index);
-                        const next = structuredClone(snap);
-                        next.meta.active = p.index;
-                        setSnap(next);
-                        setSel(0);
-                      })
-                    }
+                    onClick={() => void activateProfile(p.index)}
                   >
                     {p.name || `P${p.index + 1}`}
                   </button>
@@ -1854,6 +2048,8 @@ export default function App() {
         launches={launches}
         switchCfg={switchCfg}
         importDraft={importDraft}
+        padLabel={activePad?.label ?? (simulated ? "Simulated LogicPad" : "this pad")}
+        simulated={simulated}
         onClose={() => {
           setPackMode(null);
           setImportDraft(null);

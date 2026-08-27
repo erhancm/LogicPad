@@ -5,9 +5,10 @@ mod host;
 mod launch;
 mod preview;
 mod profile_switch;
+mod sim;
 mod switch_graph;
 
-use hid::{Meta, Pad, PadKey, ProfileHdr, Snapshot};
+use hid::{Meta, Pad, PadInfo, PadKey, ProfileHdr, Snapshot};
 use launch::{LaunchEntry, LaunchStore, ResolvedProgram};
 use profile_switch::{ActiveEvt, SwitchConfig, SwitchStore};
 use std::sync::{Arc, Mutex};
@@ -23,6 +24,44 @@ struct AppPad(Arc<Mutex<Pad>>);
 #[tauri::command]
 fn connect(pad: State<AppPad>) -> Result<(), String> {
     pad.0.lock().map_err(|e| e.to_string())?.connect().map_err(Into::into)
+}
+
+#[tauri::command]
+fn connect_to(pad: State<AppPad>, id: String) -> Result<(), String> {
+    pad.0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .connect_to(&id)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn list_pads(pad: State<AppPad>) -> Vec<PadInfo> {
+    pad.0.lock().map(|g| g.list_pads()).unwrap_or_else(|_| {
+        vec![PadInfo {
+            id: crate::sim::SIM_ID.into(),
+            kind: "simulated".into(),
+            label: crate::sim::SIM_LABEL.into(),
+            serial: None,
+            simulated: true,
+            selected: false,
+        }]
+    })
+}
+
+#[tauri::command]
+fn current_pad(pad: State<AppPad>) -> PadInfo {
+    pad.0
+        .lock()
+        .map(|g| g.current_pad())
+        .unwrap_or_else(|_| PadInfo {
+            id: crate::sim::SIM_ID.into(),
+            kind: "simulated".into(),
+            label: crate::sim::SIM_LABEL.into(),
+            serial: None,
+            simulated: true,
+            selected: true,
+        })
 }
 
 #[tauri::command]
@@ -289,6 +328,9 @@ pub fn run() {
         .manage(AppPad(Arc::new(Mutex::new(pad))))
         .invoke_handler(tauri::generate_handler![
             connect,
+            connect_to,
+            list_pads,
+            current_pad,
             disconnect,
             is_connected,
             ping,
@@ -332,6 +374,7 @@ pub fn run() {
             {
                 let pad = app.state::<AppPad>();
                 let g = pad.0.lock().expect("pad");
+                g.set_config_dir(&dir);
                 g.set_on_key(Arc::new(move |profile, key, down| {
                     if down {
                         if let Err(e) = store.launch(profile, key) {
@@ -361,22 +404,24 @@ pub fn run() {
             host::spawn(app.state::<AppPad>().0.clone());
             std::thread::spawn(move || {
                 let mut n = 0u32;
-                let mut was_connected = false;
                 let mut last_host: Option<bool> = None;
+                let mut last_ids = String::new();
                 loop {
                     std::thread::sleep(Duration::from_millis(250));
                     n = n.wrapping_add(1);
                     if n % 8 == 0 {
                         if let Ok(g) = retry.state::<AppPad>().0.try_lock() {
-                            if !g.connected() {
-                                was_connected = false;
-                                last_host = None;
-                                let _ = g.connect();
-                            }
-                            if g.connected() && !was_connected {
+                            let switched = g.maintain().unwrap_or(false);
+                            if switched {
                                 retry.state::<Arc<SwitchStore>>().reset_seen();
-                                was_connected = true;
                                 last_host = None;
+                                let _ = retry.emit("pad-session", g.current_pad());
+                            }
+                            let pads = g.list_pads();
+                            let ids: String = pads.iter().map(|p| p.id.as_str()).collect::<Vec<_>>().join("|");
+                            if switched || ids != last_ids {
+                                last_ids = ids;
+                                let _ = retry.emit("pads", pads);
                             }
                         }
                     }
@@ -387,7 +432,7 @@ pub fn run() {
                                 .state::<Arc<SwitchStore>>()
                                 .apply(&g, &retry, exe, running);
                         }
-                        if g.connected() {
+                        if g.connected() && !g.is_simulated() {
                             let present = host::is_present();
                             if last_host != Some(present) && g.set_host(present).is_ok() {
                                 last_host = Some(present);

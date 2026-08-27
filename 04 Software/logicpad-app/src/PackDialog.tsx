@@ -23,11 +23,24 @@ export function PackDialog(props: {
   launches: LaunchEntry[];
   switchCfg: SwitchConfig;
   importDraft?: LogicPadPack | null;
+  padLabel: string;
+  simulated?: boolean;
   onClose: () => void;
   onExport: (opts: PackOptions) => void;
   onImport: (opts: PackOptions) => void;
 }): ReactElement | null {
-  const { mode, snap, launches, switchCfg, importDraft, onClose, onExport, onImport } = props;
+  const {
+    mode,
+    snap,
+    launches,
+    switchCfg,
+    importDraft,
+    padLabel,
+    simulated,
+    onClose,
+    onExport,
+    onImport,
+  } = props;
   const [opts, setOpts] = useState<PackOptions>(() => defaultPackOptions(snap, importDraft));
 
   useEffect(() => {
@@ -60,6 +73,8 @@ export function PackDialog(props: {
     (mode === "export" || importDraft != null);
 
   const preview = mode === "export" ? exportPreview(snap, launches, switchCfg, opts) : importPreview(importDraft);
+  const fileProfiles = importDraft?.profiles?.length ?? 0;
+  const extraProfiles = mode === "import" && fileProfiles > snap.profiles.length;
 
   function toggleFlag(key: (typeof FLAGS)[number]["key"], on: boolean) {
     setOpts((o) => ({ ...o, [key]: on }));
@@ -87,9 +102,23 @@ export function PackDialog(props: {
         <h2>{mode === "export" ? "Save as file" : "Import file"}</h2>
         <p className="hint">
           {mode === "export"
-            ? "Write a YAML file you can copy or share. Pick which profiles and parts to include."
-            : "Choose what to apply onto this pad. Existing profiles that you do not select are left alone."}
+            ? simulated
+              ? "Save this draft as a YAML file. Pick a LogicPad in Pad, then Import… to program it."
+              : "Write a YAML file you can Import onto any LogicPad, including the simulated one."
+            : `Apply this file onto ${padLabel}. Profiles you do not select stay as they are.`}
         </p>
+        {mode === "import" ? (
+          <p className="pack-target">
+            Onto: <strong>{padLabel}</strong>
+            {simulated ? " (simulated — not USB)" : ""}
+          </p>
+        ) : null}
+        {mode === "import" && extraProfiles ? (
+          <p className="hint">
+            This file has {fileProfiles} profile{fileProfiles === 1 ? "" : "s"}; {padLabel} has{" "}
+            {snap.profiles.length}. Import adds empty slots if this pad has room.
+          </p>
+        ) : null}
         {mode === "import" && opts.launches && present?.launches ? (
           <p className="pack-warn">
             Launch paths point at programs on the machine that saved the file. Edit them after
