@@ -337,8 +337,9 @@ pub fn run() {
             }
 
             build_tray(app.handle())?;
-            if std::env::args().any(|a| a == "--hidden") {
-                if let Some(w) = app.get_webview_window("main") {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.set_always_on_top(false);
+                if std::env::args().any(|a| a == "--hidden") {
                     let _ = w.hide();
                 }
             }
@@ -384,9 +385,15 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                tauri::WindowEvent::Focused(_) => {
+                    let _ = window.set_always_on_top(false);
+                }
+                _ => {}
             }
         })
         .run(tauri::generate_context!())
@@ -395,9 +402,11 @@ pub fn run() {
 
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_always_on_top(false);
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
+        let _ = w.set_always_on_top(false);
     }
 }
 
