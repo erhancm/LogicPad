@@ -33,6 +33,19 @@ pub fn list_open_programs() -> Vec<OpenProgram> {
     }
 }
 
+/// Exe names of processes that currently have a visible top-level window.
+/// Does not query window titles, so a hung UI cannot block auto-switch.
+pub fn list_running_exes() -> Vec<String> {
+    #[cfg(windows)]
+    {
+        win::list_running_exes()
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
 /// One card per visible window, with a small screenshot when capture works.
 pub fn list_open_windows() -> Vec<OpenWindow> {
     #[cfg(windows)]
@@ -67,8 +80,9 @@ mod win {
         PROCESS_QUERY_LIMITED_INFORMATION,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetForegroundWindow, GetWindow, GetWindowLongW, GetWindowTextW,
-        GetWindowThreadProcessId, IsWindowVisible, GW_OWNER, GWL_EXSTYLE, WS_EX_TOOLWINDOW,
+        EnumWindows, GetForegroundWindow, GetWindow, GetWindowLongW, GetWindowThreadProcessId,
+        IsHungAppWindow, IsIconic, IsWindowVisible, SendMessageTimeoutW, GW_OWNER, GWL_EXSTYLE,
+        SMTO_ABORTIFHUNG, SMTO_BLOCK, WM_GETTEXT, WS_EX_TOOLWINDOW,
     };
 
     pub fn foreground_exe() -> Option<String> {
@@ -100,9 +114,6 @@ mod win {
         let mut seen = HashSet::<String>::new();
         let mut out = Vec::new();
         for hwnd in hwnds {
-            let Some(title) = window_title(hwnd) else {
-                continue;
-            };
             let mut pid = 0u32;
             unsafe {
                 GetWindowThreadProcessId(hwnd, Some(&mut pid));
@@ -110,6 +121,12 @@ mod win {
             if pid == 0 || pid == self_pid {
                 continue;
             }
+            if unsafe { IsHungAppWindow(hwnd) }.as_bool() {
+                continue;
+            }
+            let Some(title) = window_title(hwnd) else {
+                continue;
+            };
             let Some(path) = image_path_for_pid(pid) else {
                 continue;
             };
@@ -131,6 +148,54 @@ mod win {
             out.push(OpenProgram { title, exe, path });
         }
         out.sort_by(|a, b| a.title.cmp(&b.title));
+        out
+    }
+
+    pub fn list_running_exes() -> Vec<String> {
+        let self_pid = std::process::id();
+        let self_path = std::env::current_exe().ok();
+        let self_path_str = self_path
+            .as_ref()
+            .and_then(|p| p.to_str())
+            .map(str::to_ascii_lowercase);
+
+        let mut hwnds: Vec<HWND> = Vec::new();
+        unsafe {
+            let _ = EnumWindows(
+                Some(collect_hwnds),
+                LPARAM(&mut hwnds as *mut Vec<HWND> as isize),
+            );
+        }
+
+        let mut seen = HashSet::<String>::new();
+        let mut out = Vec::new();
+        for hwnd in hwnds {
+            let mut pid = 0u32;
+            unsafe {
+                GetWindowThreadProcessId(hwnd, Some(&mut pid));
+            }
+            if pid == 0 || pid == self_pid {
+                continue;
+            }
+            let Some(path) = image_path_for_pid(pid) else {
+                continue;
+            };
+            if self_path_str
+                .as_deref()
+                .is_some_and(|own| path.eq_ignore_ascii_case(own))
+            {
+                continue;
+            }
+            let exe = Path::new(&path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(path.as_str())
+                .to_string();
+            let key = exe.to_ascii_lowercase();
+            if seen.insert(key) {
+                out.push(exe);
+            }
+        }
         out
     }
 
@@ -180,12 +245,14 @@ mod win {
                 .and_then(|n| n.to_str())
                 .unwrap_or(path.as_str())
                 .to_string();
-            let thumb_bmp = capture_thumb(hwnd);
-            let icon_bmp = if thumb_bmp.is_none() {
-                exe_icon_bmp(&path)
+            let hung = unsafe { IsHungAppWindow(hwnd) }.as_bool();
+            let iconic = unsafe { IsIconic(hwnd) }.as_bool();
+            let thumb_bmp = if hung || iconic {
+                None
             } else {
-                exe_icon_bmp(&path)
+                capture_thumb(hwnd)
             };
+            let icon_bmp = exe_icon_bmp(&path);
             out.push(OpenWindow {
                 hwnd: format!("{}", hwnd.0 as usize),
                 title,
@@ -202,20 +269,16 @@ mod win {
     fn capture_thumb(hwnd: HWND) -> Option<String> {
         use windows::Win32::Foundation::RECT;
         use windows::Win32::Graphics::Gdi::{
-            BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetWindowDC,
-            ReleaseDC, SelectObject, StretchBlt, HDC, HGDIOBJ, SRCCOPY,
+            CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetWindowDC,
+            ReleaseDC, SelectObject, StretchBlt, HGDIOBJ, SRCCOPY,
         };
         use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
-        #[link(name = "user32")]
-        extern "system" {
-            fn PrintWindow(hwnd: HWND, hdc_blt: HDC, n_flags: u32) -> i32;
-        }
         unsafe {
             let mut rc = RECT::default();
             GetWindowRect(hwnd, &mut rc).ok()?;
             let src_w = (rc.right - rc.left).max(1);
             let src_h = (rc.bottom - rc.top).max(1);
-            if src_w < 48 || src_h < 48 {
+            if src_w < 48 || src_h < 48 || src_w > 8192 || src_h > 8192 {
                 return None;
             }
             let dst_w = 240i32;
@@ -223,13 +286,6 @@ mod win {
             let hdc_win = GetWindowDC(Some(hwnd));
             if hdc_win.is_invalid() {
                 return None;
-            }
-            let hdc_src = CreateCompatibleDC(Some(hdc_win));
-            let bmp_src = CreateCompatibleBitmap(hdc_win, src_w, src_h);
-            let old_src = SelectObject(hdc_src, HGDIOBJ(bmp_src.0));
-            let ok = PrintWindow(hwnd, hdc_src, 2) != 0;
-            if !ok {
-                let _ = BitBlt(hdc_src, 0, 0, src_w, src_h, Some(hdc_win), 0, 0, SRCCOPY);
             }
             let hdc_dst = CreateCompatibleDC(Some(hdc_win));
             let bmp_dst = CreateCompatibleBitmap(hdc_win, dst_w, dst_h);
@@ -240,7 +296,7 @@ mod win {
                 0,
                 dst_w,
                 dst_h,
-                Some(hdc_src),
+                Some(hdc_win),
                 0,
                 0,
                 src_w,
@@ -249,11 +305,8 @@ mod win {
             );
             let pixels = dib_bgr(hdc_dst, bmp_dst, dst_w, dst_h);
             let _ = SelectObject(hdc_dst, old_dst);
-            let _ = SelectObject(hdc_src, old_src);
             let _ = DeleteObject(HGDIOBJ(bmp_dst.0));
-            let _ = DeleteObject(HGDIOBJ(bmp_src.0));
             let _ = DeleteDC(hdc_dst);
-            let _ = DeleteDC(hdc_src);
             let _ = ReleaseDC(Some(hwnd), hdc_win);
             pixels.map(|p| encode_bmp_b64(dst_w as u32, dst_h as u32, &p))
         }
@@ -391,13 +444,13 @@ mod win {
 
     unsafe extern "system" fn collect_hwnds(hwnd: HWND, lparam: LPARAM) -> windows::core::BOOL {
         let hwnds = unsafe { &mut *(lparam.0 as *mut Vec<HWND>) };
-        if unsafe { is_app_window(hwnd) } {
+        if unsafe { is_top_level_app(hwnd) } {
             hwnds.push(hwnd);
         }
         TRUE
     }
 
-    unsafe fn is_app_window(hwnd: HWND) -> bool {
+    unsafe fn is_top_level_app(hwnd: HWND) -> bool {
         if hwnd.is_invalid() || !unsafe { IsWindowVisible(hwnd) }.as_bool() {
             return false;
         }
@@ -409,16 +462,31 @@ mod win {
         if ex & WS_EX_TOOLWINDOW.0 != 0 {
             return false;
         }
-        window_title(hwnd).is_some()
+        true
     }
 
+    /// Timed WM_GETTEXT. GetWindowTextW waits forever if the target is hung.
     fn window_title(hwnd: HWND) -> Option<String> {
+        use windows::Win32::Foundation::{LPARAM, WPARAM};
         let mut buf = [0u16; 512];
-        let n = unsafe { GetWindowTextW(hwnd, &mut buf) };
-        if n <= 0 {
+        let mut result = 0usize;
+        let sent = unsafe {
+            SendMessageTimeoutW(
+                hwnd,
+                WM_GETTEXT,
+                WPARAM(buf.len()),
+                LPARAM(buf.as_mut_ptr() as isize),
+                SMTO_ABORTIFHUNG | SMTO_BLOCK,
+                50,
+                Some(&mut result),
+            )
+        };
+        if sent.0 == 0 || result == 0 {
             return None;
         }
-        let title = String::from_utf16_lossy(&buf[..n as usize]);
+        let n = result.min(buf.len());
+        let end = buf[..n].iter().position(|&c| c == 0).unwrap_or(n);
+        let title = String::from_utf16_lossy(&buf[..end]);
         let title = title.trim();
         if title.is_empty() {
             None

@@ -352,7 +352,7 @@ pub fn run() {
                     std::thread::sleep(Duration::from_millis(250));
                     n = n.wrapping_add(1);
                     if n % 8 == 0 {
-                        if let Ok(g) = retry.state::<AppPad>().0.lock() {
+                        if let Ok(g) = retry.state::<AppPad>().0.try_lock() {
                             if !g.connected() {
                                 was_connected = false;
                                 last_host = None;
@@ -365,8 +365,13 @@ pub fn run() {
                             }
                         }
                     }
+                    let pending = retry.state::<Arc<SwitchStore>>().poll(&retry);
                     if let Ok(g) = retry.state::<AppPad>().0.try_lock() {
-                        retry.state::<Arc<SwitchStore>>().tick(&g, &retry);
+                        if let Some((exe, running)) = pending {
+                            retry
+                                .state::<Arc<SwitchStore>>()
+                                .apply(&g, &retry, exe, running);
+                        }
                         if g.connected() {
                             let present = host::is_present();
                             if last_host != Some(present) && g.set_host(present).is_ok() {

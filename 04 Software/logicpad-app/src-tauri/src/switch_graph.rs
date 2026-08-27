@@ -108,6 +108,14 @@ pub fn exe_stem(path: &str) -> String {
     b.strip_suffix(".exe").unwrap_or(&b).to_string()
 }
 
+/// True when evaluation needs a full window list (not just the foreground exe).
+pub fn uses_running(graph: &SwitchGraph) -> bool {
+    graph
+        .nodes
+        .iter()
+        .any(|n| matches!(n, GraphNode::Running { .. }))
+}
+
 pub fn normalize_programs(list: &[String]) -> Vec<String> {
     let mut out = Vec::new();
     let mut seen = HashSet::new();
@@ -598,6 +606,17 @@ mod tests {
             eval_graph(&g, "chrome.exe", &["notepad.exe".into()]),
             GraphDecision::Miss
         );
+    }
+
+    #[test]
+    fn uses_running_only_when_graph_has_running_node() {
+        let g = graph_from_rules(&[("chrome.exe".into(), 1)]);
+        assert!(!uses_running(&g));
+        let g = SwitchGraph {
+            nodes: vec![run_n("r", &["Discord.exe"]), set_p("p", 0, 0)],
+            edges: vec![edge("e", "r", "p")],
+        };
+        assert!(uses_running(&g));
     }
 
     #[test]

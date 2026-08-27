@@ -113,10 +113,7 @@ fn match_profile(cfg: &SwitchConfig, exe: &str, running: &[String]) -> Option<u8
 }
 
 fn running_exes() -> Vec<String> {
-    focus::list_open_programs()
-        .into_iter()
-        .map(|p| p.exe)
-        .collect()
+    focus::list_running_exes()
 }
 
 fn normalize_config(mut cfg: SwitchConfig) -> SwitchConfig {
@@ -266,51 +263,71 @@ impl SwitchStore {
         Self::persist(&self.file, &g.cfg)
     }
 
-    /// Poll foreground exe; HID only when a new stable window needs a profile change.
-    pub fn tick(&self, pad: &Pad, app: &AppHandle) {
+    /// Watch focus without touching HID. Safe to call without the pad lock.
+    /// Returns `(exe, running)` when a stable focus change still needs `apply`.
+    pub fn poll(&self, app: &AppHandle) -> Option<(String, Vec<String>)> {
         let path = focus::foreground_exe().unwrap_or_default();
         let exe = exe_basename(&path);
-        let running = running_exes();
         let now = Instant::now();
 
-        let mut emit: Option<FocusEvt> = None;
-        let pending_apply: Option<String> = {
+        let (emit, apply, enabled, need_running) = {
             let Ok(mut g) = self.inner.lock() else {
-                return;
+                return None;
             };
             if exe != g.rt.pending_exe {
                 g.rt.pending_exe = exe.clone();
                 g.rt.pending_at = now;
-                return;
+                return None;
             }
             if now.saturating_duration_since(g.rt.pending_at) < DEBOUNCE {
-                return;
+                return None;
             }
-            if exe != g.rt.last_emitted {
+            let emit = exe != g.rt.last_emitted;
+            if emit {
                 g.rt.last_emitted = exe.clone();
-                emit = Some(FocusEvt {
-                    exe: exe.clone(),
-                    profile: if g.cfg.enabled {
-                        match_profile(&g.cfg, &exe, &running)
-                    } else {
-                        None
-                    },
-                });
             }
-            if exe == g.rt.last_seen_exe {
-                None
-            } else {
-                Some(exe)
-            }
+            let enabled = g.cfg.enabled;
+            let need_running = enabled
+                && g.cfg
+                    .graph
+                    .as_ref()
+                    .is_some_and(switch_graph::uses_running);
+            (emit, exe != g.rt.last_seen_exe, enabled, need_running)
         };
 
-        if let Some(evt) = emit {
-            let _ = app.emit("switch-focus", evt);
+        if !emit && !apply {
+            return None;
         }
 
-        let Some(stable) = pending_apply else {
-            return;
+        let running = if need_running {
+            running_exes()
+        } else {
+            Vec::new()
         };
+
+        if emit {
+            let profile = if enabled {
+                self.inner
+                    .lock()
+                    .ok()
+                    .and_then(|g| match_profile(&g.cfg, &exe, &running))
+            } else {
+                None
+            };
+            let _ = app.emit(
+                "switch-focus",
+                FocusEvt {
+                    exe: exe.clone(),
+                    profile,
+                },
+            );
+        }
+
+        apply.then_some((exe, running))
+    }
+
+    /// HID half of a focus change. Call with the pad lock held.
+    pub fn apply(&self, pad: &Pad, app: &AppHandle, stable: String, running: Vec<String>) {
         if !crate::host::is_present() {
             return;
         }
