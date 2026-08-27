@@ -6,11 +6,17 @@ export type OpenProgram = { title: string; exe: string; path: string };
 export type OpenWindow = OpenProgram & {
   hwnd?: string;
   thumbBmp?: string;
+  thumbJpeg?: string;
   iconBmp?: string;
 };
 
 function bmpSrc(b64?: string): string | undefined {
   return b64 ? `data:image/bmp;base64,${b64}` : undefined;
+}
+
+function thumbSrc(program: OpenWindow): string | undefined {
+  if (program.thumbJpeg) return `data:image/jpeg;base64,${program.thumbJpeg}`;
+  return bmpSrc(program.thumbBmp) ?? bmpSrc(program.iconBmp);
 }
 
 export function RunningPicker(props: {
@@ -68,7 +74,8 @@ export function RunningPicker(props: {
         ) : (
           <ul className="rp-grid">
             {cards.map((program) => {
-              const img = bmpSrc(program.thumbBmp) ?? bmpSrc(program.iconBmp);
+              const live = Boolean(program.thumbJpeg);
+              const img = thumbSrc(program);
               return (
                 <li key={program.hwnd || program.path + program.title}>
                   <button
@@ -77,7 +84,7 @@ export function RunningPicker(props: {
                     title={program.path}
                     onClick={() => onPick(program)}
                   >
-                    <span className="rp-thumb">
+                    <span className={live ? "rp-thumb" : "rp-thumb icon-only"}>
                       {img ? <img src={img} alt="" /> : <span className="rp-ph">{program.exe.slice(0, 2)}</span>}
                     </span>
                     <span className="rp-title">{program.title}</span>

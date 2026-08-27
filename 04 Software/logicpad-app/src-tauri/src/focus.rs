@@ -46,7 +46,7 @@ pub fn list_running_exes() -> Vec<String> {
     }
 }
 
-/// One card per visible window, with a small screenshot when capture works.
+/// One card per visible window. Live thumbs are streamed separately via WGC.
 pub fn list_open_windows() -> Vec<OpenWindow> {
     #[cfg(windows)]
     {
@@ -71,7 +71,7 @@ pub fn foreground_exe() -> Option<String> {
 #[cfg(windows)]
 mod win {
     use super::{OpenProgram, OpenWindow};
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
     use std::path::Path;
     use windows::core::PWSTR;
     use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, TRUE};
@@ -81,7 +81,7 @@ mod win {
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         EnumWindows, GetForegroundWindow, GetWindow, GetWindowLongW, GetWindowThreadProcessId,
-        IsHungAppWindow, IsIconic, IsWindowVisible, SendMessageTimeoutW, GW_OWNER, GWL_EXSTYLE,
+        IsHungAppWindow, IsWindowVisible, SendMessageTimeoutW, GW_OWNER, GWL_EXSTYLE,
         SMTO_ABORTIFHUNG, SMTO_BLOCK, WM_GETTEXT, WS_EX_TOOLWINDOW,
     };
 
@@ -201,7 +201,6 @@ mod win {
 
     pub fn list_open_windows() -> Vec<OpenWindow> {
         const MAX: usize = 48;
-        const THUMB_BUDGET: std::time::Duration = std::time::Duration::from_millis(450);
         let self_pid = std::process::id();
         let self_path = std::env::current_exe().ok();
         let self_path_str = self_path
@@ -217,11 +216,22 @@ mod win {
             );
         }
 
-        let started = std::time::Instant::now();
-        let mut out = Vec::new();
+        struct Draft {
+            hwnd: HWND,
+            title: String,
+            exe: String,
+            path: String,
+            icon_bmp: Option<String>,
+        }
+
+        let mut drafts = Vec::new();
+        let mut icon_cache = HashMap::<String, Option<String>>::new();
         for hwnd in hwnds {
-            if out.len() >= MAX {
+            if drafts.len() >= MAX {
                 break;
+            }
+            if is_cloaked(hwnd) {
+                continue;
             }
             let Some(title) = window_title(hwnd) else {
                 continue;
@@ -247,71 +257,45 @@ mod win {
                 .and_then(|n| n.to_str())
                 .unwrap_or(path.as_str())
                 .to_string();
-            let hung = unsafe { IsHungAppWindow(hwnd) }.as_bool();
-            let iconic = unsafe { IsIconic(hwnd) }.as_bool();
-            let thumb_bmp = if hung || iconic || started.elapsed() > THUMB_BUDGET {
-                None
-            } else {
-                capture_thumb(hwnd)
-            };
-            let icon_bmp = exe_icon_bmp(&path);
-            out.push(OpenWindow {
-                hwnd: format!("{}", hwnd.0 as usize),
+            let icon_bmp = icon_cache
+                .entry(path.clone())
+                .or_insert_with(|| exe_icon_bmp(&path))
+                .clone();
+            drafts.push(Draft {
+                hwnd,
                 title,
                 exe,
                 path,
-                thumb_bmp,
                 icon_bmp,
             });
         }
-        out.sort_by(|a, b| a.title.cmp(&b.title));
-        out
+        drafts.sort_by(|a, b| a.title.cmp(&b.title));
+
+        drafts
+            .into_iter()
+            .map(|d| OpenWindow {
+                hwnd: format!("{}", d.hwnd.0 as usize),
+                title: d.title,
+                exe: d.exe,
+                path: d.path,
+                thumb_bmp: None,
+                icon_bmp: d.icon_bmp,
+            })
+            .collect()
     }
 
-    fn capture_thumb(hwnd: HWND) -> Option<String> {
-        use windows::Win32::Foundation::RECT;
-        use windows::Win32::Graphics::Gdi::{
-            CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetWindowDC,
-            ReleaseDC, SelectObject, StretchBlt, HGDIOBJ, SRCCOPY,
+    fn is_cloaked(hwnd: HWND) -> bool {
+        use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+        let mut cloaked = 0u32;
+        let ok = unsafe {
+            DwmGetWindowAttribute(
+                hwnd,
+                DWMWA_CLOAKED,
+                &mut cloaked as *mut u32 as *mut core::ffi::c_void,
+                std::mem::size_of::<u32>() as u32,
+            )
         };
-        use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
-        unsafe {
-            let mut rc = RECT::default();
-            GetWindowRect(hwnd, &mut rc).ok()?;
-            let src_w = (rc.right - rc.left).max(1);
-            let src_h = (rc.bottom - rc.top).max(1);
-            if src_w < 48 || src_h < 48 || src_w > 8192 || src_h > 8192 {
-                return None;
-            }
-            let dst_w = 240i32;
-            let dst_h = ((src_h as i64 * dst_w as i64) / src_w as i64).clamp(64, 150) as i32;
-            let hdc_win = GetWindowDC(Some(hwnd));
-            if hdc_win.is_invalid() {
-                return None;
-            }
-            let hdc_dst = CreateCompatibleDC(Some(hdc_win));
-            let bmp_dst = CreateCompatibleBitmap(hdc_win, dst_w, dst_h);
-            let old_dst = SelectObject(hdc_dst, HGDIOBJ(bmp_dst.0));
-            let _ = StretchBlt(
-                hdc_dst,
-                0,
-                0,
-                dst_w,
-                dst_h,
-                Some(hdc_win),
-                0,
-                0,
-                src_w,
-                src_h,
-                SRCCOPY,
-            );
-            let pixels = dib_bgr(hdc_dst, bmp_dst, dst_w, dst_h);
-            let _ = SelectObject(hdc_dst, old_dst);
-            let _ = DeleteObject(HGDIOBJ(bmp_dst.0));
-            let _ = DeleteDC(hdc_dst);
-            let _ = ReleaseDC(Some(hwnd), hdc_win);
-            pixels.map(|p| encode_bmp_b64(dst_w as u32, dst_h as u32, &p))
-        }
+        ok.is_ok() && cloaked != 0
     }
 
     fn dib_bgr(

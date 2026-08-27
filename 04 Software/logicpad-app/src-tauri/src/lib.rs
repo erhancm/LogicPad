@@ -3,6 +3,7 @@ mod focus;
 mod hid;
 mod host;
 mod launch;
+mod preview;
 mod profile_switch;
 mod switch_graph;
 
@@ -194,6 +195,16 @@ fn list_open_windows() -> Vec<focus::OpenWindow> {
 }
 
 #[tauri::command]
+fn watch_window_previews(hub: State<preview::PreviewHub>, hwnds: Vec<String>) {
+    hub.watch(hwnds);
+}
+
+#[tauri::command]
+fn stop_window_previews(hub: State<preview::PreviewHub>) {
+    hub.stop();
+}
+
+#[tauri::command]
 fn resolve_program(path: String) -> ResolvedProgram {
     launch::resolve_program(&path)
 }
@@ -298,6 +309,8 @@ pub fn run() {
             pick_program,
             list_open_programs,
             list_open_windows,
+            watch_window_previews,
+            stop_window_previews,
             resolve_program,
             get_switch_rules,
             set_switch_rules,
@@ -312,6 +325,7 @@ pub fn run() {
             let switch = Arc::new(SwitchStore::load(dir.join("profile-rules.json")));
             app.manage(store.clone());
             app.manage(switch.clone());
+            app.manage(preview::spawn(app.handle().clone()));
             sync_autostart(app.handle(), &store, &switch);
 
             let handle = app.handle().clone();

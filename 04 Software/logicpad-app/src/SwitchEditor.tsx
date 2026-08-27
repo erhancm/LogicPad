@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as PE } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { LEDS, LIGHT_MODES, type PadKey, type ProfileHdr, type SwitchConfig, type SwitchEdge, type SwitchGraph, type SwitchNode } from "./types";
 import { ensureGraph, newId, withGraph } from "./switchGraph";
 import { RunningPicker, type OpenWindow } from "./RunningPicker";
+import { api } from "./api";
 import "./SwitchEditor.css";
 
 const LED_HEX = ["#2a2e38", "#e8e4d8", "#c04040", "#40a060", "#3a7ec0"];
@@ -47,17 +49,46 @@ function stemName(exe: string): string {
   return exe.replace(/^.*[\\/]/, "").replace(/\.exe$/i, "");
 }
 
-type ChipLook = { title: string; img?: string };
+type ChipLook = { title: string; img?: string; live?: boolean; hwnd?: string };
 
 function bmpSrc(b64?: string): string | undefined {
   return b64 ? `data:image/bmp;base64,${b64}` : undefined;
 }
 
+function jpegSrc(b64?: string): string | undefined {
+  return b64 ? `data:image/jpeg;base64,${b64}` : undefined;
+}
+
 function lookFromWindow(w: OpenWindow): ChipLook {
   return {
     title: w.title || stemName(w.exe || w.path),
-    img: bmpSrc(w.thumbBmp) ?? bmpSrc(w.iconBmp),
+    img: bmpSrc(w.iconBmp),
+    live: false,
+    hwnd: w.hwnd,
   };
+}
+
+function mergeLook(prev: Record<string, ChipLook>, w: OpenWindow): void {
+  const key = exeKey(w.exe || w.path);
+  if (!key) return;
+  const look = lookFromWindow(w);
+  const cur = prev[key];
+  if (!cur || look.hwnd) prev[key] = { ...look, img: look.img ?? cur?.img };
+}
+
+function previewTargets(list: OpenWindow[], picker: boolean, graph: SwitchGraph): string[] {
+  const chips: string[] = [];
+  const seen = new Set<string>();
+  for (const n of graph.nodes) {
+    if (n.kind !== "foreground" && n.kind !== "running") continue;
+    for (const p of n.programs) {
+      const hwnd = list.find((w) => exeKey(w.exe || w.path) === exeKey(p))?.hwnd;
+      if (hwnd && seen.add(hwnd)) chips.push(hwnd);
+    }
+  }
+  if (!picker) return chips;
+  const rest = list.map((w) => w.hwnd).filter((h): h is string => !!h && !seen.has(h));
+  return [...chips, ...rest];
 }
 
 function brightLabel(v: number): string {
@@ -214,6 +245,7 @@ export function SwitchEditor(props: {
   const [winLoad, setWinLoad] = useState(false);
   const [winErr, setWinErr] = useState("");
   const [looks, setLooks] = useState<Record<string, ChipLook>>({});
+  const [previews, setPreviews] = useState<Record<string, string>>({});
   const [addOpen, setAddOpen] = useState(false);
   const [menu, setMenu] = useState<string | null>(null);
   const drag = useRef<{ id: string; dx: number; dy: number } | null>(null);
@@ -223,6 +255,10 @@ export function SwitchEditor(props: {
   graphRef.current = graph;
 
   const badges = useMemo(() => badgeMap(graph), [graph]);
+  const programKey = graph.nodes
+    .filter((n): n is Extract<SwitchNode, { kind: "foreground" | "running" }> => n.kind === "foreground" || n.kind === "running")
+    .flatMap((n) => n.programs)
+    .join("|");
 
   useEffect(() => {
     if (open) {
@@ -233,6 +269,51 @@ export function SwitchEditor(props: {
       setMenu(null);
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      void api.stopWindowPreviews().catch(() => undefined);
+      return;
+    }
+    let gone = false;
+    let unlisten: (() => void) | undefined;
+    void listen<{ hwnd: string; jpeg: string }>("window-preview", (e) => {
+      const hwnd = e.payload?.hwnd;
+      const jpeg = e.payload?.jpeg;
+      if (!hwnd || !jpeg) return;
+      setPreviews((prev) => (prev[hwnd] === jpeg ? prev : { ...prev, [hwnd]: jpeg }));
+    })
+      .then((fn) => {
+        if (gone) fn();
+        else unlisten = fn;
+      })
+      .catch(() => undefined);
+    return () => {
+      gone = true;
+      unlisten?.();
+      void api.stopWindowPreviews().catch(() => undefined);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancel = false;
+    void listWindows()
+      .then((list) => {
+        if (cancel) return;
+        setWindows(list);
+        setLooks((prev) => {
+          const next = { ...prev };
+          for (const w of list) mergeLook(next, w);
+          return next;
+        });
+        void api.watchWindowPreviews(previewTargets(list, pickNode != null, graphRef.current));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancel = true;
+    };
+  }, [open, pickNode, programKey]);
 
   useEffect(() => {
     if (!open) return;
@@ -408,12 +489,10 @@ export function SwitchEditor(props: {
       setWindows(list);
       setLooks((prev) => {
         const next = { ...prev };
-        for (const w of list) {
-          const key = exeKey(w.exe || w.path);
-          if (key) next[key] = lookFromWindow(w);
-        }
+        for (const w of list) mergeLook(next, w);
         return next;
       });
+      void api.watchWindowPreviews(previewTargets(list, true, graphRef.current));
     } catch (err) {
       setWinErr(String(err));
     } finally {
@@ -612,10 +691,14 @@ export function SwitchEditor(props: {
                       {n.programs.length === 0 ? <span className="hint">Select a window</span> : null}
                       {n.programs.map((p) => {
                         const look = looks[exeKey(p)];
+                        const hwnd = look?.hwnd;
+                        const jpeg = hwnd ? previews[hwnd] : undefined;
+                        const img = jpegSrc(jpeg) ?? look?.img;
+                        const live = Boolean(jpeg);
                         return (
                           <div key={p} className="sw-chip">
-                            <span className="sw-chip-thumb">
-                              {look?.img ? <img src={look.img} alt="" /> : <span>{stemName(p).slice(0, 2)}</span>}
+                            <span className={live ? "sw-chip-thumb" : "sw-chip-thumb icon"}>
+                              {img ? <img src={img} alt="" /> : <span>{stemName(p).slice(0, 2)}</span>}
                             </span>
                             <span className="sw-chip-meta">
                               <strong>{look?.title || stemName(p)}</strong>
@@ -798,7 +881,7 @@ export function SwitchEditor(props: {
         <RunningPicker
           dock
           open={pickNode != null}
-          windows={windows}
+          windows={windows.map((w) => ({ ...w, thumbJpeg: w.hwnd ? previews[w.hwnd] : undefined }))}
           loading={winLoad}
           error={winErr || undefined}
           onClose={() => setPickNode(null)}

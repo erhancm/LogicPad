@@ -152,8 +152,21 @@
 .rp-thumb img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center;
   display: block;
+}
+
+.rp-thumb.icon-only {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rp-thumb.icon-only img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
 }
 
 .rp-ph {
