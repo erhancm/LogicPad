@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { OpenProgram } from "./RunningPicker";
+import type { OpenProgram, OpenWindow } from "./RunningPicker";
 import type { LaunchEntry, Meta, PadKey, ProfileHdr, ResolvedProgram, Snapshot, SwitchConfig } from "./types";
 
 export const api = {
@@ -30,6 +30,7 @@ export const api = {
   setLaunch: (entry: LaunchEntry) => invoke<void>("set_launch", { entry }),
   pickProgram: () => invoke<string | null>("pick_program"),
   listOpenPrograms: () => invoke<OpenProgram[]>("list_open_programs"),
+  listOpenWindows: () => invoke<OpenWindow[]>("list_open_windows"),
   resolveProgram: (path: string) => invoke<ResolvedProgram>("resolve_program", { path }),
   getSwitchRules: () => invoke<SwitchConfig>("get_switch_rules"),
   setSwitchRules: (cfg: SwitchConfig) => invoke<SwitchConfig>("set_switch_rules", { cfg }),

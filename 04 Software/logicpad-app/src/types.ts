@@ -90,9 +90,40 @@ export type SwitchRule = {
   profile: number;
 };
 
+export type SwitchEdge = {
+  id: string;
+  from: string;
+  to: string;
+};
+
+export type SwitchNode =
+  | { kind: "foreground"; id: string; x: number; y: number; programs: string[] }
+  | { kind: "running"; id: string; x: number; y: number; programs: string[] }
+  | { kind: "and"; id: string; x: number; y: number }
+  | { kind: "or"; id: string; x: number; y: number }
+  | {
+      kind: "setProfile";
+      id: string;
+      x: number;
+      y: number;
+      profile: number;
+      priority: number;
+      lightMode?: number;
+      bright?: number;
+      dim?: number;
+      leds?: number[];
+    }
+  | { kind: "restore"; id: string; x: number; y: number; priority: number };
+
+export type SwitchGraph = {
+  nodes: SwitchNode[];
+  edges: SwitchEdge[];
+};
+
 export type SwitchConfig = {
   enabled: boolean;
   rules: SwitchRule[];
+  graph?: SwitchGraph;
 };
 
 export type SwitchFocus = {

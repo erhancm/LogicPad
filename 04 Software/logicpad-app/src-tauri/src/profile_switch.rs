@@ -1,12 +1,18 @@
 use crate::focus;
 use crate::hid::Pad;
 use crate::launch;
+use crate::switch_graph::{
+    self, eval_graph, flatten_graph, graph_from_rules, GraphDecision, SwitchGraph,
+};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
+
+pub use switch_graph::exe_basename;
+use switch_graph::exe_stem;
 
 const DEBOUNCE: Duration = Duration::from_millis(400);
 
@@ -17,13 +23,15 @@ pub struct SwitchRule {
     pub profile: u8,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SwitchConfig {
     #[serde(default)]
     pub enabled: bool,
     #[serde(default)]
     pub rules: Vec<SwitchRule>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub graph: Option<SwitchGraph>,
 }
 
 impl Default for SwitchConfig {
@@ -31,6 +39,7 @@ impl Default for SwitchConfig {
         Self {
             enabled: false,
             rules: Vec::new(),
+            graph: Some(switch_graph::default_graph()),
         }
     }
 }
@@ -86,25 +95,57 @@ pub struct SwitchStore {
     inner: Mutex<Inner>,
 }
 
-pub fn exe_basename(path: &str) -> String {
-    Path::new(path.trim())
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(path.trim())
-        .to_string()
-}
-
-fn exe_stem(path: &str) -> String {
-    let b = exe_basename(path).to_ascii_lowercase();
-    b.strip_suffix(".exe").unwrap_or(&b).to_string()
-}
-
-fn match_profile(rules: &[SwitchRule], exe: &str) -> Option<u8> {
+fn match_profile(cfg: &SwitchConfig, exe: &str, running: &[String]) -> Option<u8> {
+    if let Some(graph) = &cfg.graph {
+        return match eval_graph(graph, exe, running) {
+            GraphDecision::Set(p) => Some(p),
+            GraphDecision::Restore | GraphDecision::Miss => None,
+        };
+    }
     let needle = exe_stem(exe);
     if needle.is_empty() {
         return None;
     }
-    rules.iter().find(|r| exe_stem(&r.exe) == needle).map(|r| r.profile)
+    cfg.rules
+        .iter()
+        .find(|r| exe_stem(&r.exe) == needle)
+        .map(|r| r.profile)
+}
+
+fn running_exes() -> Vec<String> {
+    focus::list_open_programs()
+        .into_iter()
+        .map(|p| p.exe)
+        .collect()
+}
+
+fn normalize_config(mut cfg: SwitchConfig) -> SwitchConfig {
+    if cfg.graph.is_none() {
+        let pairs: Vec<(String, u8)> = cfg
+            .rules
+            .iter()
+            .map(|r| (exe_basename(&r.exe), r.profile))
+            .filter(|(exe, _)| !exe.is_empty())
+            .collect();
+        cfg.graph = Some(if pairs.is_empty() {
+            switch_graph::default_graph()
+        } else {
+            graph_from_rules(&pairs)
+        });
+    }
+    if let Some(graph) = cfg.graph.as_mut() {
+        switch_graph::sanitize(graph);
+        cfg.rules = flatten_graph(graph)
+            .into_iter()
+            .map(|(exe, profile)| SwitchRule { exe, profile })
+            .collect();
+    } else {
+        cfg.rules.retain(|r| !exe_basename(&r.exe).is_empty());
+        for r in &mut cfg.rules {
+            r.exe = exe_basename(&r.exe);
+        }
+    }
+    cfg
 }
 
 impl SwitchStore {
@@ -115,9 +156,7 @@ impl SwitchStore {
                 cfg = parsed;
             }
         }
-        for r in &mut cfg.rules {
-            r.exe = exe_basename(&r.exe);
-        }
+        cfg = normalize_config(cfg);
         Self {
             file,
             inner: Mutex::new(Inner {
@@ -148,7 +187,15 @@ impl SwitchStore {
     pub fn wants_autostart(&self) -> bool {
         self.inner
             .lock()
-            .map(|g| g.cfg.enabled && !g.cfg.rules.is_empty())
+            .map(|g| {
+                g.cfg.enabled
+                    && (!g.cfg.rules.is_empty()
+                        || g.cfg.graph.as_ref().is_some_and(|gr| {
+                            gr.nodes
+                                .iter()
+                                .any(|n| matches!(n, switch_graph::GraphNode::SetProfile { .. }))
+                        }))
+            })
             .unwrap_or(false)
     }
 
@@ -158,11 +205,8 @@ impl SwitchStore {
         }
     }
 
-    pub fn set_config(&self, mut cfg: SwitchConfig) -> Result<SwitchConfig, String> {
-        cfg.rules.retain(|r| !exe_basename(&r.exe).is_empty());
-        for r in &mut cfg.rules {
-            r.exe = exe_basename(&r.exe);
-        }
+    pub fn set_config(&self, cfg: SwitchConfig) -> Result<SwitchConfig, String> {
+        let cfg = normalize_config(cfg);
         let mut g = self.inner.lock().map_err(|_| "lock".to_string())?;
         g.cfg = cfg;
         g.rt.reset_seen();
@@ -182,10 +226,10 @@ impl SwitchStore {
             return Err("No program selected".into());
         }
         let mut g = self.inner.lock().map_err(|_| "lock".to_string())?;
-        g.cfg
-            .rules
-            .retain(|r| !exe_basename(&r.exe).eq_ignore_ascii_case(&exe));
-        g.cfg.rules.push(SwitchRule { exe, profile });
+        let mut graph = g.cfg.graph.take().unwrap_or_else(switch_graph::default_graph);
+        switch_graph::add_program(&mut graph, profile, &exe);
+        g.cfg.graph = Some(graph);
+        g.cfg = normalize_config(g.cfg.clone());
         g.cfg.enabled = true;
         g.rt.reset_seen();
         Self::persist(&self.file, &g.cfg)?;
@@ -195,9 +239,10 @@ impl SwitchStore {
     pub fn remove_program(&self, exe: &str) -> Result<SwitchConfig, String> {
         let exe = exe_basename(exe);
         let mut g = self.inner.lock().map_err(|_| "lock".to_string())?;
-        g.cfg
-            .rules
-            .retain(|r| !exe_basename(&r.exe).eq_ignore_ascii_case(&exe));
+        if let Some(graph) = g.cfg.graph.as_mut() {
+            switch_graph::remove_program(graph, &exe);
+        }
+        g.cfg = normalize_config(g.cfg.clone());
         g.rt.reset_seen();
         Self::persist(&self.file, &g.cfg)?;
         Ok(g.cfg.clone())
@@ -205,17 +250,18 @@ impl SwitchStore {
 
     pub fn shift_after_delete(&self, idx: u8) -> Result<(), String> {
         let mut g = self.inner.lock().map_err(|_| "lock".to_string())?;
-        let mut next = Vec::new();
-        for mut r in g.cfg.rules.drain(..) {
-            if r.profile == idx {
-                continue;
-            }
+        if let Some(graph) = g.cfg.graph.as_mut() {
+            switch_graph::shift_after_delete(graph, idx);
+        }
+        g.cfg
+            .rules
+            .retain(|r| r.profile != idx);
+        for r in &mut g.cfg.rules {
             if r.profile > idx {
                 r.profile -= 1;
             }
-            next.push(r);
         }
-        g.cfg.rules = next;
+        g.cfg = normalize_config(g.cfg.clone());
         g.rt.reset_seen();
         Self::persist(&self.file, &g.cfg)
     }
@@ -224,6 +270,7 @@ impl SwitchStore {
     pub fn tick(&self, pad: &Pad, app: &AppHandle) {
         let path = focus::foreground_exe().unwrap_or_default();
         let exe = exe_basename(&path);
+        let running = running_exes();
         let now = Instant::now();
 
         let mut emit: Option<FocusEvt> = None;
@@ -244,7 +291,7 @@ impl SwitchStore {
                 emit = Some(FocusEvt {
                     exe: exe.clone(),
                     profile: if g.cfg.enabled {
-                        match_profile(&g.cfg.rules, &exe)
+                        match_profile(&g.cfg, &exe, &running)
                     } else {
                         None
                     },
@@ -282,7 +329,7 @@ impl SwitchStore {
             let Ok(mut g) = self.inner.lock() else {
                 return;
             };
-            decide(&mut g, &stable, meta.active, n)
+            decide(&mut g, &stable, &running, meta.active, n)
         };
         match want {
             Decision::Nop => {
@@ -323,9 +370,9 @@ enum Decision {
     ClearBaseline,
 }
 
-fn decide(g: &mut Inner, exe: &str, current: u8, n_profiles: u8) -> Decision {
+fn decide(g: &mut Inner, exe: &str, running: &[String], current: u8, n_profiles: u8) -> Decision {
     let matched = if g.cfg.enabled {
-        match_profile(&g.cfg.rules, exe).filter(|&p| p < n_profiles)
+        match_profile(&g.cfg, exe, running).filter(|&p| p < n_profiles)
     } else {
         None
     };
@@ -370,17 +417,26 @@ mod tests {
 
     #[test]
     fn match_is_case_insensitive() {
-        let rules = vec![SwitchRule {
-            exe: "SLDWORKS.exe".into(),
-            profile: 2,
-        }];
-        assert_eq!(match_profile(&rules, "sldworks.exe"), Some(2));
+        let cfg = normalize_config(SwitchConfig {
+            enabled: true,
+            rules: vec![SwitchRule {
+                exe: "SLDWORKS.exe".into(),
+                profile: 2,
+            }],
+            graph: None,
+        });
+        let none: [String; 0] = [];
+        assert_eq!(match_profile(&cfg, "sldworks.exe", &none), Some(2));
         assert_eq!(
-            match_profile(&rules, r"C:\Program Files\SOLIDWORKS\SLDWORKS.EXE"),
+            match_profile(
+                &cfg,
+                r"C:\Program Files\SOLIDWORKS\SLDWORKS.EXE",
+                &none
+            ),
             Some(2)
         );
-        assert_eq!(match_profile(&rules, "chrome.exe"), None);
-        assert_eq!(match_profile(&rules, "SLDWORKS"), Some(2));
+        assert_eq!(match_profile(&cfg, "chrome.exe", &none), None);
+        assert_eq!(match_profile(&cfg, "SLDWORKS", &none), Some(2));
     }
 
     fn rt() -> Runtime {

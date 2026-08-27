@@ -52,6 +52,7 @@
 
 import { parse, stringify } from "yaml";
 import { launchesOf } from "./launches";
+import { flattenGraph, graphFromRules } from "./switchGraph";
 import { LIGHT_MODES, type Action, type LaunchEntry, type PadKey, type Snapshot, type SwitchConfig } from "./types";
 
 export const PACK_VERSION = 1;
@@ -219,8 +220,9 @@ export function buildPack(
   };
   if (profiles.length) pack.profiles = profiles;
   if (opts.autoSwitch) {
+    const src = switchCfg.graph ? flattenGraph(switchCfg.graph) : switchCfg.rules;
     const rules: PackSwitchRule[] = [];
-    for (const r of switchCfg.rules) {
+    for (const r of src) {
       if (want.length && !packIndexByOrig.has(r.profile)) continue;
       const hdr = snap.profiles.find((p) => p.index === r.profile);
       const rule: PackSwitchRule = { exe: r.exe };
@@ -338,6 +340,7 @@ export function applyPack(
       if (i >= 0) nextSwitch.rules[i] = { exe: nextSwitch.rules[i].exe, profile: dest };
       else nextSwitch.rules.push({ exe, profile: dest });
     }
+    nextSwitch.graph = graphFromRules(nextSwitch.rules);
   }
 
   return { snap: nextSnap, launches: nextLaunches, switchCfg: nextSwitch };

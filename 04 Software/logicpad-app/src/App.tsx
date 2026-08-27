@@ -30,7 +30,7 @@ import {
   preventGridMenu,
   type KeyMenuTarget,
 } from "./KeyContextMenu";
-import { RunningPicker, type OpenProgram } from "./RunningPicker";
+import { SwitchEditor } from "./SwitchEditor";
 import { SyncBadge } from "./SyncBadge";
 import { PackDialog } from "./PackDialog";
 import {
@@ -76,8 +76,71 @@ import {
   withTextStep,
 } from "./text";
 
+const LED_HEX = ["#2a2e38", "#e8e4d8", "#c04040", "#40a060", "#3a7ec0"];
+
 function emptyKey(profile: number, index: number): PadKey {
   return { profile, index, label: "", led: 0, acts: [], text: "" };
+}
+
+type AppTab = "keys" | "profiles" | "switch" | "lights";
+
+const TABS: { id: AppTab; label: string }[] = [
+  { id: "keys", label: "Keys" },
+  { id: "profiles", label: "Profiles" },
+  { id: "switch", label: "Auto-switch" },
+  { id: "lights", label: "Lights" },
+];
+
+function TabGlyph({ tab }: { tab: AppTab }) {
+  const common = {
+    width: 16,
+    height: 16,
+    viewBox: "0 0 16 16",
+    fill: "none" as const,
+    stroke: "currentColor",
+    strokeWidth: 1.35,
+  };
+  if (tab === "keys") {
+    return (
+      <svg {...common} aria-hidden="true">
+        <rect x="1.5" y="1.5" width="4" height="4" rx="0.8" />
+        <rect x="6" y="1.5" width="4" height="4" rx="0.8" />
+        <rect x="10.5" y="1.5" width="4" height="4" rx="0.8" />
+        <rect x="1.5" y="6" width="4" height="4" rx="0.8" />
+        <rect x="6" y="6" width="4" height="4" rx="0.8" />
+        <rect x="10.5" y="6" width="4" height="4" rx="0.8" />
+        <rect x="1.5" y="10.5" width="4" height="4" rx="0.8" />
+        <rect x="6" y="10.5" width="4" height="4" rx="0.8" />
+        <rect x="10.5" y="10.5" width="4" height="4" rx="0.8" />
+      </svg>
+    );
+  }
+  if (tab === "profiles") {
+    return (
+      <svg {...common} aria-hidden="true">
+        <rect x="3" y="2" width="10" height="3.2" rx="0.8" />
+        <rect x="3" y="6.4" width="10" height="3.2" rx="0.8" />
+        <rect x="3" y="10.8" width="10" height="3.2" rx="0.8" />
+      </svg>
+    );
+  }
+  if (tab === "switch") {
+    return (
+      <svg {...common} aria-hidden="true">
+        <circle cx="4" cy="4" r="2" />
+        <circle cx="12" cy="8" r="2" />
+        <circle cx="4" cy="12" r="2" />
+        <path d="M6 4.5 L10 7.2" />
+        <path d="M6 11.5 L10 8.8" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common} aria-hidden="true">
+      <circle cx="8" cy="8" r="3" />
+      <path d="M8 1.5 v2 M8 12.5 v2 M1.5 8 h2 M12.5 8 h2 M3.2 3.2 l1.4 1.4 M11.4 11.4 l1.4 1.4 M3.2 12.8 l1.4 -1.4 M11.4 4.6 l1.4 -1.4" />
+    </svg>
+  );
 }
 
 type ActPick = { kind: "launch"; id: string } | number | null;
@@ -189,12 +252,10 @@ export default function App() {
   const [printAll, setPrintAll] = useState(true);
   const [baseline, setBaseline] = useState<Snapshot | null>(null);
   const [keyMenu, setKeyMenu] = useState<KeyMenuTarget | null>(null);
-  const [runningOpen, setRunningOpen] = useState(false);
-  const [running, setRunning] = useState<OpenProgram[]>([]);
-  const [runningLoad, setRunningLoad] = useState(false);
-  const [runningErr, setRunningErr] = useState("");
   const [packMode, setPackMode] = useState<"export" | "import" | null>(null);
   const [importDraft, setImportDraft] = useState<LogicPadPack | null>(null);
+  const [tab, setTab] = useState<AppTab>("keys");
+  const [fwVer, setFwVer] = useState<string | null>(null);
   snapRef.current = snap;
   launchesRef.current = launches;
 
@@ -286,7 +347,8 @@ export default function App() {
     const id = window.setInterval(() => {
       void api
         .ping()
-        .then(async () => {
+        .then(async (ver) => {
+          if (Array.isArray(ver) && ver.length >= 2) setFwVer(`${ver[0]}.${ver[1]}`);
           try {
             const meta = await api.getMeta();
             setSnap((s) => {
@@ -302,6 +364,7 @@ export default function App() {
         .catch((e) => {
           if (String(e).toLowerCase().includes("busy")) return;
           setLinked(false);
+          setFwVer(null);
           setStatus("Pad disconnected");
         });
     }, 2000);
@@ -640,37 +703,6 @@ export default function App() {
     }
   }
 
-  async function onAddSwitchProgram() {
-    const path = await api.pickProgram();
-    if (!path) return;
-    try {
-      setSwitchCfg(await api.addSwitchProgram(profile, path));
-    } catch (e) {
-      setErr(String(e));
-    }
-  }
-
-  async function refreshRunning() {
-    setRunningLoad(true);
-    setRunningErr("");
-    try {
-      setRunning(await api.listOpenPrograms());
-    } catch (e) {
-      setRunningErr(String(e));
-    } finally {
-      setRunningLoad(false);
-    }
-  }
-
-  async function onPickRunning(program: OpenProgram) {
-    setRunningOpen(false);
-    try {
-      setSwitchCfg(await api.addSwitchProgram(profile, program.path));
-    } catch (e) {
-      setErr(String(e));
-    }
-  }
-
   async function onRemoveSwitchProgram(exe: string) {
     try {
       setSwitchCfg(await api.removeSwitchProgram(exe));
@@ -916,104 +948,148 @@ export default function App() {
 
   return (
     <>
-    <div className="app">
-      <header>
-        <div>
-          <h1>LogicPad</h1>
-          <p className="sub">{status}</p>
-        </div>
-        <div className="bar">
-          <button
-            disabled={busy || linked}
-            title={linked ? "Already connected" : "Connect to LogicPad"}
-            onClick={onConnect}
-          >
-            {linked ? "Connected" : "Connect"}
-          </button>
-          <button
-            disabled={busy || !snap}
-            onClick={() =>
-              run("Saved", async () => {
-                await api.save();
-                takePad(await api.loadPad());
-              })
-            }
-          >
-            Save
-          </button>
-          <button
-            disabled={busy || !snap}
-            onClick={() =>
-              run("Reloaded", async () => {
-                takePad(await api.reload());
-              })
-            }
-          >
-            Reload
-          </button>
-          <button
-            disabled={!snap}
-            title="Print a paper map of each profile"
-            onClick={() => setPrintOpen(true)}
-          >
-            Print
-          </button>
-          <button
-            disabled={!snap}
-            title="Save selected profiles to a YAML file"
-            onClick={() => setPackMode("export")}
-          >
-            Save as…
-          </button>
-          <button
-            disabled={!snap || busy}
-            title="Import a YAML setup file"
-            onClick={() => void onImportPick()}
-          >
-            Import…
-          </button>
-          <button
-            className="danger"
-            disabled={busy || !snap}
-            onClick={() => {
-              if (!confirm("Reset all profiles to empty factory keys?")) return;
-              run("Factory reset", async () => {
-                takePad(await api.factory());
-              });
-            }}
-          >
-            Factory
-          </button>
-          <button
-            disabled={busy}
-            onClick={() => fwInput.current?.click()}
-          >
-            {flash ? `Updating ${flashPct}%` : "Update firmware"}
-          </button>
-          <input
-            ref={fwInput}
-            type="file"
-            accept=".bin,application/octet-stream"
-            hidden
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              e.target.value = "";
-              if (f) void onFlashFile(f);
-            }}
-          />
-          <SyncBadge status={syncStatus({ linked, snap, baseline })} />
-        </div>
-      </header>
-      {flash ? (
-        <div className="flash">
-          <div className="flash-track">
-            <div className="flash-fill" style={{ width: `${flashPct}%` }} />
+    <div className="app-shell">
+      <nav className="nav" aria-label="LogicPad">
+        <div className="nav-brand">
+          <span className="nav-mark" aria-hidden="true">
+            L
+          </span>
+          <div>
+            <h1>LogicPad</h1>
+            <p>v0.1.0</p>
           </div>
         </div>
-      ) : null}
-      {err ? <div className="err">{err}</div> : null}
+        <div className="nav-tabs">
+          {TABS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={tab === item.id ? "on" : ""}
+              onClick={() => setTab(item.id)}
+            >
+              <TabGlyph tab={item.id} />
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="nav-foot">
+          <p className={`nav-link ${linked ? "ok" : ""}`}>
+            <span className="nav-dot" aria-hidden="true" />
+            {linked ? "LogicPad connected" : "Disconnected"}
+          </p>
+          <p className="nav-meta">{status}</p>
+          {fwVer ? <p className="nav-meta">Firmware {fwVer}</p> : null}
+        </div>
+      </nav>
+      <div className="stage">
+        <header className="topbar">
+          <p className="topbar-status">{hdr ? hdr.name || `P${profile + 1}` : "LogicPad"}</p>
+          <div className="bar">
+            <button
+              disabled={busy || linked}
+              title={linked ? "Already connected" : "Connect to LogicPad"}
+              onClick={onConnect}
+            >
+              {linked ? "Connected" : "Connect"}
+            </button>
+            <button
+              disabled={busy || !snap}
+              onClick={() =>
+                run("Saved", async () => {
+                  await api.save();
+                  takePad(await api.loadPad());
+                })
+              }
+            >
+              Save
+            </button>
+            <details className="more">
+              <summary>More</summary>
+              <div className="more-list">
+                <button
+                  type="button"
+                  disabled={busy || !snap}
+                  onClick={() =>
+                    run("Reloaded", async () => {
+                      takePad(await api.reload());
+                    })
+                  }
+                >
+                  Reload
+                </button>
+                <button type="button" disabled={!snap} onClick={() => setPrintOpen(true)}>
+                  Print
+                </button>
+                <button type="button" disabled={!snap} onClick={() => setPackMode("export")}>
+                  Save as…
+                </button>
+                <button type="button" disabled={!snap || busy} onClick={() => void onImportPick()}>
+                  Import…
+                </button>
+                <button
+                  type="button"
+                  className="danger"
+                  disabled={busy || !snap}
+                  onClick={() => {
+                    if (!confirm("Reset all profiles to empty factory keys?")) return;
+                    run("Factory reset", async () => {
+                      takePad(await api.factory());
+                    });
+                  }}
+                >
+                  Factory
+                </button>
+                <button type="button" disabled={busy} onClick={() => fwInput.current?.click()}>
+                  {flash ? `Updating ${flashPct}%` : "Update firmware"}
+                </button>
+              </div>
+            </details>
+            <input
+              ref={fwInput}
+              type="file"
+              accept=".bin,application/octet-stream"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (f) void onFlashFile(f);
+              }}
+            />
+            <SyncBadge status={syncStatus({ linked, snap, baseline })} />
+          </div>
+        </header>
+        {flash ? (
+          <div className="flash">
+            <div className="flash-track">
+              <div className="flash-fill" style={{ width: `${flashPct}%` }} />
+            </div>
+          </div>
+        ) : null}
+        {err ? <div className="err">{err}</div> : null}
 
-      {!snap ? (
+      <div className="stage-body">
+      {tab === "switch" ? (
+            <SwitchEditor
+              open
+              cfg={switchCfg}
+              profiles={snap?.profiles ?? []}
+              keys={snap?.keys ?? []}
+              focusLabel={focusLabel}
+              busy={busy}
+              onChange={(next) => void persistSwitch(next)}
+              onLights={(nextHdr, leds) => {
+                void pushHdr(nextHdr);
+                const cur = snapRef.current;
+                if (!leds || !cur) return;
+                for (let i = 0; i < 9; i++) {
+                  const k = cur.keys[nextHdr.index]?.[i];
+                  if (k && k.led !== leds[i]) void pushKey({ ...k, led: leds[i] });
+                }
+              }}
+              listWindows={() => api.listOpenWindows()}
+              pickProgram={() => api.pickProgram()}
+            />
+      ) : !snap ? (
         <section className="hero">
           <p>Plug the pad in over USB, then connect. The editor loads profiles and keys from the device.</p>
           <button className="primary" disabled={busy} onClick={onConnect}>
@@ -1021,155 +1097,9 @@ export default function App() {
           </button>
         </section>
       ) : (
-        <main>
-          <aside>
-            <h2>Profiles</h2>
-            <div className="profiles">
-              {snap.profiles.map((p) => (
-                <button
-                  key={p.index}
-                  className={p.index === profile ? "on" : ""}
-                  onClick={() =>
-                    run("Active profile", async () => {
-                      await api.setActive(p.index);
-                      const next = structuredClone(snap);
-                      next.meta.active = p.index;
-                      setSnap(next);
-                      setSel(0);
-                    })
-                  }
-                >
-                  {p.name || `P${p.index + 1}`}
-                  {p.index === profile ? " *" : ""}
-                </button>
-              ))}
-            </div>
-            {snap.canMutateProfiles ? (
-              <div className="add">
-                <button
-                  disabled={busy || !(snap.canAddProfiles ?? snap.profiles.length < 4)}
-                  onClick={() => void onAddProfile()}
-                >
-                  New profile
-                </button>
-                <button
-                  className="danger"
-                  disabled={busy || snap.profiles.length <= 1}
-                  onClick={() => void onDeleteProfile()}
-                >
-                  Delete
-                </button>
-              </div>
-            ) : (
-              <p className="hint">Update firmware to add or delete profiles.</p>
-            )}
-            <p className="hint">
-              {snap.profiles.length} profile{snap.profiles.length === 1 ? "" : "s"} on the pad
-              {mem?.storeMax
-                ? ` · ${mem.store} / ${mem.storeMax} B used`
-                : ""}.
-            </p>
-            <h3>Auto-switch</h3>
-            <label className="row-check">
-              <input
-                type="checkbox"
-                checked={switchCfg.enabled}
-                onChange={(e) => void persistSwitch({ ...switchCfg, enabled: e.target.checked })}
-              />
-              Auto-switch with programs
-            </label>
-            <p className="hint">
-              Keep LogicPad in the tray. Focus the listed program (not this window) to switch.
-              Starts with Windows when a program is listed.
-            </p>
-            {focusLabel ? <p className="hint now">{focusLabel}</p> : null}
-            <h4>When using</h4>
-            {bound.length ? (
-              <ul className="switch-list">
-                {bound.map((r) => (
-                  <li key={r.exe}>
-                    <span title={r.exe}>{r.exe}</span>
-                    <button type="button" disabled={busy} onClick={() => void onRemoveSwitchProgram(r.exe)}>
-                      Remove
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="hint">No programs for this profile.</p>
-            )}
-            <div className="add">
-              <button type="button" disabled={busy} onClick={() => void onAddSwitchProgram()}>
-                Browse…
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setRunningOpen(true);
-                  void refreshRunning();
-                }}
-              >
-                From open window…
-              </button>
-            </div>
-            {hdr ? (
-              <>
-                <label>
-                  Name
-                  <input
-                    maxLength={12}
-                    value={hdr.name}
-                    onChange={(e) => {
-                      const next = { ...hdr, name: e.target.value };
-                      const copy = structuredClone(snap);
-                      copy.profiles[hdr.index] = next;
-                      setSnap(copy);
-                    }}
-                    onBlur={() => pushHdr(hdr)}
-                  />
-                </label>
-                <label>
-                  Lights
-                  <select
-                    value={hdr.lightMode}
-                    onChange={(e) => pushHdr({ ...hdr, lightMode: Number(e.target.value) })}
-                  >
-                    {LIGHT_MODES.map((n, i) => (
-                      <option key={n} value={i}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Bright {hdr.bright}
-                  <input
-                    type="range"
-                    min={0}
-                    max={10}
-                    value={hdr.bright}
-                    onChange={(e) =>
-                      void pushHdr({ ...hdr, bright: Number(e.target.value) })
-                    }
-                  />
-                </label>
-                <label>
-                  Dim {hdr.dim}
-                  <input
-                    type="range"
-                    min={0}
-                    max={10}
-                    value={hdr.dim}
-                    onChange={(e) =>
-                      void pushHdr({ ...hdr, dim: Number(e.target.value) })
-                    }
-                  />
-                </label>
-              </>
-            ) : null}
-          </aside>
-
+        <>
+          {tab === "keys" ? (
+            <div className="pane-keys">
           <section className="pad">
             <div className="keys-head">
               <h2>Keys</h2>
@@ -1694,8 +1624,178 @@ export default function App() {
             <h4>Other</h4>
             <HidPad keys={HID_MORE} selected={hidPick} onPick={pickHid} />
           </section>
-        </main>
+            </div>
+          ) : null}
+
+          {tab === "profiles" ? (
+            <section className="pane">
+              <h2>Profiles</h2>
+              <p className="hint">
+                {snap.profiles.length} profile{snap.profiles.length === 1 ? "" : "s"} on the pad
+                {mem?.storeMax ? ` · ${mem.store} / ${mem.storeMax} B used` : ""}.
+              </p>
+              <div className="profiles">
+                {snap.profiles.map((p) => (
+                  <button
+                    key={p.index}
+                    className={p.index === profile ? "on" : ""}
+                    onClick={() =>
+                      run("Active profile", async () => {
+                        await api.setActive(p.index);
+                        const next = structuredClone(snap);
+                        next.meta.active = p.index;
+                        setSnap(next);
+                        setSel(0);
+                      })
+                    }
+                  >
+                    {p.name || `P${p.index + 1}`}
+                    {p.index === profile ? " *" : ""}
+                  </button>
+                ))}
+              </div>
+              {snap.canMutateProfiles ? (
+                <div className="add">
+                  <button
+                    disabled={busy || !(snap.canAddProfiles ?? snap.profiles.length < 4)}
+                    onClick={() => void onAddProfile()}
+                  >
+                    New profile
+                  </button>
+                  <button
+                    className="danger"
+                    disabled={busy || snap.profiles.length <= 1}
+                    onClick={() => void onDeleteProfile()}
+                  >
+                    Delete
+                  </button>
+                </div>
+              ) : (
+                <p className="hint">Update firmware to add or delete profiles.</p>
+              )}
+              {hdr ? (
+                <label>
+                  Name
+                  <input
+                    maxLength={12}
+                    value={hdr.name}
+                    onChange={(e) => {
+                      const next = { ...hdr, name: e.target.value };
+                      const copy = structuredClone(snap);
+                      copy.profiles[hdr.index] = next;
+                      setSnap(copy);
+                    }}
+                    onBlur={() => pushHdr(hdr)}
+                  />
+                </label>
+              ) : null}
+              <h3>This profile in Auto-switch</h3>
+              {bound.length ? (
+                <ul className="switch-list">
+                  {bound.map((r) => (
+                    <li key={r.exe}>
+                      <span title={r.exe}>{r.exe}</span>
+                      <button type="button" disabled={busy} onClick={() => void onRemoveSwitchProgram(r.exe)}>
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="hint">No programs for this profile in the graph.</p>
+              )}
+              <div className="add">
+                <button type="button" onClick={() => setTab("switch")}>
+                  Open Auto-switch
+                </button>
+              </div>
+            </section>
+          ) : null}
+
+          {tab === "lights" ? (
+            <section className="pane">
+              <h2>Lights</h2>
+              <p className="hint">Lighting for {hdr?.name || `P${profile + 1}`}. Per-key LEDs also live on each key.</p>
+              <div className="profiles">
+                {snap.profiles.map((p) => (
+                  <button
+                    key={p.index}
+                    className={p.index === profile ? "on" : ""}
+                    onClick={() =>
+                      run("Active profile", async () => {
+                        await api.setActive(p.index);
+                        const next = structuredClone(snap);
+                        next.meta.active = p.index;
+                        setSnap(next);
+                        setSel(0);
+                      })
+                    }
+                  >
+                    {p.name || `P${p.index + 1}`}
+                  </button>
+                ))}
+              </div>
+              {hdr ? (
+                <>
+                  <label>
+                    Mode
+                    <select
+                      value={hdr.lightMode}
+                      onChange={(e) => pushHdr({ ...hdr, lightMode: Number(e.target.value) })}
+                    >
+                      {LIGHT_MODES.map((n, i) => (
+                        <option key={n} value={i}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Bright {hdr.bright}
+                    <input
+                      type="range"
+                      min={0}
+                      max={10}
+                      value={hdr.bright}
+                      onChange={(e) => void pushHdr({ ...hdr, bright: Number(e.target.value) })}
+                    />
+                  </label>
+                  <label>
+                    Dim {hdr.dim}
+                    <input
+                      type="range"
+                      min={0}
+                      max={10}
+                      value={hdr.dim}
+                      onChange={(e) => void pushHdr({ ...hdr, dim: Number(e.target.value) })}
+                    />
+                  </label>
+                </>
+              ) : null}
+              <h3>Key LEDs</h3>
+              <div className="light-grid">
+                {Array.from({ length: 9 }, (_, i) => {
+                  const k = keys[i] ?? emptyKey(profile, i);
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      className="sw-led light-cell"
+                      style={{ background: LED_HEX[k.led] ?? LED_HEX[0] }}
+                      title={`${k.label || `Key ${i + 1}`} — ${LEDS[k.led] ?? "Off"}`}
+                      onClick={() => void pushKey({ ...k, led: (k.led + 1) % LEDS.length })}
+                    >
+                      {i + 1}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+        </>
       )}
+      </div>
+      </div>
     </div>
     {printOpen && snap ? (
       <PrintOverlay
@@ -1707,15 +1807,6 @@ export default function App() {
         onPrint={() => window.print()}
       />
     ) : null}
-    <RunningPicker
-      open={runningOpen}
-      programs={running}
-      loading={runningLoad}
-      error={runningErr || undefined}
-      onClose={() => setRunningOpen(false)}
-      onPick={(p) => void onPickRunning(p)}
-      onRefresh={() => void refreshRunning()}
-    />
     {snap ? (
       <PackDialog
         mode={packMode}

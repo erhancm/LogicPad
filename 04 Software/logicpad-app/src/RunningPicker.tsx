@@ -3,16 +3,29 @@ import "./RunningPicker.css";
 
 export type OpenProgram = { title: string; exe: string; path: string };
 
+export type OpenWindow = OpenProgram & {
+  hwnd?: string;
+  thumbBmp?: string;
+  iconBmp?: string;
+};
+
+function bmpSrc(b64?: string): string | undefined {
+  return b64 ? `data:image/bmp;base64,${b64}` : undefined;
+}
+
 export function RunningPicker(props: {
   open: boolean;
-  programs: OpenProgram[];
+  programs?: OpenProgram[];
+  windows?: OpenWindow[];
   loading?: boolean;
   error?: string;
   onClose: () => void;
-  onPick: (program: OpenProgram) => void;
+  onPick: (program: OpenWindow) => void;
   onRefresh: () => void;
+  onBrowse?: () => void;
 }): JSX.Element | null {
-  const { open, programs, loading, error, onClose, onPick, onRefresh } = props;
+  const { open, programs, windows, loading, error, onClose, onPick, onRefresh, onBrowse } = props;
+  const cards: OpenWindow[] = windows ?? programs ?? [];
 
   useEffect(() => {
     if (!open) return;
@@ -25,19 +38,19 @@ export function RunningPicker(props: {
 
   if (!open) return null;
 
-  const empty = !loading && programs.length === 0;
+  const empty = !loading && cards.length === 0;
 
   return (
     <div className="rp-back" onClick={onClose}>
       <div
-        className="rp-dialog"
+        className="rp-dialog rp-wide"
         role="dialog"
         aria-modal="true"
         aria-labelledby="rp-title"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="rp-head">
-          <h2 id="rp-title">Open programs</h2>
+          <h2 id="rp-title">Select window</h2>
           <button type="button" disabled={loading} onClick={onRefresh}>
             Refresh
           </button>
@@ -47,23 +60,34 @@ export function RunningPicker(props: {
         {empty ? (
           <p className="rp-empty">No open windows found. Try Browse to pick an .exe.</p>
         ) : (
-          <ul className="rp-list">
-            {programs.map((program) => (
-              <li key={program.path}>
-                <button
-                  type="button"
-                  className="rp-row"
-                  title={program.path}
-                  onClick={() => onPick(program)}
-                >
-                  <span className="rp-title">{program.title}</span>
-                  <span className="rp-exe">{program.exe}</span>
-                </button>
-              </li>
-            ))}
+          <ul className="rp-grid">
+            {cards.map((program) => {
+              const img = bmpSrc(program.thumbBmp) ?? bmpSrc(program.iconBmp);
+              return (
+                <li key={program.hwnd || program.path + program.title}>
+                  <button
+                    type="button"
+                    className="rp-card"
+                    title={program.path}
+                    onClick={() => onPick(program)}
+                  >
+                    <span className="rp-thumb">
+                      {img ? <img src={img} alt="" /> : <span className="rp-ph">{program.exe.slice(0, 2)}</span>}
+                    </span>
+                    <span className="rp-title">{program.title}</span>
+                    <span className="rp-exe">{program.exe}</span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
         <div className="rp-foot">
+          {onBrowse ? (
+            <button type="button" onClick={onBrowse}>
+              Browse…
+            </button>
+          ) : null}
           <button type="button" onClick={onClose}>
             Cancel
           </button>

@@ -4,6 +4,7 @@ mod hid;
 mod host;
 mod launch;
 mod profile_switch;
+mod switch_graph;
 
 use hid::{Meta, Pad, PadKey, ProfileHdr, Snapshot};
 use launch::{LaunchEntry, LaunchStore, ResolvedProgram};
@@ -188,6 +189,11 @@ fn list_open_programs() -> Vec<focus::OpenProgram> {
 }
 
 #[tauri::command]
+fn list_open_windows() -> Vec<focus::OpenWindow> {
+    focus::list_open_windows()
+}
+
+#[tauri::command]
 fn resolve_program(path: String) -> ResolvedProgram {
     launch::resolve_program(&path)
 }
@@ -291,6 +297,7 @@ pub fn run() {
             set_launch,
             pick_program,
             list_open_programs,
+            list_open_windows,
             resolve_program,
             get_switch_rules,
             set_switch_rules,

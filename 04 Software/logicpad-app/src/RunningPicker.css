@@ -1,7 +1,7 @@
 .rp-back {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: 80;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -21,6 +21,11 @@
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
 }
 
+.rp-wide {
+  width: min(720px, 100%);
+  max-height: min(680px, calc(100vh - 48px));
+}
+
 .rp-head {
   display: flex;
   justify-content: space-between;
@@ -31,6 +36,10 @@
 
 .rp-head h2 {
   margin: 0;
+  color: #f0d060;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 14px;
 }
 
 .rp-head button,
@@ -70,6 +79,65 @@
   overflow-y: auto;
   min-height: 80px;
   flex: 1;
+}
+
+.rp-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  min-height: 80px;
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.rp-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+  padding: 6px;
+  margin: 0;
+  background: #12141a;
+  border: 1px solid #2a2e38;
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rp-card:hover,
+.rp-card:focus-visible {
+  border-color: #f0d060;
+  outline: none;
+}
+
+.rp-thumb {
+  display: block;
+  height: 128px;
+  background: #0d0f14;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.rp-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.rp-ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #f0d060;
+  font-size: 18px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .rp-list li {
@@ -123,6 +191,7 @@
 .rp-foot {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid #2a2e38;
