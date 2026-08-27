@@ -9,6 +9,14 @@
   background: rgba(8, 10, 14, 0.72);
 }
 
+.rp-back.rp-dock {
+  position: absolute;
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: 16px;
+  background: rgba(8, 10, 14, 0.28);
+}
+
 .rp-dialog {
   width: min(440px, 100%);
   max-height: min(520px, calc(100vh - 48px));
@@ -26,6 +34,11 @@
   max-height: min(680px, calc(100vh - 48px));
 }
 
+.rp-dock .rp-wide {
+  width: min(420px, 100%);
+  max-height: min(460px, calc(100% - 24px));
+}
+
 .rp-head {
   display: flex;
   justify-content: space-between;
@@ -36,10 +49,24 @@
 
 .rp-head h2 {
   margin: 0;
-  color: #f0d060;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-size: 14px;
+  color: #f4f1ea;
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.rp-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rp-x {
+  width: 28px;
+  padding: 4px 0 !important;
+  font-size: 18px;
+  line-height: 1;
 }
 
 .rp-head button,
@@ -89,7 +116,7 @@
   min-height: 80px;
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 

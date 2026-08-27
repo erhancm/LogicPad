@@ -200,7 +200,8 @@ mod win {
     }
 
     pub fn list_open_windows() -> Vec<OpenWindow> {
-        const MAX: usize = 24;
+        const MAX: usize = 48;
+        const THUMB_BUDGET: std::time::Duration = std::time::Duration::from_millis(450);
         let self_pid = std::process::id();
         let self_path = std::env::current_exe().ok();
         let self_path_str = self_path
@@ -216,6 +217,7 @@ mod win {
             );
         }
 
+        let started = std::time::Instant::now();
         let mut out = Vec::new();
         for hwnd in hwnds {
             if out.len() >= MAX {
@@ -247,7 +249,7 @@ mod win {
                 .to_string();
             let hung = unsafe { IsHungAppWindow(hwnd) }.as_bool();
             let iconic = unsafe { IsIconic(hwnd) }.as_bool();
-            let thumb_bmp = if hung || iconic {
+            let thumb_bmp = if hung || iconic || started.elapsed() > THUMB_BUDGET {
                 None
             } else {
                 capture_thumb(hwnd)

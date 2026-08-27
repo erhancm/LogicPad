@@ -63,6 +63,8 @@ pub enum GraphNode {
         dim: Option<u8>,
         #[serde(default)]
         leds: Option<Vec<u8>>,
+        #[serde(default, rename = "lightsOnly")]
+        lights_only: bool,
     },
     Restore {
         id: String,
@@ -82,6 +84,14 @@ impl GraphNode {
             | GraphNode::Or { id, .. }
             | GraphNode::SetProfile { id, .. }
             | GraphNode::Restore { id, .. } => id,
+        }
+    }
+
+    fn is_profile_action(&self) -> bool {
+        match self {
+            GraphNode::SetProfile { lights_only, .. } => !lights_only,
+            GraphNode::Restore { .. } => true,
+            _ => false,
         }
     }
 
@@ -149,24 +159,47 @@ pub fn eval_graph(graph: &SwitchGraph, foreground: &str, running: &[String]) -> 
             ins.entry(e.to.as_str()).or_default().push(e.from.as_str());
         }
     }
-    let mut actions: Vec<&GraphNode> = graph
+    // Set-profile actions always beat Restore. An unwired Restore is ELSE and
+    // used to win whenever its priority number was lower than a new Set node
+    // (the default Restore is 9; newly added Set nodes were 10+).
+    let mut sets: Vec<&GraphNode> = graph
         .nodes
         .iter()
-        .filter(|n| matches!(n, GraphNode::SetProfile { .. } | GraphNode::Restore { .. }))
+        .filter(|n| n.is_profile_action() && matches!(n, GraphNode::SetProfile { .. }))
         .collect();
-    actions.sort_by_key(|n| (n.priority().unwrap_or(0), n.id().to_string()));
-
-    for node in actions {
+    sets.sort_by_key(|n| (n.priority().unwrap_or(0), n.id().to_string()));
+    for node in sets {
         let mut visiting = HashSet::new();
         if eval_node(node.id(), &by_id, &ins, &fg, &run, &mut visiting) {
-            return match node {
-                GraphNode::SetProfile { profile, .. } => GraphDecision::Set(*profile),
-                GraphNode::Restore { .. } => GraphDecision::Restore,
-                _ => GraphDecision::Miss,
-            };
+            if let GraphNode::SetProfile { profile, .. } = node {
+                return GraphDecision::Set(*profile);
+            }
         }
     }
-    GraphDecision::Miss
+
+    let mut restores: Vec<&GraphNode> = graph
+        .nodes
+        .iter()
+        .filter(|n| matches!(n, GraphNode::Restore { .. }))
+        .collect();
+    restores.sort_by_key(|n| (n.priority().unwrap_or(0), n.id().to_string()));
+    let mut else_restore = false;
+    for node in restores {
+        let inputs = ins.get(node.id()).map(Vec::as_slice).unwrap_or(&[]);
+        if inputs.is_empty() {
+            else_restore = true;
+            continue;
+        }
+        let mut visiting = HashSet::new();
+        if eval_node(node.id(), &by_id, &ins, &fg, &run, &mut visiting) {
+            return GraphDecision::Restore;
+        }
+    }
+    if else_restore {
+        GraphDecision::Restore
+    } else {
+        GraphDecision::Miss
+    }
 }
 
 fn eval_node(
@@ -200,13 +233,10 @@ fn eval_node(
             .iter()
             .any(|src| eval_node(src, by_id, ins, fg, run, visiting)),
         GraphNode::SetProfile { .. } | GraphNode::Restore { .. } => {
-            if inputs.is_empty() {
-                matches!(node, GraphNode::Restore { .. })
-            } else {
-                inputs
+            !inputs.is_empty()
+                && inputs
                     .iter()
                     .any(|src| eval_node(src, by_id, ins, fg, run, visiting))
-            }
         }
     };
     visiting.remove(id);
@@ -224,7 +254,7 @@ pub fn flatten_graph(graph: &SwitchGraph) -> Vec<(String, u8)> {
     let mut actions: Vec<&GraphNode> = graph
         .nodes
         .iter()
-        .filter(|n| matches!(n, GraphNode::SetProfile { .. }))
+        .filter(|n| n.is_profile_action() && matches!(n, GraphNode::SetProfile { .. }))
         .collect();
     actions.sort_by_key(|n| (n.priority().unwrap_or(0), n.id().to_string()));
     for node in actions {
@@ -302,6 +332,7 @@ pub fn graph_from_rules(rules: &[(String, u8)]) -> SwitchGraph {
             bright: None,
             dim: None,
             leds: None,
+            lights_only: false,
         });
         edges.push(GraphEdge {
             id: format!("e{i}"),
@@ -314,7 +345,7 @@ pub fn graph_from_rules(rules: &[(String, u8)]) -> SwitchGraph {
         id: "else".into(),
         x: 340.0,
         y,
-        priority: 9,
+        priority: 255,
     });
     SwitchGraph { nodes, edges }
 }
@@ -325,7 +356,7 @@ pub fn default_graph() -> SwitchGraph {
             id: "else".into(),
             x: 360.0,
             y: 200.0,
-            priority: 9,
+            priority: 255,
         }],
         edges: Vec::new(),
     }
@@ -411,6 +442,7 @@ pub fn add_program(graph: &mut SwitchGraph, profile: u8, path: &str) {
         bright: None,
         dim: None,
         leds: None,
+        lights_only: false,
     });
     graph.edges.push(GraphEdge {
         id: eid,
@@ -545,6 +577,7 @@ mod tests {
             bright: None,
             dim: None,
             leds: None,
+            lights_only: false,
         }
     }
 
@@ -635,6 +668,25 @@ mod tests {
             edges: vec![edge("e", "a", "p")],
         };
         assert_eq!(eval_graph(&g, "cad.exe", &[]), GraphDecision::Set(1));
+        assert_eq!(eval_graph(&g, "other.exe", &[]), GraphDecision::Restore);
+    }
+
+    #[test]
+    fn else_restore_does_not_steal_higher_priority_sets() {
+        let g = SwitchGraph {
+            nodes: vec![
+                fg("a", &["chrome.exe"]),
+                set_p("p", 2, 10),
+                GraphNode::Restore {
+                    id: "else".into(),
+                    x: 0.0,
+                    y: 0.0,
+                    priority: 9,
+                },
+            ],
+            edges: vec![edge("e", "a", "p")],
+        };
+        assert_eq!(eval_graph(&g, "chrome.exe", &[]), GraphDecision::Set(2));
         assert_eq!(eval_graph(&g, "other.exe", &[]), GraphDecision::Restore);
     }
 

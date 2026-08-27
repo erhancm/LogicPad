@@ -181,6 +181,103 @@ body,
   text-transform: uppercase;
 }
 
+.sw-top {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  flex: 1;
+}
+
+.sw-top h2 {
+  margin: 0;
+  color: #f4f1ea;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.topbar .sw-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #e8e4d8;
+  font-size: 12px;
+}
+
+.topbar .sw-toggle input {
+  appearance: none;
+  width: 40px;
+  height: 22px;
+  margin: 0;
+  border-radius: 99px;
+  border: 1px solid #3a4150;
+  background: #1c212c;
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.topbar .sw-toggle input::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #8b8f9a;
+  transition: left 0.15s ease, background 0.15s ease;
+}
+
+.topbar .sw-toggle input:checked {
+  background: #f0d060;
+  border-color: #f0d060;
+}
+
+.topbar .sw-toggle input:checked::after {
+  left: 20px;
+  background: #12141a;
+}
+
+.topbar .sw-toggle em {
+  font-style: normal;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6b7380;
+}
+
+.topbar .sw-toggle input:checked + em {
+  color: #f0d060;
+}
+
+.topbar .sw-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #c8d0bc;
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.topbar .sw-now.mute {
+  color: #6b7380;
+}
+
+.topbar .sw-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6bcf8e;
+  box-shadow: 0 0 8px #6bcf8e;
+  flex-shrink: 0;
+}
+
 .topbar .bar {
   flex-wrap: wrap;
   justify-content: flex-end;

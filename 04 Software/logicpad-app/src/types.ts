@@ -112,12 +112,33 @@ export type SwitchNode =
       bright?: number;
       dim?: number;
       leds?: number[];
+      lightsOnly?: boolean;
     }
-  | { kind: "restore"; id: string; x: number; y: number; priority: number };
+  | {
+      kind: "restore";
+      id: string;
+      x: number;
+      y: number;
+      priority: number;
+      restoreLights?: boolean;
+    };
 
 export type SwitchGraph = {
   nodes: SwitchNode[];
   edges: SwitchEdge[];
+};
+
+/** One If / Else-if row in the auto-switch editor. Compiles to a graph. */
+export type SwitchCard = {
+  id: string;
+  match: "foreground" | "running";
+  programs: string[];
+  andRunning?: string[];
+  profile: number;
+  lightMode?: number;
+  bright?: number;
+  dim?: number;
+  leds?: number[];
 };
 
 export type SwitchConfig = {

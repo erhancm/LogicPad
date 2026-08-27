@@ -15,6 +15,7 @@ function bmpSrc(b64?: string): string | undefined {
 
 export function RunningPicker(props: {
   open: boolean;
+  dock?: boolean;
   programs?: OpenProgram[];
   windows?: OpenWindow[];
   loading?: boolean;
@@ -24,7 +25,7 @@ export function RunningPicker(props: {
   onRefresh: () => void;
   onBrowse?: () => void;
 }): JSX.Element | null {
-  const { open, programs, windows, loading, error, onClose, onPick, onRefresh, onBrowse } = props;
+  const { open, dock, programs, windows, loading, error, onClose, onPick, onRefresh, onBrowse } = props;
   const cards: OpenWindow[] = windows ?? programs ?? [];
 
   useEffect(() => {
@@ -41,7 +42,7 @@ export function RunningPicker(props: {
   const empty = !loading && cards.length === 0;
 
   return (
-    <div className="rp-back" onClick={onClose}>
+    <div className={`rp-back${dock ? " rp-dock" : ""}`} onClick={onClose}>
       <div
         className="rp-dialog rp-wide"
         role="dialog"
@@ -51,9 +52,14 @@ export function RunningPicker(props: {
       >
         <div className="rp-head">
           <h2 id="rp-title">Select window</h2>
-          <button type="button" disabled={loading} onClick={onRefresh}>
-            Refresh
-          </button>
+          <div className="rp-head-actions">
+            <button type="button" disabled={loading} onClick={onRefresh}>
+              Refresh
+            </button>
+            <button type="button" className="rp-x" aria-label="Close" onClick={onClose}>
+              ×
+            </button>
+          </div>
         </div>
         {error ? <p className="rp-err">{error}</p> : null}
         {loading ? <p className="rp-hint">Looking for windows…</p> : null}
@@ -88,9 +94,6 @@ export function RunningPicker(props: {
               Browse…
             </button>
           ) : null}
-          <button type="button" onClick={onClose}>
-            Cancel
-          </button>
         </div>
       </div>
     </div>

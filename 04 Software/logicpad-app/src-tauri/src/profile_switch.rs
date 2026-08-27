@@ -185,13 +185,7 @@ impl SwitchStore {
         self.inner
             .lock()
             .map(|g| {
-                g.cfg.enabled
-                    && (!g.cfg.rules.is_empty()
-                        || g.cfg.graph.as_ref().is_some_and(|gr| {
-                            gr.nodes
-                                .iter()
-                                .any(|n| matches!(n, switch_graph::GraphNode::SetProfile { .. }))
-                        }))
+                g.cfg.enabled && !g.cfg.rules.is_empty()
             })
             .unwrap_or(false)
     }

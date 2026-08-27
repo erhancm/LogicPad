@@ -1,39 +1,42 @@
-import { useEffect, useRef, useState, type PointerEvent as PE } from "react";
-import { LEDS, LIGHT_MODES, type PadKey, type ProfileHdr, type SwitchConfig, type SwitchGraph, type SwitchNode } from "./types";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as PE } from "react";
+import { LEDS, LIGHT_MODES, type PadKey, type ProfileHdr, type SwitchConfig, type SwitchEdge, type SwitchGraph, type SwitchNode } from "./types";
 import { ensureGraph, newId, withGraph } from "./switchGraph";
 import { RunningPicker, type OpenWindow } from "./RunningPicker";
 import "./SwitchEditor.css";
 
 const LED_HEX = ["#2a2e38", "#e8e4d8", "#c04040", "#40a060", "#3a7ec0"];
 
-const NODE_SIZE: Record<SwitchNode["kind"], { w: number; h: number }> = {
-  foreground: { w: 236, h: 132 },
-  running: { w: 236, h: 132 },
-  and: { w: 112, h: 56 },
-  or: { w: 112, h: 56 },
-  setProfile: { w: 248, h: 248 },
-  restore: { w: 228, h: 108 },
-};
+function nodeSize(n: SwitchNode): { w: number; h: number } {
+  if (n.kind === "and" || n.kind === "or") return { w: 76, h: 76 };
+  if (n.kind === "foreground" || n.kind === "running") return { w: 252, h: 154 };
+  if (n.kind === "restore") return { w: 236, h: 124 };
+  if (n.kind === "setProfile" && n.lightsOnly) return { w: 248, h: 198 };
+  return { w: 228, h: 176 };
+}
 
 function wirePath(x1: number, y1: number, x2: number, y2: number): string {
-  const dx = Math.max(48, Math.abs(x2 - x1) * 0.45);
+  const dx = Math.max(56, Math.abs(x2 - x1) * 0.45);
   return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
 }
 
-function portPos(node: SwitchNode, side: "in" | "out"): { x: number; y: number } {
-  const { w, h } = NODE_SIZE[node.kind];
-  return {
-    x: node.x + (side === "in" ? 0 : w),
-    y: node.y + h / 2,
-  };
+function isLights(n: SwitchNode): boolean {
+  return n.kind === "setProfile" && !!n.lightsOnly;
 }
 
 function hasOut(n: SwitchNode): boolean {
-  return n.kind !== "setProfile" && n.kind !== "restore";
+  return n.kind !== "restore" && !isLights(n);
 }
 
 function hasIn(n: SwitchNode): boolean {
   return n.kind !== "foreground" && n.kind !== "running";
+}
+
+function isOp(n: SwitchNode): boolean {
+  return n.kind === "and" || n.kind === "or";
+}
+
+function isCond(n: SwitchNode): boolean {
+  return n.kind === "foreground" || n.kind === "running" || isOp(n);
 }
 
 function exeKey(exe: string): string {
@@ -57,15 +60,136 @@ function lookFromWindow(w: OpenWindow): ChipLook {
   };
 }
 
+function brightLabel(v: number): string {
+  if (v <= 0) return "Off";
+  if (v >= 8) return "Bright";
+  if (v >= 4) return "Medium";
+  return "Dim";
+}
+
+function neighborMap(graph: SwitchGraph): Map<string, string[]> {
+  const m = new Map<string, string[]>();
+  const add = (a: string, b: string) => {
+    const list = m.get(a) ?? [];
+    list.push(b);
+    m.set(a, list);
+  };
+  for (const e of graph.edges) {
+    add(e.from, e.to);
+    add(e.to, e.from);
+  }
+  return m;
+}
+
+function flood(start: string, graph: SwitchGraph, keep: (n: SwitchNode) => boolean): string[] {
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const nbr = neighborMap(graph);
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const stack = [start];
+  while (stack.length) {
+    const id = stack.pop()!;
+    if (seen.has(id)) continue;
+    const node = byId.get(id);
+    if (!node || !keep(node)) continue;
+    seen.add(id);
+    out.push(id);
+    for (const n of nbr.get(id) ?? []) stack.push(n);
+  }
+  return out;
+}
+
+function badgeMap(graph: SwitchGraph): Map<string, number> {
+  const badges = new Map<string, number>();
+  let n = 1;
+  const conds = graph.nodes
+    .filter(isCond)
+    .slice()
+    .sort((a, b) => a.y - b.y || a.x - b.x);
+  const seen = new Set<string>();
+  for (const node of conds) {
+    if (seen.has(node.id)) continue;
+    const group = flood(node.id, graph, isCond);
+    for (const id of group) {
+      seen.add(id);
+      badges.set(id, n);
+    }
+    n += 1;
+  }
+  const sets = graph.nodes
+    .filter((node): node is Extract<SwitchNode, { kind: "setProfile" }> => node.kind === "setProfile" && !node.lightsOnly)
+    .slice()
+    .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+  for (const node of sets) {
+    const group = flood(node.id, graph, (x) => x.kind === "setProfile");
+    for (const id of group) badges.set(id, n);
+    n += 1;
+  }
+  const restores = graph.nodes
+    .filter((node): node is Extract<SwitchNode, { kind: "restore" }> => node.kind === "restore")
+    .slice()
+    .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+  for (const node of restores) {
+    badges.set(node.id, n);
+    n += 1;
+  }
+  return badges;
+}
+
+function portCount(node: SwitchNode, graph: SwitchGraph, side: "in" | "out"): number {
+  if (side === "in" && !hasIn(node)) return 0;
+  if (side === "out" && !hasOut(node)) return 0;
+  const n =
+    side === "in"
+      ? graph.edges.filter((e) => e.to === node.id).length
+      : graph.edges.filter((e) => e.from === node.id).length;
+  if (isOp(node)) return Math.max(2, n);
+  if (side === "out" && (node.kind === "foreground" || node.kind === "running")) {
+    return Math.max(node.programs.length >= 2 ? 2 : 1, n);
+  }
+  return Math.max(1, n);
+}
+
+function portPos(node: SwitchNode, graph: SwitchGraph, side: "in" | "out", index: number): { x: number; y: number } {
+  const { w, h } = nodeSize(node);
+  const count = Math.max(1, portCount(node, graph, side));
+  const i = Math.min(Math.max(index, 0), count - 1);
+  const y = count <= 1 ? node.y + h / 2 : node.y + (h * (i + 1)) / (count + 1);
+  return { x: node.x + (side === "in" ? 0 : w), y };
+}
+
+function edgePorts(graph: SwitchGraph, edge: SwitchEdge): { a: { x: number; y: number }; b: { x: number; y: number } } | null {
+  const from = graph.nodes.find((n) => n.id === edge.from);
+  const to = graph.nodes.find((n) => n.id === edge.to);
+  if (!from || !to) return null;
+  const outs = graph.edges.filter((e) => e.from === from.id).sort((x, y) => {
+    const ta = graph.nodes.find((n) => n.id === x.to);
+    const tb = graph.nodes.find((n) => n.id === y.to);
+    return (ta?.y ?? 0) - (tb?.y ?? 0) || x.id.localeCompare(y.id);
+  });
+  const ins = graph.edges.filter((e) => e.to === to.id).sort((x, y) => {
+    const fa = graph.nodes.find((n) => n.id === x.from);
+    const fb = graph.nodes.find((n) => n.id === y.from);
+    return (fa?.y ?? 0) - (fb?.y ?? 0) || x.id.localeCompare(y.id);
+  });
+  const oi = Math.max(0, outs.findIndex((e) => e.id === edge.id));
+  const ii = Math.max(0, ins.findIndex((e) => e.id === edge.id));
+  return {
+    a: portPos(from, graph, "out", oi),
+    b: portPos(to, graph, "in", ii),
+  };
+}
+
 type LightsCb = (hdr: ProfileHdr, leds: number[] | undefined) => void;
 
-const ADD_KINDS: { kind: SwitchNode["kind"]; label: string }[] = [
+const ADD_KINDS: { kind: SwitchNode["kind"]; label: string; lightsOnly?: boolean }[] = [
   { kind: "foreground", label: "Foreground is" },
   { kind: "running", label: "Running is" },
   { kind: "and", label: "AND" },
   { kind: "or", label: "OR" },
   { kind: "setProfile", label: "Set profile" },
-  { kind: "restore", label: "Restore previous" },
+  { kind: "setProfile", label: "Set lights", lightsOnly: true },
+  { kind: "restore", label: "Restore previous profile" },
 ];
 
 export function SwitchEditor(props: {
@@ -73,28 +197,32 @@ export function SwitchEditor(props: {
   cfg: SwitchConfig;
   profiles: ProfileHdr[];
   keys: PadKey[][];
-  focusLabel?: string | null;
   busy?: boolean;
   onChange: (cfg: SwitchConfig) => void;
   onLights: LightsCb;
   listWindows: () => Promise<OpenWindow[]>;
   pickProgram: () => Promise<string | null>;
 }) {
-  const { open, cfg, profiles, keys, focusLabel, busy, onChange, onLights, listWindows, pickProgram } = props;
+  const { open, cfg, profiles, keys, busy, onChange, onLights, listWindows, pickProgram } = props;
   const [graph, setGraph] = useState(() => ensureGraph(cfg));
-  const [pan, setPan] = useState({ x: 32, y: 28 });
+  const [pan, setPan] = useState({ x: 36, y: 28 });
   const [sel, setSel] = useState<string | null>(null);
-  const [linkFrom, setLinkFrom] = useState<string | null>(null);
+  const [linkFrom, setLinkFrom] = useState<{ id: string; port: number } | null>(null);
+  const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [pickNode, setPickNode] = useState<string | null>(null);
   const [windows, setWindows] = useState<OpenWindow[]>([]);
   const [winLoad, setWinLoad] = useState(false);
   const [winErr, setWinErr] = useState("");
   const [looks, setLooks] = useState<Record<string, ChipLook>>({});
   const [addOpen, setAddOpen] = useState(false);
+  const [menu, setMenu] = useState<string | null>(null);
   const drag = useRef<{ id: string; dx: number; dy: number } | null>(null);
   const panning = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef(graph);
   graphRef.current = graph;
+
+  const badges = useMemo(() => badgeMap(graph), [graph]);
 
   useEffect(() => {
     if (open) {
@@ -102,6 +230,7 @@ export function SwitchEditor(props: {
       setSel(null);
       setLinkFrom(null);
       setAddOpen(false);
+      setMenu(null);
     }
   }, [open]);
 
@@ -112,6 +241,7 @@ export function SwitchEditor(props: {
         if (pickNode) setPickNode(null);
         else if (linkFrom) setLinkFrom(null);
         else if (addOpen) setAddOpen(false);
+        else if (menu) setMenu(null);
         else setSel(null);
       }
       if ((e.key === "Delete" || e.key === "Backspace") && sel && !pickNode) {
@@ -122,7 +252,7 @@ export function SwitchEditor(props: {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, sel, pickNode, linkFrom, addOpen, graph]);
+  }, [open, sel, pickNode, linkFrom, addOpen, menu, graph]);
 
   if (!open) return null;
 
@@ -139,48 +269,59 @@ export function SwitchEditor(props: {
     });
   }
 
-  function rememberLooks(list: OpenWindow[]) {
-    setLooks((prev) => {
-      const next = { ...prev };
-      for (const w of list) {
-        const key = exeKey(w.exe || w.path);
-        if (!key) continue;
-        next[key] = lookFromWindow(w);
-      }
-      return next;
-    });
+  function toWorld(e: PE<HTMLElement>): { x: number; y: number } {
+    const r = canvasRef.current?.getBoundingClientRect();
+    return {
+      x: e.clientX - (r?.left ?? 0) - pan.x,
+      y: e.clientY - (r?.top ?? 0) - pan.y,
+    };
   }
 
-  function addNode(kind: SwitchNode["kind"]) {
+  function addNode(kind: SwitchNode["kind"], lightsOnly = false) {
     setAddOpen(false);
-    const id = newId(kind.slice(0, 2));
-    const x = 80 - pan.x + graph.nodes.length * 12;
-    const y = 80 - pan.y + graph.nodes.length * 16;
+    setMenu(null);
+    const id = newId(lightsOnly ? "lt" : kind.slice(0, 2));
+    const x = 90 - pan.x + (graph.nodes.length % 6) * 16;
+    const y = 70 - pan.y + (graph.nodes.length % 5) * 18;
     const pri =
-      Math.max(0, ...graph.nodes.map((n) => (n.kind === "setProfile" || n.kind === "restore" ? n.priority : -1))) + 1;
+      Math.max(
+        0,
+        ...graph.nodes.map((n) => (n.kind === "setProfile" || n.kind === "restore" ? n.priority : -1)),
+      ) + 1;
+    const selected = graph.nodes.find((n) => n.id === sel);
+    const fromProfile =
+      selected?.kind === "setProfile" ? selected.profile : (profiles[0]?.index ?? 0);
     let node: SwitchNode;
     if (kind === "foreground") node = { kind, id, x, y, programs: [] };
     else if (kind === "running") node = { kind, id, x, y, programs: [] };
     else if (kind === "and" || kind === "or") node = { kind, id, x, y };
-    else if (kind === "restore") node = { kind, id, x, y, priority: Math.min(pri, 255) };
+    else if (kind === "restore") node = { kind, id, x, y, priority: Math.min(pri, 255), restoreLights: true };
     else {
+      const hdr = profiles.find((p) => p.index === fromProfile) ?? profiles[0];
       node = {
         kind: "setProfile",
         id,
         x,
         y,
-        profile: profiles[0]?.index ?? 0,
+        profile: hdr?.index ?? 0,
         priority: Math.min(pri, 255),
-        lightMode: profiles[0]?.lightMode,
-        bright: profiles[0]?.bright,
-        dim: profiles[0]?.dim,
+        lightsOnly,
+        lightMode: hdr?.lightMode,
+        bright: hdr?.bright,
+        dim: hdr?.dim,
+        leds: keys[hdr?.index ?? 0]?.map((k) => k.led),
       };
     }
-    commit({ ...graph, nodes: [...graph.nodes, node] });
+    const edges = [...graph.edges];
+    if (selected && hasOut(selected) && hasIn(node)) {
+      edges.push({ id: newId("e"), from: selected.id, to: id });
+    }
+    commit({ nodes: [...graph.nodes, node], edges });
     setSel(id);
   }
 
   function removeNode(id: string) {
+    setMenu(null);
     commit({
       nodes: graph.nodes.filter((n) => n.id !== id),
       edges: graph.edges.filter((e) => e.from !== id && e.to !== id),
@@ -190,6 +331,7 @@ export function SwitchEditor(props: {
 
   function tryLink(from: string, to: string) {
     setLinkFrom(null);
+    setCursor(null);
     if (from === to) return;
     const a = graph.nodes.find((n) => n.id === from);
     const b = graph.nodes.find((n) => n.id === to);
@@ -198,25 +340,30 @@ export function SwitchEditor(props: {
     commit({ ...graph, edges: [...graph.edges, { id: newId("e"), from, to }] });
   }
 
-  function onPort(id: string, side: "in" | "out") {
+  function onPort(e: PE<HTMLButtonElement>, id: string, side: "in" | "out", port: number) {
+    e.stopPropagation();
+    e.preventDefault();
     if (side === "out") {
-      setLinkFrom(id);
+      setLinkFrom({ id, port });
+      setCursor(toWorld(e));
       return;
     }
-    if (linkFrom) tryLink(linkFrom, id);
+    if (linkFrom) tryLink(linkFrom.id, id);
   }
 
   function onNodeDown(e: PE<HTMLDivElement>, id: string) {
-    if ((e.target as HTMLElement).closest("button, input, select, .sw-port, .sw-chip, .sw-menu")) return;
+    if ((e.target as HTMLElement).closest("button, input, select, .sw-port, .sw-chip, .sw-menu, .sw-plist")) return;
     e.stopPropagation();
     setSel(id);
+    setMenu(null);
     const n = graph.nodes.find((x) => x.id === id);
     if (!n) return;
     drag.current = { id, dx: e.clientX - n.x, dy: e.clientY - n.y };
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   }
 
   function onMove(e: PE<HTMLDivElement>) {
+    if (linkFrom) setCursor(toWorld(e));
     if (panning.current) {
       setPan({
         x: panning.current.px + (e.clientX - panning.current.x),
@@ -237,7 +384,17 @@ export function SwitchEditor(props: {
     );
   }
 
-  function onUp() {
+  function onUp(e: PE<HTMLDivElement>) {
+    if (linkFrom) {
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const port = el?.closest(".sw-port.in") as HTMLElement | null;
+      const to = port?.dataset.node;
+      if (to) tryLink(linkFrom.id, to);
+      else {
+        setLinkFrom(null);
+        setCursor(null);
+      }
+    }
     if (drag.current) onChange(withGraph(cfg, graphRef.current));
     drag.current = null;
     panning.current = null;
@@ -249,9 +406,16 @@ export function SwitchEditor(props: {
     try {
       const list = await listWindows();
       setWindows(list);
-      rememberLooks(list);
-    } catch (e) {
-      setWinErr(String(e));
+      setLooks((prev) => {
+        const next = { ...prev };
+        for (const w of list) {
+          const key = exeKey(w.exe || w.path);
+          if (key) next[key] = lookFromWindow(w);
+        }
+        return next;
+      });
+    } catch (err) {
+      setWinErr(String(err));
     } finally {
       setWinLoad(false);
     }
@@ -259,6 +423,7 @@ export function SwitchEditor(props: {
 
   async function openPicker(id: string) {
     setPickNode(id);
+    setMenu(null);
     await refreshWindows();
   }
 
@@ -289,83 +454,75 @@ export function SwitchEditor(props: {
     );
   }
 
-  function nodeTitle(kind: SwitchNode["kind"]): string {
-    if (kind === "foreground") return "Foreground is";
-    if (kind === "running") return "Running is";
-    if (kind === "and") return "AND";
-    if (kind === "or") return "OR";
-    if (kind === "restore") return "Restore";
+  function nodeTitle(n: SwitchNode): string {
+    if (n.kind === "foreground") return "Foreground is";
+    if (n.kind === "running") return "Running is";
+    if (n.kind === "and") return "AND";
+    if (n.kind === "or") return "OR";
+    if (n.kind === "restore") return "Restore previous profile";
+    if (n.kind === "setProfile" && n.lightsOnly) return "Set lights";
     return "Set profile";
   }
 
+  const linkSrc = linkFrom ? graph.nodes.find((n) => n.id === linkFrom.id) : undefined;
+  const rubber =
+    linkSrc && cursor
+      ? wirePath(
+          portPos(linkSrc, graph, "out", linkFrom!.port).x,
+          portPos(linkSrc, graph, "out", linkFrom!.port).y,
+          cursor.x,
+          cursor.y,
+        )
+      : null;
+
   return (
     <div className="sw-pane">
-      <div className="sw-head">
-        <h2 id="sw-title">Auto-switch</h2>
-        <label className="sw-toggle">
-          <input
-            type="checkbox"
-            checked={cfg.enabled}
-            disabled={busy}
-            onChange={(e) => onChange({ ...withGraph(cfg, graph), enabled: e.target.checked })}
-          />
-          <span>Enable</span>
-          <em>{cfg.enabled ? "On" : "Off"}</em>
-        </label>
-        {focusLabel ? (
-          <p className="sw-now">
-            <span className="sw-dot" aria-hidden="true" />
-            {focusLabel}
-          </p>
-        ) : (
-          <p className="sw-now mute">Wire conditions to a profile. Lower priority number wins.</p>
-        )}
-      </div>
       <div className="sw-tools">
         <div className={`sw-add ${addOpen ? "open" : ""}`}>
-          <button type="button" className="sw-add-btn" onClick={() => setAddOpen((v) => !v)}>
+          <button type="button" className="sw-tool" onClick={() => setAddOpen((v) => !v)}>
             + Add node
           </button>
           {addOpen ? (
             <div className="sw-add-menu">
               {ADD_KINDS.map((k) => (
-                <button key={k.kind} type="button" onClick={() => addNode(k.kind)}>
+                <button key={k.label} type="button" onClick={() => addNode(k.kind, k.lightsOnly)}>
                   {k.label}
                 </button>
               ))}
             </div>
           ) : null}
         </div>
-        <button type="button" onClick={() => addNode("foreground")}>
+        <button type="button" className="sw-tool" onClick={() => addNode("foreground")}>
           Foreground is
         </button>
-        <button type="button" onClick={() => addNode("running")}>
+        <button type="button" className="sw-tool" onClick={() => addNode("running")}>
           Running is
         </button>
-        <button type="button" onClick={() => addNode("and")}>
+        <button type="button" className="sw-tool" onClick={() => addNode("and")}>
           AND
         </button>
-        <button type="button" onClick={() => addNode("or")}>
+        <button type="button" className="sw-tool" onClick={() => addNode("or")}>
           OR
         </button>
-        <button type="button" onClick={() => addNode("setProfile")}>
+        <button type="button" className="sw-tool" onClick={() => addNode("setProfile")}>
           Set profile
         </button>
-        <button type="button" onClick={() => addNode("setProfile")}>
+        <button type="button" className="sw-tool" onClick={() => addNode("setProfile", true)}>
           Set lights
         </button>
-        <button type="button" onClick={() => addNode("restore")}>
-          Restore
-        </button>
-        {linkFrom ? <span className="hint">Click an input port to connect</span> : null}
+        {linkFrom ? <span className="hint">Drop on a yellow input</span> : null}
       </div>
       <div
+        ref={canvasRef}
         className="sw-canvas"
         onPointerDown={(e) => {
-          if (e.target !== e.currentTarget && !(e.target as HTMLElement).classList.contains("sw-wires")) return;
+          const t = e.target as HTMLElement;
+          if (t !== e.currentTarget && !t.classList.contains("sw-wires")) return;
           setSel(null);
           setLinkFrom(null);
+          setCursor(null);
           setAddOpen(false);
+          setMenu(null);
           panning.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
           e.currentTarget.setPointerCapture(e.pointerId);
         }}
@@ -374,17 +531,14 @@ export function SwitchEditor(props: {
         onPointerCancel={onUp}
       >
         <div className="sw-world" style={{ transform: `translate(${pan.x}px, ${pan.y}px)` }}>
-          <svg className="sw-wires" width="2200" height="1600">
+          <svg className="sw-wires" width="3200" height="2200">
             {graph.edges.map((e) => {
-              const a = graph.nodes.find((n) => n.id === e.from);
-              const b = graph.nodes.find((n) => n.id === e.to);
-              if (!a || !b) return null;
-              const p1 = portPos(a, "out");
-              const p2 = portPos(b, "in");
+              const ports = edgePorts(graph, e);
+              if (!ports) return null;
               return (
                 <path
                   key={e.id}
-                  d={wirePath(p1.x, p1.y, p2.x, p2.y)}
+                  d={wirePath(ports.a.x, ports.a.y, ports.b.x, ports.b.y)}
                   className="sw-wire"
                   onClick={(ev) => {
                     ev.stopPropagation();
@@ -393,139 +547,191 @@ export function SwitchEditor(props: {
                 />
               );
             })}
+            {rubber ? <path d={rubber} className="sw-wire ghost" /> : null}
           </svg>
-          {graph.nodes.map((n) => (
-            <div
-              key={n.id}
-              className={`sw-node sw-${n.kind}${sel === n.id ? " on" : ""}`}
-              style={{ left: n.x, top: n.y, width: NODE_SIZE[n.kind].w }}
-              onPointerDown={(e) => onNodeDown(e, n.id)}
-            >
-              {n.kind === "setProfile" || n.kind === "restore" ? (
-                <input
-                  className="sw-pri"
-                  type="number"
-                  min={0}
-                  max={255}
-                  title="Priority — lower runs first"
-                  value={n.priority}
-                  onChange={(e) =>
-                    patchNode(n.id, (cur) =>
-                      cur.kind === "setProfile" || cur.kind === "restore"
-                        ? { ...cur, priority: Math.max(0, Math.min(255, Number(e.target.value) || 0)) }
-                        : cur,
-                    )
-                  }
-                />
-              ) : null}
-              {hasIn(n) ? (
-                <button type="button" className="sw-port in" title="Input" onClick={() => onPort(n.id, "in")} />
-              ) : null}
-              {hasOut(n) ? (
-                <button type="button" className="sw-port out" title="Output" onClick={() => onPort(n.id, "out")} />
-              ) : null}
-              <header>
-                <span>{nodeTitle(n.kind)}</span>
-                <div className="sw-menu">
-                  <button type="button" className="sw-x" onClick={() => removeNode(n.id)} aria-label="Delete node">
-                    ⋮
-                  </button>
-                </div>
-              </header>
-              {n.kind === "foreground" || n.kind === "running" ? (
-                <>
-                  <div className="sw-chips">
-                    {n.programs.length === 0 ? <span className="hint">No programs</span> : null}
-                    {n.programs.map((p) => {
-                      const look = looks[exeKey(p)];
-                      return (
-                        <button
-                          key={p}
-                          type="button"
-                          className="sw-chip"
-                          onClick={() =>
-                            patchNode(n.id, (cur) =>
-                              cur.kind === "foreground" || cur.kind === "running"
-                                ? { ...cur, programs: cur.programs.filter((x) => x !== p) }
-                                : cur,
-                            )
-                          }
-                          title="Remove"
-                        >
-                          <span className="sw-chip-thumb">
-                            {look?.img ? (
-                              <img src={look.img} alt="" />
-                            ) : (
-                              <span>{stemName(p).slice(0, 2)}</span>
-                            )}
-                          </span>
-                          <span className="sw-chip-meta">
-                            <strong>{look?.title || stemName(p)}</strong>
-                            <em>{p}</em>
-                          </span>
-                          <span className="sw-chip-x">×</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="sw-row">
-                    <button type="button" disabled={busy} onClick={() => void openPicker(n.id)}>
-                      Select window
-                    </button>
-                  </div>
-                </>
-              ) : null}
-              {n.kind === "and" || n.kind === "or" ? <p className="sw-op">{n.kind.toUpperCase()}</p> : null}
-              {n.kind === "restore" ? (
-                <>
-                  <label>
-                    Restore
-                    <select value="previous" disabled>
-                      <option value="previous">Previous profile</option>
-                    </select>
-                  </label>
-                  <label className="sw-check" title="The restored profile keeps its own lights">
-                    <input type="checkbox" checked readOnly />
-                    Also restore lights
-                  </label>
-                </>
-              ) : null}
-              {n.kind === "setProfile" ? (
-                <>
-                  <label>
-                    Profile
-                    <select
-                      value={n.profile}
-                      onChange={(e) => {
-                        const profile = Number(e.target.value);
-                        const hdr = profiles.find((p) => p.index === profile);
-                        patchNode(n.id, (cur) =>
-                          cur.kind === "setProfile"
-                            ? {
-                                ...cur,
-                                profile,
-                                lightMode: hdr?.lightMode,
-                                bright: hdr?.bright,
-                                dim: hdr?.dim,
-                                leds: keys[profile]?.map((k) => k.led),
-                              }
-                            : cur,
-                        );
+          {graph.nodes.map((n) => {
+            const ins = portCount(n, graph, "in");
+            const outs = portCount(n, graph, "out");
+            const badge = badges.get(n.id);
+            return (
+              <div
+                key={n.id}
+                className={`sw-node sw-${n.kind}${isLights(n) ? " sw-lights-node" : ""}${sel === n.id ? " on" : ""}`}
+                style={{ left: n.x, top: n.y, width: nodeSize(n).w, height: isOp(n) ? nodeSize(n).h : undefined }}
+                onPointerDown={(e) => onNodeDown(e, n.id)}
+              >
+                {badge != null ? <span className="sw-badge">{badge}</span> : null}
+                {Array.from({ length: ins }, (_, i) => (
+                  <button
+                    key={`in${i}`}
+                    type="button"
+                    className="sw-port in"
+                    data-node={n.id}
+                    style={{ top: portPos(n, graph, "in", i).y - n.y }}
+                    title="Input"
+                    onPointerDown={(e) => onPort(e, n.id, "in", i)}
+                  />
+                ))}
+                {Array.from({ length: outs }, (_, i) => (
+                  <button
+                    key={`out${i}`}
+                    type="button"
+                    className="sw-port out"
+                    data-node={n.id}
+                    style={{ top: portPos(n, graph, "out", i).y - n.y }}
+                    title="Output — drag to connect"
+                    onPointerDown={(e) => onPort(e, n.id, "out", i)}
+                  />
+                ))}
+                <header>
+                  {isOp(n) ? <span className="sw-op">{nodeTitle(n)}</span> : <span>{nodeTitle(n)}</span>}
+                  <div className={`sw-menu ${menu === n.id ? "open" : ""}`}>
+                    <button
+                      type="button"
+                      className="sw-dots"
+                      aria-label="Node menu"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMenu((cur) => (cur === n.id ? null : n.id));
                       }}
                     >
-                      {profiles.map((p) => (
-                        <option key={p.index} value={p.index}>
-                          {p.name || `P${p.index + 1}`}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                      ⋮
+                    </button>
+                    {menu === n.id ? (
+                      <div className="sw-menu-list">
+                        <button type="button" onClick={() => removeNode(n.id)}>
+                          Delete
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </header>
+                {n.kind === "foreground" || n.kind === "running" ? (
+                  <>
+                    <div className="sw-chips" onClick={() => n.programs.length === 0 && void openPicker(n.id)}>
+                      {n.programs.length === 0 ? <span className="hint">Select a window</span> : null}
+                      {n.programs.map((p) => {
+                        const look = looks[exeKey(p)];
+                        return (
+                          <div key={p} className="sw-chip">
+                            <span className="sw-chip-thumb">
+                              {look?.img ? <img src={look.img} alt="" /> : <span>{stemName(p).slice(0, 2)}</span>}
+                            </span>
+                            <span className="sw-chip-meta">
+                              <strong>{look?.title || stemName(p)}</strong>
+                              <em>{p}</em>
+                            </span>
+                            <button
+                              type="button"
+                              className="sw-chip-x"
+                              onClick={() =>
+                                patchNode(n.id, (cur) =>
+                                  cur.kind === "foreground" || cur.kind === "running"
+                                    ? { ...cur, programs: cur.programs.filter((x) => x !== p) }
+                                    : cur,
+                                )
+                              }
+                              aria-label={`Remove ${p}`}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <button type="button" className="sw-add-win" disabled={busy} onClick={() => void openPicker(n.id)}>
+                      + Window
+                    </button>
+                  </>
+                ) : null}
+                {n.kind === "restore" ? (
+                  <>
+                    <label>
+                      Restore
+                      <select value="previous" disabled>
+                        <option value="previous">Previous profile</option>
+                      </select>
+                    </label>
+                    <label className="sw-check">
+                      <input
+                        type="checkbox"
+                        checked={n.restoreLights !== false}
+                        onChange={(e) =>
+                          patchNode(n.id, (cur) =>
+                            cur.kind === "restore" ? { ...cur, restoreLights: e.target.checked } : cur,
+                          )
+                        }
+                      />
+                      Also restore lights
+                    </label>
+                  </>
+                ) : null}
+                {n.kind === "setProfile" && !n.lightsOnly ? (
+                  <>
+                    <label>
+                      Profile
+                      <select
+                        value={n.profile}
+                        onChange={(e) => {
+                          const profile = Number(e.target.value);
+                          const p = profiles.find((x) => x.index === profile);
+                          patchNode(n.id, (cur) =>
+                            cur.kind === "setProfile"
+                              ? {
+                                  ...cur,
+                                  profile,
+                                  lightMode: p?.lightMode,
+                                  bright: p?.bright,
+                                  dim: p?.dim,
+                                  leds: keys[profile]?.map((k) => k.led),
+                                }
+                              : cur,
+                          );
+                        }}
+                      >
+                        {(profiles.length ? profiles : [{ index: 0, name: "P1", lightMode: 0, bright: 6, dim: 2 }]).map(
+                          (p) => (
+                            <option key={p.index} value={p.index}>
+                              {p.name || `P${p.index + 1}`}
+                            </option>
+                          ),
+                        )}
+                      </select>
+                    </label>
+                    <div className="sw-plist">
+                      {profiles
+                        .filter((p) => p.index !== n.profile)
+                        .map((p) => (
+                          <button
+                            key={p.index}
+                            type="button"
+                            onClick={() =>
+                              patchNode(n.id, (cur) =>
+                                cur.kind === "setProfile"
+                                  ? {
+                                      ...cur,
+                                      profile: p.index,
+                                      lightMode: p.lightMode,
+                                      bright: p.bright,
+                                      dim: p.dim,
+                                      leds: keys[p.index]?.map((k) => k.led),
+                                    }
+                                  : cur,
+                              )
+                            }
+                          >
+                            {p.name || `P${p.index + 1}`}
+                          </button>
+                        ))}
+                    </div>
+                  </>
+                ) : null}
+                {n.kind === "setProfile" && n.lightsOnly ? (
                   <div className="sw-lights">
-                    <span className="sw-lights-lab">Set lights</span>
                     <label>
                       Mode
                       <select
-                        value={n.lightMode ?? profiles.find((p) => p.index === n.profile)?.lightMode ?? 0}
+                        value={n.lightMode ?? profiles.find((p) => p.index === n.profile)?.lightMode ?? 1}
                         onChange={(e) => {
                           const lightMode = Number(e.target.value);
                           const next = { ...n, lightMode };
@@ -543,7 +749,7 @@ export function SwitchEditor(props: {
                     <label>
                       Brightness
                       <select
-                        value={n.bright ?? profiles.find((p) => p.index === n.profile)?.bright ?? 0}
+                        value={n.bright ?? profiles.find((p) => p.index === n.profile)?.bright ?? 8}
                         onChange={(e) => {
                           const bright = Number(e.target.value);
                           const next = { ...n, bright };
@@ -553,7 +759,8 @@ export function SwitchEditor(props: {
                       >
                         {Array.from({ length: 11 }, (_, i) => (
                           <option key={i} value={i}>
-                            {i === 0 ? "Off" : i >= 8 ? `Bright ${i}` : i >= 4 ? `Medium ${i}` : `Dim ${i}`}
+                            {brightLabel(i)}
+                            {i > 0 ? ` (${i})` : ""}
                           </option>
                         ))}
                       </select>
@@ -567,7 +774,7 @@ export function SwitchEditor(props: {
                             type="button"
                             className="sw-led"
                             style={{ background: LED_HEX[led] ?? LED_HEX[0] }}
-                            title={`${LEDS[led] ?? "Off"} — click to cycle`}
+                            title={LEDS[led] ?? "Off"}
                             onClick={() => {
                               const leds = Array.from(
                                 { length: 9 },
@@ -583,30 +790,31 @@ export function SwitchEditor(props: {
                       })}
                     </div>
                   </div>
-                </>
-              ) : null}
-            </div>
-          ))}
+                ) : null}
+              </div>
+            );
+          })}
         </div>
-      </div>
-      <RunningPicker
-        open={pickNode != null}
-        windows={windows}
-        loading={winLoad}
-        error={winErr || undefined}
-        onClose={() => setPickNode(null)}
-        onPick={(w) => {
-          if (pickNode) addExe(pickNode, w.exe || w.path, lookFromWindow(w));
-          setPickNode(null);
-        }}
-        onRefresh={() => void refreshWindows()}
-        onBrowse={() =>
-          void pickProgram().then((path) => {
-            if (path && pickNode) addExe(pickNode, path);
+        <RunningPicker
+          dock
+          open={pickNode != null}
+          windows={windows}
+          loading={winLoad}
+          error={winErr || undefined}
+          onClose={() => setPickNode(null)}
+          onPick={(w) => {
+            if (pickNode) addExe(pickNode, w.exe || w.path, lookFromWindow(w));
             setPickNode(null);
-          })
-        }
-      />
+          }}
+          onRefresh={() => void refreshWindows()}
+          onBrowse={() =>
+            void pickProgram().then((path) => {
+              if (path && pickNode) addExe(pickNode, path);
+              setPickNode(null);
+            })
+          }
+        />
+      </div>
     </div>
   );
 }

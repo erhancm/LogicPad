@@ -145,6 +145,14 @@ function TabGlyph({ tab }: { tab: AppTab }) {
 
 type ActPick = { kind: "launch"; id: string } | number | null;
 
+function tauriListen<T>(event: string, cb: (e: { payload: T }) => void) {
+  try {
+    return listen<T>(event, cb).catch(() => () => undefined);
+  } catch {
+    return Promise.resolve(() => undefined);
+  }
+}
+
 function HidPad({
   keys,
   selected,
@@ -284,7 +292,8 @@ export default function App() {
       await fn();
       setStatus(label);
     } catch (e) {
-      setErr(String(e));
+      const msg = String(e);
+      if (!/reading 'invoke'|__TAURI_INTERNALS__/i.test(msg)) setErr(msg);
     } finally {
       setBusy(false);
     }
@@ -374,14 +383,14 @@ export default function App() {
   useEffect(() => {
     let gone = false;
     let unlisten: (() => void) | undefined;
-    void listen<{ profile: number; key: number; down: boolean }>("pad-key", (e) => {
+    void tauriListen<{ profile: number; key: number; down: boolean }>("pad-key", (e) => {
       if (!e.payload.down) return;
       setSel(e.payload.key);
     }).then((fn) => {
       if (gone) fn();
       else unlisten = fn;
     });
-    void listen<string>("launch-error", (e) => setErr(String(e.payload))).then((fn) => {
+    void tauriListen<string>("launch-error", (e) => setErr(String(e.payload))).then((fn) => {
       if (gone) fn();
       else {
         const prev = unlisten;
@@ -391,7 +400,7 @@ export default function App() {
         };
       }
     });
-    void listen<{ profile: number }>("active-profile", (e) => {
+    void tauriListen<{ profile: number }>("active-profile", (e) => {
       const p = e.payload.profile;
       setSnap((s) => {
         if (!s || s.meta.active === p) return s;
@@ -410,7 +419,7 @@ export default function App() {
         };
       }
     });
-    void listen<SwitchFocus>("switch-focus", (e) => setFocusNow(e.payload)).then((fn) => {
+    void tauriListen<SwitchFocus>("switch-focus", (e) => setFocusNow(e.payload)).then((fn) => {
       if (gone) fn();
       else {
         const prev = unlisten;
@@ -420,7 +429,7 @@ export default function App() {
         };
       }
     });
-    void listen<{ phase: string; done: number; total: number }>("flash-progress", (e) => {
+    void tauriListen<{ phase: string; done: number; total: number }>("flash-progress", (e) => {
       const { phase, done, total } = e.payload;
       setFlash(e.payload);
       const pct = total ? Math.round((done / total) * 100) : 0;
@@ -458,30 +467,34 @@ export default function App() {
   useEffect(() => {
     let gone = false;
     let unlisten: (() => void) | undefined;
-    void getCurrentWebview()
-      .onDragDropEvent((ev) => {
-        const p = ev.payload;
-        if (p.type === "leave") {
-          setDropHover(null);
-          return;
-        }
-        if (p.type === "over" || p.type === "enter") {
-          setDropHover(keyAtPoint(p.position));
-          return;
-        }
-        if (p.type === "drop") {
-          setDropHover(null);
-          const idx = keyAtPoint(p.position);
-          const path = p.paths[0];
-          if (idx == null || !path) return;
-          void linkProgram(idx, path);
-        }
-      })
-      .then((fn) => {
-        if (gone) fn();
-        else unlisten = fn;
-      })
-      .catch(() => undefined);
+    try {
+      void getCurrentWebview()
+        .onDragDropEvent((ev) => {
+          const p = ev.payload;
+          if (p.type === "leave") {
+            setDropHover(null);
+            return;
+          }
+          if (p.type === "over" || p.type === "enter") {
+            setDropHover(keyAtPoint(p.position));
+            return;
+          }
+          if (p.type === "drop") {
+            setDropHover(null);
+            const idx = keyAtPoint(p.position);
+            const path = p.paths[0];
+            if (idx == null || !path) return;
+            void linkProgram(idx, path);
+          }
+        })
+        .then((fn) => {
+          if (gone) fn();
+          else unlisten = fn;
+        })
+        .catch(() => undefined);
+    } catch {
+      /* browser preview / no Tauri webview */
+    }
     return () => {
       gone = true;
       unlisten?.();
@@ -696,10 +709,12 @@ export default function App() {
   }
 
   async function persistSwitch(next: SwitchConfig) {
+    setSwitchCfg(next);
     try {
       setSwitchCfg(await api.setSwitchRules(next));
     } catch (e) {
-      setErr(String(e));
+      const msg = String(e);
+      if (!/reading 'invoke'|__TAURI_INTERNALS__/i.test(msg)) setErr(msg);
     }
   }
 
@@ -983,8 +998,33 @@ export default function App() {
       </nav>
       <div className="stage">
         <header className="topbar">
-          <p className="topbar-status">{hdr ? hdr.name || `P${profile + 1}` : "LogicPad"}</p>
+          {tab === "switch" ? (
+            <div className="sw-top">
+              <h2>Auto-switch</h2>
+              <label className="sw-toggle">
+                <span>Enable</span>
+                <input
+                  type="checkbox"
+                  checked={switchCfg.enabled}
+                  disabled={busy}
+                  onChange={(e) => void persistSwitch({ ...switchCfg, enabled: e.target.checked })}
+                />
+                <em>{switchCfg.enabled ? "On" : "Off"}</em>
+              </label>
+              {focusLabel ? (
+                <p className="sw-now">
+                  <span className="sw-dot" aria-hidden="true" />
+                  {focusLabel.replace(" → ", " -> ")}
+                </p>
+              ) : (
+                <p className="sw-now mute">Now: no matching window</p>
+              )}
+            </div>
+          ) : (
+            <p className="topbar-status">{hdr ? hdr.name || `P${profile + 1}` : "LogicPad"}</p>
+          )}
           <div className="bar">
+            {tab !== "switch" ? (
             <button
               disabled={busy || linked}
               title={linked ? "Already connected" : "Connect to LogicPad"}
@@ -992,6 +1032,7 @@ export default function App() {
             >
               {linked ? "Connected" : "Connect"}
             </button>
+            ) : null}
             <button
               disabled={busy || !snap}
               onClick={() =>
@@ -1074,7 +1115,6 @@ export default function App() {
               cfg={switchCfg}
               profiles={snap?.profiles ?? []}
               keys={snap?.keys ?? []}
-              focusLabel={focusLabel}
               busy={busy}
               onChange={(next) => void persistSwitch(next)}
               onLights={(nextHdr, leds) => {
