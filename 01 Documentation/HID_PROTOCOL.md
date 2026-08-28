@@ -17,11 +17,11 @@ EP IN/OUT max packet = 64. Poll interval 1 ms.
 
 Byte 0 = report ID `4`. Byte 1 = command. Bytes 2–63 = payload.
 
-PING payload is protocol `0x01, 0x05` (minor `5` = packed flash store, add profiles until the slot is full). Minor `4` is `SET_HOST` idle home; `3` is 12-character key titles; `2` is add/delete profiles; `1` is type-text pool only; `0` is older firmware without the pool.
+PING payload is protocol `0x01, 0x06` (minor `6` = `SET_SCREEN` for OLED contrast / flip / sleep). Minor `5` is packed flash store, add profiles until the slot is full; `4` is `SET_HOST` idle home; `3` is 12-character key titles; `2` is add/delete profiles; `1` is type-text pool only; `0` is older firmware without the pool.
 
 | Cmd | Name | Host → pad | Pad → host |
 |-----|------|------------|------------|
-| 0x01 | PING | — | version `0x01, 0x05` |
+| 0x01 | PING | — | version `0x01, 0x06` |
 | 0x02 | GET_META | — | active, dirty, contrast, flip, sleep, in_menu (OLED config screens only; 0 on home/toast/sleep), usb, n_profiles, used u16le, cap u16le |
 | 0x03 | GET_KEY | profile, key | profile, key, first `LP_KEY_HID_BYTES` (57) of `lp_key_t` |
 | 0x04 | SET_KEY | profile, key, 60-byte HID blob | echo profile, key, status |
@@ -42,6 +42,9 @@ PING payload is protocol `0x01, 0x05` (minor `5` = packed flash store, add profi
 | 0x13 | GET_TITLE | profile, key | profile, key, title (12+NUL) |
 | 0x14 | SET_TITLE | profile, key, title (12, NUL-padded) | echo profile, key |
 | 0x15 | SET_HOST | `1` = PC session in use, `0` = away (locked / logged off) | echo |
+| 0x16 | SET_SCREEN | contrast (0–10), flip (0–1), sleep (0–4) | echo + status `0` ok / `1` bad values |
+
+`SET_SCREEN` writes the pad-wide OLED contrast, 180° flip, and idle sleep (Never / 15s / 30s / 1m / 5m, same as the on-device Screen menu). It applies hardware immediately and marks flash dirty; persist with **Save**. Older firmware without minor `6` ignores the command.
 
 `SET_ACTIVE` changes the live profile and redraws lights/OLED. It does not set `dirty`, so the host auto-switch in the Tauri app will not pop the OLED save prompt. Persist the slot with **Save**, or change it on the device (OLED still marks dirty). Old firmware that dirties on `SET_ACTIVE` should be updated.
 

@@ -1,5 +1,5 @@
 //! In-memory LogicPad used when no USB pad is selected.
-//! Speaks the same editor API as firmware protocol 1.5 (packed store).
+//! Speaks the same editor API as firmware protocol 1.6 (SET_SCREEN).
 
 use crate::hid::{
     Action, Meta, PadError, PadKey, ProfileHdr, Snapshot, TextPool, LABEL_HID, TEXT_MAX, TEXT_POOL,
@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 pub const SIM_ID: &str = "sim";
 pub const SIM_LABEL: &str = "Simulated LogicPad";
 const PROTO_MAJ: u8 = 0x01;
-const PROTO_MIN: u8 = 0x05;
+const PROTO_MIN: u8 = 0x06;
 const STORE_CAP: u16 = 4076;
 const HDR: u16 = 16;
 const EMPTY_ADD: u16 = 16;
@@ -157,6 +157,7 @@ impl SimPad {
             can_titles: true,
             can_add_profiles: n8 < MAX_PROFILES
                 && STORE_CAP.saturating_sub(meta.store_used) >= EMPTY_ADD,
+            can_set_screen: true,
         }
     }
 
@@ -207,6 +208,17 @@ impl SimPad {
             return Err(PadError::Msg("No such profile.".into()));
         }
         self.live.active = profile;
+        Ok(())
+    }
+
+    pub fn set_screen(&mut self, contrast: u8, flip: u8, sleep: u8) -> Result<(), PadError> {
+        if contrast > 10 || flip > 1 || sleep > 4 {
+            return Err(PadError::Msg("Screen values out of range.".into()));
+        }
+        self.live.contrast = contrast;
+        self.live.flip = flip;
+        self.live.sleep = sleep;
+        self.live.dirty = true;
         Ok(())
     }
 
@@ -424,5 +436,18 @@ mod tests {
         assert!(snap.keys.iter().all(|row| row.iter().all(|k| k.acts.is_empty())));
         assert!(snap.can_add_profiles);
         assert!(snap.can_titles);
+        assert!(snap.can_set_screen);
+    }
+
+    #[test]
+    fn set_screen_updates_meta() {
+        let mut s = SimPad::new();
+        s.set_screen(10, 1, 0).unwrap();
+        let m = s.meta();
+        assert_eq!(m.contrast, 10);
+        assert_eq!(m.flip, 1);
+        assert_eq!(m.sleep, 0);
+        assert!(m.dirty);
+        assert!(s.set_screen(11, 0, 0).is_err());
     }
 }

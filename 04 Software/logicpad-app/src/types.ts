@@ -81,6 +81,7 @@ export type Snapshot = {
   canMutateProfiles?: boolean;
   canTitles?: boolean;
   canAddProfiles?: boolean;
+  canSetScreen?: boolean;
 };
 
 export type LaunchEntry = {

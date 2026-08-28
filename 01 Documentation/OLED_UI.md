@@ -40,7 +40,7 @@ Key picker: the nine keys select themselves.
 
 In-app firmware update draws **FLASH** (blue) and **BOOT MODE** (yellow) then resets. The 4 KB HID bootloader has its own screens: **BOOT** / **USB FLASH**, a progress bar, then **OK** or **FAIL**. Those bootloader screens ship in `LogicPad_factory.hex` (ST-Link), not in the app `.bin`.
 
-Main menu is Profiles / Keys / Setup. Setup is Lights / Screen / About. One setting per value screen.
+Main menu is Profiles / Keys / Setup. Setup is Lights / Screen / About. One setting per value screen. The PC app **Profiles** tab can set the same Screen values (`SET_SCREEN`).
 
 Profiles: current list, then **+ New** if the flash slot has room. Actions are Use / Rename / Reset, plus Delete when more than one profile remains (confirm like Reset). Empty keys take no flash.
 

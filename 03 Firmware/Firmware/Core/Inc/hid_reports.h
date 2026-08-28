@@ -31,6 +31,7 @@
 #define CMD_GET_TITLE 0x13
 #define CMD_SET_TITLE 0x14
 #define CMD_SET_HOST 0x15
+#define CMD_SET_SCREEN 0x16
 
 void hid_init(void);
 void hid_tick(void);

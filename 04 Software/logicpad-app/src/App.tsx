@@ -11,7 +11,6 @@ import {
   HID_NAV,
   HID_SPECIALS,
   LEDS,
-  LIGHT_MODES,
   MEDIA,
   SEND,
   type Action,
@@ -26,6 +25,7 @@ import {
 } from "./types";
 import { PrintOverlay } from "./PrintSheet";
 import { ClearAllButton, clearedKeys } from "./ClearAllButton";
+import { ProfilesPane } from "./ProfilesPane";
 import {
   KeyContextMenu,
   preventGridMenu,
@@ -50,11 +50,14 @@ import {
   addLaunchDraft,
   keyHasLaunch,
   makeLaunch,
+  newLaunchId,
   nudgeLaunchSlot,
   onActRemoved,
   remapKeyLaunches,
   removeKeyLaunches,
+  removeProfileLaunches,
   tombstonesForKey,
+  tombstonesForProfile,
   upsertLaunch,
   withLaunchId,
 } from "./launches";
@@ -72,24 +75,22 @@ import {
   setSegment,
   stemName,
   typedDisplayAt,
+  uniqueProfileName,
   uniqueTitle,
   utf8Len,
   withTextStep,
 } from "./text";
 
-const LED_HEX = ["#2a2e38", "#e8e4d8", "#c04040", "#40a060", "#3a7ec0"];
-
 function emptyKey(profile: number, index: number): PadKey {
   return { profile, index, label: "", led: 0, acts: [], text: "" };
 }
 
-type AppTab = "keys" | "profiles" | "switch" | "lights";
+type AppTab = "keys" | "profiles" | "switch";
 
 const TABS: { id: AppTab; label: string }[] = [
   { id: "keys", label: "Keys" },
   { id: "profiles", label: "Profiles" },
   { id: "switch", label: "Auto-switch" },
-  { id: "lights", label: "Lights" },
 ];
 
 function TabGlyph({ tab }: { tab: AppTab }) {
@@ -125,21 +126,13 @@ function TabGlyph({ tab }: { tab: AppTab }) {
       </svg>
     );
   }
-  if (tab === "switch") {
-    return (
-      <svg {...common} aria-hidden="true">
-        <circle cx="4" cy="4" r="2" />
-        <circle cx="12" cy="8" r="2" />
-        <circle cx="4" cy="12" r="2" />
-        <path d="M6 4.5 L10 7.2" />
-        <path d="M6 11.5 L10 8.8" />
-      </svg>
-    );
-  }
   return (
     <svg {...common} aria-hidden="true">
-      <circle cx="8" cy="8" r="3" />
-      <path d="M8 1.5 v2 M8 12.5 v2 M1.5 8 h2 M12.5 8 h2 M3.2 3.2 l1.4 1.4 M11.4 11.4 l1.4 1.4 M3.2 12.8 l1.4 -1.4 M11.4 4.6 l1.4 -1.4" />
+      <circle cx="4" cy="4" r="2" />
+      <circle cx="12" cy="8" r="2" />
+      <circle cx="4" cy="12" r="2" />
+      <path d="M6 4.5 L10 7.2" />
+      <path d="M6 11.5 L10 8.8" />
     </svg>
   );
 }
@@ -952,6 +945,143 @@ export default function App() {
       setSwitchCfg(await api.getSwitchRules());
       setSel(0);
     });
+  }
+
+  async function onDuplicateProfile() {
+    const cur = snapRef.current;
+    if (!cur) return;
+    const src = cur.meta.active;
+    const srcHdr = cur.profiles[src];
+    const srcKeys = cur.keys[src] ?? [];
+    const srcLaunches = launchesRef.current.filter(
+      (l) => l.profile === src && l.path.trim() !== "",
+    );
+    if (!srcHdr) return;
+    await run("Profile copied", async () => {
+      const next = await api.addProfile();
+      const dest = next.meta.active;
+      const others = next.profiles.filter((p) => p.index !== dest).map((p) => p.name);
+      const name = srcHdr.name.trim()
+        ? uniqueProfileName(others, srcHdr.name)
+        : next.profiles[dest]?.name ?? "";
+      await api.applyProfile({
+        ...srcHdr,
+        index: dest,
+        name,
+      });
+      for (const k of srcKeys) {
+        await api.applyKey({ ...structuredClone(k), profile: dest });
+      }
+      for (const l of srcLaunches) {
+        await api.setLaunch({
+          ...l,
+          id: newLaunchId(),
+          profile: dest,
+        });
+      }
+      takePad(await api.loadPad());
+      setLaunches(await api.getLaunches());
+      setSel(0);
+    });
+  }
+
+  async function onResetProfile() {
+    if (!snapRef.current) return;
+    const name = hdr?.name || `P${profile + 1}`;
+    if (
+      !confirm(
+        `Reset profile “${name}”? Keys, typed text, and key LEDs are cleared. The name and light mode stay.`,
+      )
+    ) {
+      return;
+    }
+    await run("Profile reset", async () => {
+      for (const key of clearedKeys(profile)) {
+        await api.applyKey(key);
+      }
+      const tombs = tombstonesForProfile(launchesRef.current, profile);
+      for (const t of tombs) await api.setLaunch(t);
+      launchesRef.current = removeProfileLaunches(launchesRef.current, profile);
+      setLaunches(await api.getLaunches());
+      takePad(await api.loadPad());
+      setActPick(null);
+      setSel(0);
+    });
+  }
+
+  async function onFillLeds(led: number) {
+    const cur = snapRef.current;
+    if (!cur) return;
+    const copy: Snapshot = structuredClone(cur);
+    const row = copy.keys[profile] ?? [];
+    for (let i = 0; i < 9; i++) {
+      const k = row[i] ?? emptyKey(profile, i);
+      row[i] = { ...k, led };
+    }
+    copy.keys[profile] = row;
+    copy.meta.dirty = true;
+    setSnap(copy);
+    for (let i = 0; i < 9; i++) {
+      const prev = cur.keys[profile]?.[i]?.led ?? 0;
+      if (prev !== led) {
+        try {
+          await api.applyKey(row[i]);
+        } catch (e) {
+          setErr(String(e));
+          break;
+        }
+      }
+    }
+  }
+
+  async function onCopyLights(fromIndex: number) {
+    const cur = snapRef.current;
+    if (!cur || !hdr) return;
+    const srcHdr = cur.profiles[fromIndex];
+    const srcKeys = cur.keys[fromIndex];
+    if (!srcHdr || !srcKeys) return;
+    const nextHdr = {
+      ...hdr,
+      lightMode: srcHdr.lightMode,
+      bright: srcHdr.bright,
+      dim: srcHdr.dim,
+    };
+    const copy: Snapshot = structuredClone(cur);
+    copy.profiles[hdr.index] = nextHdr;
+    const row = (copy.keys[profile] ?? []).slice();
+    for (let i = 0; i < 9; i++) {
+      const k = row[i] ?? emptyKey(profile, i);
+      row[i] = { ...k, led: srcKeys[i]?.led ?? 0 };
+    }
+    copy.keys[profile] = row;
+    copy.meta.dirty = true;
+    setSnap(copy);
+    try {
+      await api.applyProfile(nextHdr);
+      for (let i = 0; i < 9; i++) {
+        const prev = cur.keys[profile]?.[i]?.led ?? 0;
+        const led = srcKeys[i]?.led ?? 0;
+        if (prev !== led) await api.applyKey(row[i]);
+      }
+    } catch (e) {
+      setErr(String(e));
+    }
+  }
+
+  async function pushScreen(next: { contrast: number; flip: number; sleep: number }) {
+    const cur = snapRef.current;
+    if (!cur) return;
+    const copy: Snapshot = structuredClone(cur);
+    copy.meta.contrast = next.contrast;
+    copy.meta.flip = next.flip;
+    copy.meta.sleep = next.sleep;
+    copy.meta.dirty = true;
+    setSnap(copy);
+    try {
+      await api.setScreen(next);
+    } catch (e) {
+      setErr(String(e));
+    }
   }
 
   async function onFlashFile(file: File) {
@@ -1878,153 +2008,33 @@ export default function App() {
           ) : null}
 
           {tab === "profiles" ? (
-            <section className="pane">
-              <h2>Profiles</h2>
-              <p className="hint">
-                {snap.profiles.length} profile{snap.profiles.length === 1 ? "" : "s"} on the pad
-                {mem?.storeMax ? ` · ${mem.store} / ${mem.storeMax} B used` : ""}.
-              </p>
-              <div className="profiles">
-                {snap.profiles.map((p) => (
-                  <button
-                    key={p.index}
-                    className={p.index === profile ? "on" : ""}
-                    onClick={() => void activateProfile(p.index)}
-                  >
-                    {p.name || `P${p.index + 1}`}
-                    {p.index === profile ? " *" : ""}
-                  </button>
-                ))}
-              </div>
-              {snap.canMutateProfiles ? (
-                <div className="add">
-                  <button
-                    disabled={busy || !(snap.canAddProfiles ?? snap.profiles.length < 4)}
-                    onClick={() => void onAddProfile()}
-                  >
-                    New profile
-                  </button>
-                  <button
-                    className="danger"
-                    disabled={busy || snap.profiles.length <= 1}
-                    onClick={() => void onDeleteProfile()}
-                  >
-                    Delete
-                  </button>
-                </div>
-              ) : (
-                <p className="hint">Update firmware to add or delete profiles.</p>
-              )}
-              {hdr ? (
-                <label>
-                  Name
-                  <input
-                    maxLength={12}
-                    value={hdr.name}
-                    onChange={(e) => {
-                      const next = { ...hdr, name: e.target.value };
-                      const copy = structuredClone(snap);
-                      copy.profiles[hdr.index] = next;
-                      setSnap(copy);
-                    }}
-                    onBlur={() => pushHdr(hdr)}
-                  />
-                </label>
-              ) : null}
-              <h3>This profile in Auto-switch</h3>
-              {bound.length ? (
-                <ul className="switch-list">
-                  {bound.map((r) => (
-                    <li key={r.exe}>
-                      <span title={r.exe}>{r.exe}</span>
-                      <button type="button" disabled={busy} onClick={() => void onRemoveSwitchProgram(r.exe)}>
-                        Remove
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="hint">No programs for this profile in the graph.</p>
-              )}
-              <div className="add">
-                <button type="button" onClick={() => setTab("switch")}>
-                  Open Auto-switch
-                </button>
-              </div>
-            </section>
-          ) : null}
-
-          {tab === "lights" ? (
-            <section className="pane">
-              <h2>Lights</h2>
-              <p className="hint">Lighting for {hdr?.name || `P${profile + 1}`}. Per-key LEDs also live on each key.</p>
-              <div className="profiles">
-                {snap.profiles.map((p) => (
-                  <button
-                    key={p.index}
-                    className={p.index === profile ? "on" : ""}
-                    onClick={() => void activateProfile(p.index)}
-                  >
-                    {p.name || `P${p.index + 1}`}
-                  </button>
-                ))}
-              </div>
-              {hdr ? (
-                <>
-                  <label>
-                    Mode
-                    <select
-                      value={hdr.lightMode}
-                      onChange={(e) => pushHdr({ ...hdr, lightMode: Number(e.target.value) })}
-                    >
-                      {LIGHT_MODES.map((n, i) => (
-                        <option key={n} value={i}>
-                          {n}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Bright {hdr.bright}
-                    <input
-                      type="range"
-                      min={0}
-                      max={10}
-                      value={hdr.bright}
-                      onChange={(e) => void pushHdr({ ...hdr, bright: Number(e.target.value) })}
-                    />
-                  </label>
-                  <label>
-                    Dim {hdr.dim}
-                    <input
-                      type="range"
-                      min={0}
-                      max={10}
-                      value={hdr.dim}
-                      onChange={(e) => void pushHdr({ ...hdr, dim: Number(e.target.value) })}
-                    />
-                  </label>
-                </>
-              ) : null}
-              <h3>Key LEDs</h3>
-              <div className="light-grid">
-                {Array.from({ length: 9 }, (_, i) => {
-                  const k = keys[i] ?? emptyKey(profile, i);
-                  return (
-                    <button
-                      key={i}
-                      type="button"
-                      className="sw-led light-cell"
-                      style={{ background: LED_HEX[k.led] ?? LED_HEX[0] }}
-                      title={`${k.label || `Key ${i + 1}`} — ${LEDS[k.led] ?? "Off"}`}
-                      onClick={() => void pushKey({ ...k, led: (k.led + 1) % LEDS.length })}
-                    >
-                      {i + 1}
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
+            <ProfilesPane
+              snap={snap}
+              hdr={hdr}
+              keys={keys}
+              bound={bound}
+              busy={busy}
+              memHint={`${snap.profiles.length} profile${snap.profiles.length === 1 ? "" : "s"} on the pad${mem?.storeMax ? ` · ${mem.store} / ${mem.storeMax} B used` : ""}.`}
+              onActivate={(index) => void activateProfile(index)}
+              onAdd={() => void onAddProfile()}
+              onDuplicate={() => void onDuplicateProfile()}
+              onReset={() => void onResetProfile()}
+              onDelete={() => void onDeleteProfile()}
+              onDraftName={(name) => {
+                if (!hdr) return;
+                const next = { ...hdr, name };
+                const copy = structuredClone(snap);
+                copy.profiles[hdr.index] = next;
+                setSnap(copy);
+              }}
+              onHdr={(next) => void pushHdr(next)}
+              onKeyLed={(key, led) => void pushKey({ ...key, led })}
+              onFillLeds={(led) => void onFillLeds(led)}
+              onCopyLights={(from) => void onCopyLights(from)}
+              onScreen={(next) => void pushScreen(next)}
+              onRemoveSwitch={(exe) => void onRemoveSwitchProgram(exe)}
+              onOpenSwitch={() => setTab("switch")}
+            />
           ) : null}
         </>
       )}

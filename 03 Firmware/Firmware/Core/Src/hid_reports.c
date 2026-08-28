@@ -200,7 +200,7 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
   switch (cmd) {
   case CMD_PING:
     out[0] = 0x01;
-    out[1] = 0x05; /* minor: packed store, add until flash full */
+    out[1] = 0x06; /* minor: SET_SCREEN contrast/flip/sleep */
     vendor_reply(CMD_PING, out, 2);
     break;
   case CMD_GET_META:
@@ -404,6 +404,26 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
     ui_set_host_active(p[0] != 0);
     vendor_reply(cmd, p, 1);
     break;
+  case CMD_SET_SCREEN: {
+    uint8_t st = 0;
+    if (p[0] > 10 || p[1] > 1 || p[2] > 4) {
+      st = 1;
+    } else {
+      g_store.contrast = p[0];
+      g_store.flip = p[1];
+      g_store.sleep = p[2];
+      ui_apply_screen();
+      (void)storage_commit();
+      g_store.dirty = 1;
+      ui_mark_dirty();
+    }
+    out[0] = p[0];
+    out[1] = p[1];
+    out[2] = p[2];
+    out[3] = st;
+    vendor_reply(cmd, out, 4);
+    break;
+  }
   case CMD_GET_TEXT: {
     uint8_t pi = p[0], ki = p[1], off = p[2];
     uint8_t tlen = 0;

@@ -539,6 +539,11 @@ static void apply_screen_hw(void) {
   ssd1306_SetFlip(g_store.flip);
 }
 
+void ui_apply_screen(void) {
+  apply_screen_hw();
+  need_draw = 1;
+}
+
 static void back(void);
 
 static void go_home_clean(void) {

@@ -88,6 +88,16 @@ export function tombstonesForKey(
     .map((l) => ({ ...l, path: "" }));
 }
 
+export function tombstonesForProfile(list: LaunchEntry[], profile: number): LaunchEntry[] {
+  return list
+    .filter((l) => l.profile === profile && (l.id ?? "").trim())
+    .map((l) => ({ ...l, path: "" }));
+}
+
+export function removeProfileLaunches(list: LaunchEntry[], profile: number): LaunchEntry[] {
+  return list.filter((l) => l.profile !== profile);
+}
+
 export function upsertLaunch(list: LaunchEntry[], entry: LaunchEntry, nActs: number): LaunchEntry[] {
   const next: LaunchEntry = {
     ...entry,

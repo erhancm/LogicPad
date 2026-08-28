@@ -159,6 +159,20 @@ fn factory_reset(pad: State<AppPad>) -> Result<Snapshot, String> {
 }
 
 #[tauri::command]
+fn set_screen(
+    pad: State<AppPad>,
+    contrast: u8,
+    flip: u8,
+    sleep: u8,
+) -> Result<(), String> {
+    pad.0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .set_screen(contrast, flip, sleep)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
 fn set_time(
     pad: State<AppPad>,
     year: u16,
@@ -344,6 +358,7 @@ pub fn run() {
             save_store,
             reload_store,
             factory_reset,
+            set_screen,
             set_time,
             flash_firmware,
             get_launches,

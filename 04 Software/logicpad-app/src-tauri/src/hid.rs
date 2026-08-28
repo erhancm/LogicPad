@@ -42,6 +42,7 @@ const CMD_DEL_PROFILE: u8 = 0x12;
 const CMD_GET_TITLE: u8 = 0x13;
 const CMD_SET_TITLE: u8 = 0x14;
 const CMD_SET_HOST: u8 = 0x15;
+const CMD_SET_SCREEN: u8 = 0x16;
 const CMD_BL_START: u8 = 0x40;
 const CMD_BL_DATA: u8 = 0x41;
 const CMD_BL_FINISH: u8 = 0x42;
@@ -669,6 +670,17 @@ impl Pad {
         Ok(())
     }
 
+    pub fn set_screen(&self, contrast: u8, flip: u8, sleep: u8) -> Result<(), PadError> {
+        if let Some(r) = self.with_sim(|s| s.set_screen(contrast, flip, sleep)) {
+            return r;
+        }
+        let p = self.rpc(CMD_SET_SCREEN, &[contrast, flip, sleep])?;
+        if p.get(3).copied().unwrap_or(0) != 0 {
+            return Err(PadError::Msg("Screen values out of range.".into()));
+        }
+        Ok(())
+    }
+
     pub fn load_all(&self) -> Result<Snapshot, PadError> {
         if let Some(r) = self.with_sim(|s| Ok(s.snapshot())) {
             return r;
@@ -743,6 +755,7 @@ impl Pad {
             } else {
                 can_mutate_profiles && n < 4
             },
+            can_set_screen: min >= 6,
         })
     }
 
@@ -1248,6 +1261,8 @@ pub struct Snapshot {
     pub can_titles: bool,
     #[serde(default)]
     pub can_add_profiles: bool,
+    #[serde(default)]
+    pub can_set_screen: bool,
 }
 
 impl Default for TextPool {

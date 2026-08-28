@@ -20,6 +20,8 @@ export const api = {
   save: () => invoke<void>("save_store"),
   reload: () => invoke<Snapshot>("reload_store"),
   factory: () => invoke<Snapshot>("factory_reset"),
+  setScreen: (t: { contrast: number; flip: number; sleep: number }) =>
+    invoke<void>("set_screen", t),
   setTime: (t: {
     year: number;
     month: number;

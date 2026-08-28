@@ -370,3 +370,17 @@ export function uniqueTitle(row: PadKey[], index: number, wanted: string, max = 
   }
   return base;
 }
+
+/** Unique 12-character profile name among `existing` (other slots). */
+export function uniqueProfileName(existing: string[], wanted: string, max = TITLE_MAX): string {
+  const taken = new Set(existing.map((n) => n.trim().toLowerCase()).filter(Boolean));
+  const seed = wanted.trim().slice(0, max);
+  if (!seed) return "";
+  if (!taken.has(seed.toLowerCase())) return seed;
+  for (let n = 2; n <= 99; n++) {
+    const suffix = ` ${n}`;
+    const cut = seed.slice(0, Math.max(1, max - suffix.length)) + suffix;
+    if (!taken.has(cut.toLowerCase())) return cut;
+  }
+  return seed;
+}
