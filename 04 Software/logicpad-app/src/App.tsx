@@ -25,6 +25,7 @@ import {
 } from "./types";
 import { PrintOverlay } from "./PrintSheet";
 import { ClearAllButton, clearedKeys } from "./ClearAllButton";
+import { LogicPadMark } from "./LogicPadMark";
 import { ProfilesPane } from "./ProfilesPane";
 import {
   KeyContextMenu,
@@ -1359,9 +1360,7 @@ export default function App() {
     <div className="app-shell">
       <nav className="nav" aria-label="LogicPad">
         <div className="nav-brand">
-          <span className="nav-mark" aria-hidden="true">
-            L
-          </span>
+          <LogicPadMark className="nav-mark" size={28} />
           <div>
             <h1>LogicPad</h1>
             <p>v0.1.0</p>

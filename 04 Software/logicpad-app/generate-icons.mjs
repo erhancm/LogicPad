@@ -3,6 +3,13 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+const COLORS = {
+  bg: [0x12, 0x14, 0x1a],
+  border: [0x2a, 0x2e, 0x38],
+  gold: [0xf0, 0xd0, 0x60],
+  cream: [0xe8, 0xe4, 0xd8],
+};
+
 function crc32(buf) {
   let c = ~0;
   for (const b of buf) {
@@ -21,17 +28,96 @@ function chunk(type, data) {
   return Buffer.concat([len, td, crc]);
 }
 
-function png(w, h, r, g, b) {
+function inRoundRect(x, y, rx, ry, rw, rh, radius) {
+  if (x < rx || y < ry || x >= rx + rw || y >= ry + rh) return false;
+  const r = Math.min(radius, rw / 2, rh / 2);
+  const left = rx + r;
+  const right = rx + rw - r - 1;
+  const top = ry + r;
+  const bottom = ry + rh - r - 1;
+  if (x >= left && x <= right) return true;
+  if (y >= top && y <= bottom) return true;
+  const cx = x < left ? left : right;
+  const cy = y < top ? top : bottom;
+  const dx = x - cx;
+  const dy = y - cy;
+  return dx * dx + dy * dy <= r * r;
+}
+
+function setPixel(pixels, w, x, y, color) {
+  if (x < 0 || y < 0 || x >= w || y >= pixels.length / (3 * w)) return;
+  const o = (y * w + x) * 3;
+  pixels[o] = color[0];
+  pixels[o + 1] = color[1];
+  pixels[o + 2] = color[2];
+}
+
+function fillRoundRect(pixels, w, x, y, rw, rh, radius, color) {
+  const x0 = Math.max(0, Math.floor(x));
+  const y0 = Math.max(0, Math.floor(y));
+  const x1 = Math.min(w - 1, Math.ceil(x + rw - 1));
+  const y1 = Math.min(pixels.length / (3 * w) - 1, Math.ceil(y + rh - 1));
+  for (let py = y0; py <= y1; py++) {
+    for (let px = x0; px <= x1; px++) {
+      if (inRoundRect(px, py, x, y, rw, rh, radius)) {
+        setPixel(pixels, w, px, py, color);
+      }
+    }
+  }
+}
+
+function strokeRoundRect(pixels, w, x, y, rw, rh, radius, color) {
+  fillRoundRect(pixels, w, x, y, rw, rh, radius, color);
+  fillRoundRect(pixels, w, x + 1, y + 1, rw - 2, rh - 2, Math.max(0, radius - 1), COLORS.bg);
+}
+
+function drawLogo(size) {
+  const pixels = Buffer.alloc(size * size * 3);
+  for (let i = 0; i < size * size; i++) {
+    const o = i * 3;
+    pixels[o] = COLORS.bg[0];
+    pixels[o + 1] = COLORS.bg[1];
+    pixels[o + 2] = COLORS.bg[2];
+  }
+
+  const bodyPad = Math.max(1, Math.round(size * 0.047));
+  const bodySize = size - bodyPad * 2;
+  const bodyRadius = Math.max(2, Math.round(size * 0.125));
+  strokeRoundRect(
+    pixels,
+    size,
+    bodyPad,
+    bodyPad,
+    bodySize,
+    bodySize,
+    bodyRadius,
+    COLORS.border,
+  );
+
+  const gridPad = Math.round(size * 0.156);
+  const gridSize = size - gridPad * 2;
+  const gap = Math.max(1, Math.round(size * 0.0625));
+  const keySize = Math.floor((gridSize - gap * 2) / 3);
+  const keyRadius = Math.max(1, Math.round(keySize * 0.25));
+
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 3; col++) {
+      const x = gridPad + col * (keySize + gap);
+      const y = gridPad + row * (keySize + gap);
+      const color = row === 1 && col === 1 ? COLORS.cream : COLORS.gold;
+      fillRoundRect(pixels, size, x, y, keySize, keySize, keyRadius, color);
+    }
+  }
+
+  return pixels;
+}
+
+function pngFromRgb(w, h, rgb) {
   const stride = w * 3 + 1;
   const raw = Buffer.alloc(stride * h);
   for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const o = y * stride + 1 + x * 3;
-      const edge = x < 4 || y < 4 || x >= w - 4 || y >= h - 4;
-      raw[o] = edge ? 0x12 : r;
-      raw[o + 1] = edge ? 0x14 : g;
-      raw[o + 2] = edge ? 0x1a : b;
-    }
+    raw[y * stride] = 0;
+    rgb.copy(raw, y * stride + 1, y * w * 3, (y + 1) * w * 3);
   }
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(w, 0);
@@ -62,13 +148,17 @@ function icoFromPng(pngBuf, w, h) {
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), "src-tauri", "icons");
 mkdirSync(dir, { recursive: true });
-const gold = [0xf0, 0xd0, 0x60];
-const p32 = png(32, 32, ...gold);
-const p128 = png(128, 128, ...gold);
-const p256 = png(256, 256, ...gold);
-writeFileSync(join(dir, "32x32.png"), p32);
-writeFileSync(join(dir, "128x128.png"), p128);
-writeFileSync(join(dir, "128x128@2x.png"), p256);
-writeFileSync(join(dir, "icon.ico"), icoFromPng(p256, 256, 256));
-writeFileSync(join(dir, "icon.icns"), p256);
+
+for (const size of [32, 128, 256]) {
+  const rgb = drawLogo(size);
+  const png = pngFromRgb(size, size, rgb);
+  if (size === 32) writeFileSync(join(dir, "32x32.png"), png);
+  if (size === 128) writeFileSync(join(dir, "128x128.png"), png);
+  if (size === 256) {
+    writeFileSync(join(dir, "128x128@2x.png"), png);
+    writeFileSync(join(dir, "icon.ico"), icoFromPng(png, 256, 256));
+    writeFileSync(join(dir, "icon.icns"), png);
+  }
+}
+
 console.log("wrote icons in", dir);
