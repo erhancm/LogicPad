@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { LEDS, LIGHT_MODES, type PadKey, type ProfileHdr, type SwitchConfig, type SwitchEdge, type SwitchGraph, type SwitchNode } from "./types";
 import { cssLedId } from "./leds";
 import { autoLayoutGraph, CANVAS_H, CANVAS_W, ensureGraph, isGate, newId, nodeSize, nodeZone, snapNodeToZone, snapToGrid, withGraph, ZONE_LAYOUT } from "./switchGraph";
-import { GateIcon, GateSymbol } from "./GateSymbol";
+import { GateIcon, GateSymbol, logicGateInfo, LOGIC_GATE_INFO, type LogicGateKind } from "./GateSymbol";
 import { RunningPicker, type OpenWindow } from "./RunningPicker";
 import { api } from "./api";
 import "./SwitchEditor.css";
@@ -45,30 +45,7 @@ function isUnaryOp(n: SwitchNode): boolean {
   return n.kind === "not";
 }
 
-const LOGIC_KINDS: SwitchNode["kind"][] = ["and", "or", "not", "xor", "if", "else", "true", "false"];
-
-function logicLabel(kind: SwitchNode["kind"]): { title: string; hint: string } {
-  switch (kind) {
-    case "and":
-      return { title: "AND", hint: "All inputs must match" };
-    case "or":
-      return { title: "OR", hint: "Any input matches" };
-    case "not":
-      return { title: "Inverter", hint: "Invert signal (NOT)" };
-    case "xor":
-      return { title: "XOR", hint: "Odd number of true inputs" };
-    case "if":
-      return { title: "Buffer", hint: "Pass when input is true" };
-    case "else":
-      return { title: "NOR branch", hint: "Pass when input is false" };
-    case "true":
-      return { title: "Logic 1", hint: "Always high" };
-    case "false":
-      return { title: "Logic 0", hint: "Always low" };
-    default:
-      return { title: kind, hint: "" };
-  }
-}
+const LOGIC_KINDS = Object.keys(LOGIC_GATE_INFO) as LogicGateKind[];
 
 function isCond(n: SwitchNode): boolean {
   return n.kind === "foreground" || n.kind === "running" || isOp(n);
@@ -259,16 +236,10 @@ const ADD_SECTIONS: AddSection[] = [
   },
   {
     title: "Logic gates",
-    items: [
-      { kind: "and", label: "AND gate", hint: "All inputs high" },
-      { kind: "or", label: "OR gate", hint: "Any input high" },
-      { kind: "not", label: "Inverter", hint: "Output inverted" },
-      { kind: "xor", label: "XOR gate", hint: "Exclusive OR" },
-      { kind: "if", label: "Buffer", hint: "Pass signal through" },
-      { kind: "else", label: "Inverted branch", hint: "Pass when low" },
-      { kind: "true", label: "Logic 1", hint: "Constant high" },
-      { kind: "false", label: "Logic 0", hint: "Constant low" },
-    ],
+    items: (Object.keys(LOGIC_GATE_INFO) as LogicGateKind[]).map((kind) => {
+      const info = LOGIC_GATE_INFO[kind];
+      return { kind, label: info.menuLabel, hint: info.hint };
+    }),
   },
   {
     title: "Actions",
@@ -672,7 +643,7 @@ export function SwitchEditor(props: {
   function nodeTitle(n: SwitchNode): string {
     if (n.kind === "foreground") return "Foreground is";
     if (n.kind === "running") return "Running is";
-    if (isOp(n)) return logicLabel(n.kind).title;
+    if (isOp(n)) return logicGateInfo(n.kind).title;
     if (n.kind === "restore") return "Restore previous profile";
     if (n.kind === "setProfile" && n.lightsOnly) return "Set lights";
     return "Set profile";
@@ -842,7 +813,7 @@ export function SwitchEditor(props: {
                 ))}
                 <header>
                   {isOp(n) ? (
-                    <span className="sw-op" title={logicLabel(n.kind).hint}>
+                    <span className="sw-op" title={logicGateInfo(n.kind).hint}>
                       <GateSymbol kind={n.kind} />
                       <small>{nodeTitle(n)}</small>
                     </span>
@@ -866,7 +837,7 @@ export function SwitchEditor(props: {
                         {isOp(n)
                           ? LOGIC_KINDS.filter((k) => k !== n.kind).map((k) => (
                               <button key={k} type="button" onClick={() => convertLogic(n.id, k)}>
-                                {logicLabel(k).title}
+                                {logicGateInfo(k).menuLabel}
                               </button>
                             ))
                           : null}
