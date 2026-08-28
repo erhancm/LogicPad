@@ -1,10 +1,12 @@
 use crate::focus;
 use crate::hid::Pad;
 use crate::launch;
+use crate::sim::SIM_ID;
 use crate::switch_graph::{
     self, eval_graph, flatten_graph, graph_from_rules, GraphDecision, SwitchGraph,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -15,6 +17,7 @@ pub use switch_graph::exe_basename;
 use switch_graph::exe_stem;
 
 const DEBOUNCE: Duration = Duration::from_millis(400);
+const LEGACY_PAD: &str = "__legacy__";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -90,9 +93,36 @@ struct Inner {
     rt: Runtime,
 }
 
+#[derive(Default, Serialize, Deserialize)]
+struct SwitchFile {
+    #[serde(default)]
+    pads: HashMap<String, SwitchConfig>,
+}
+
 pub struct SwitchStore {
     file: PathBuf,
+    pads: Mutex<HashMap<String, SwitchConfig>>,
+    active_pad: Mutex<String>,
     inner: Mutex<Inner>,
+}
+
+fn load_switch_pads(file: &Path) -> HashMap<String, SwitchConfig> {
+    let mut pads = HashMap::new();
+    let Ok(raw) = fs::read_to_string(file) else {
+        return pads;
+    };
+    if let Ok(parsed) = serde_json::from_str::<SwitchFile>(&raw) {
+        if !parsed.pads.is_empty() {
+            for (id, cfg) in parsed.pads {
+                pads.insert(id, normalize_config(cfg));
+            }
+            return pads;
+        }
+    }
+    if let Ok(cfg) = serde_json::from_str::<SwitchConfig>(&raw) {
+        pads.insert(LEGACY_PAD.to_string(), normalize_config(cfg));
+    }
+    pads
 }
 
 fn match_profile(cfg: &SwitchConfig, exe: &str, running: &[String]) -> Option<u8> {
@@ -147,31 +177,89 @@ fn normalize_config(mut cfg: SwitchConfig) -> SwitchConfig {
 
 impl SwitchStore {
     pub fn load(file: PathBuf) -> Self {
-        let mut cfg = SwitchConfig::default();
-        if let Ok(raw) = fs::read_to_string(&file) {
-            if let Ok(parsed) = serde_json::from_str::<SwitchConfig>(&raw) {
-                cfg = parsed;
-            }
-        }
-        cfg = normalize_config(cfg);
+        let pads = load_switch_pads(&file);
         Self {
             file,
+            pads: Mutex::new(pads),
+            active_pad: Mutex::new(String::new()),
             inner: Mutex::new(Inner {
-                cfg,
+                cfg: SwitchConfig::default(),
                 rt: Runtime::new(),
             }),
         }
     }
 
-    fn persist(file: &Path, cfg: &SwitchConfig) -> Result<(), String> {
-        if let Some(dir) = file.parent() {
+    pub fn set_active_pad(&self, id: &str) {
+        let old = self
+            .active_pad
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_default();
+        if old == id {
+            return;
+        }
+        if !old.is_empty() {
+            if let (Ok(mut pads), Ok(inner)) = (self.pads.lock(), self.inner.lock()) {
+                pads.insert(old, inner.cfg.clone());
+                let _ = self.persist_all(&pads);
+            }
+        }
+        if let Ok(mut active) = self.active_pad.lock() {
+            *active = id.to_string();
+        }
+        let mut pads = match self.pads.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        if !pads.contains_key(id) {
+            if id == SIM_ID {
+                pads.insert(id.to_string(), SwitchConfig::default());
+            } else if let Some(legacy) = pads.remove(LEGACY_PAD) {
+                pads.insert(id.to_string(), legacy);
+            } else {
+                pads.insert(id.to_string(), SwitchConfig::default());
+            }
+        }
+        let cfg = pads.get(id).cloned().unwrap_or_default();
+        drop(pads);
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.cfg = cfg;
+            inner.rt.reset_seen();
+        }
+    }
+
+    fn persist_all(&self, pads: &HashMap<String, SwitchConfig>) -> Result<(), String> {
+        if let Some(dir) = self.file.parent() {
             fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         }
+        let file = SwitchFile {
+            pads: pads.clone(),
+        };
         fs::write(
-            file,
-            serde_json::to_string_pretty(cfg).map_err(|e| e.to_string())?,
+            &self.file,
+            serde_json::to_string_pretty(&file).map_err(|e| e.to_string())?,
         )
         .map_err(|e| e.to_string())
+    }
+
+    fn persist_active(&self) -> Result<(), String> {
+        let id = self
+            .active_pad
+            .lock()
+            .map_err(|_| "lock".to_string())?
+            .clone();
+        if id.is_empty() {
+            return Ok(());
+        }
+        let cfg = self
+            .inner
+            .lock()
+            .map_err(|_| "lock".to_string())?
+            .cfg
+            .clone();
+        let mut pads = self.pads.lock().map_err(|_| "lock".to_string())?;
+        pads.insert(id, cfg);
+        self.persist_all(&pads)
     }
 
     pub fn config(&self) -> SwitchConfig {
@@ -182,10 +270,11 @@ impl SwitchStore {
     }
 
     pub fn wants_autostart(&self) -> bool {
-        self.inner
+        self.pads
             .lock()
             .map(|g| {
-                g.cfg.enabled && !g.cfg.rules.is_empty()
+                g.values()
+                    .any(|cfg| cfg.enabled && !cfg.rules.is_empty())
             })
             .unwrap_or(false)
     }
@@ -201,8 +290,9 @@ impl SwitchStore {
         let mut g = self.inner.lock().map_err(|_| "lock".to_string())?;
         g.cfg = cfg;
         g.rt.reset_seen();
-        Self::persist(&self.file, &g.cfg)?;
-        Ok(g.cfg.clone())
+        drop(g);
+        self.persist_active()?;
+        Ok(self.config())
     }
 
     pub fn add_program(&self, profile: u8, path: &str) -> Result<SwitchConfig, String> {
@@ -223,8 +313,9 @@ impl SwitchStore {
         g.cfg = normalize_config(g.cfg.clone());
         g.cfg.enabled = true;
         g.rt.reset_seen();
-        Self::persist(&self.file, &g.cfg)?;
-        Ok(g.cfg.clone())
+        drop(g);
+        self.persist_active()?;
+        Ok(self.config())
     }
 
     pub fn remove_program(&self, exe: &str) -> Result<SwitchConfig, String> {
@@ -235,8 +326,9 @@ impl SwitchStore {
         }
         g.cfg = normalize_config(g.cfg.clone());
         g.rt.reset_seen();
-        Self::persist(&self.file, &g.cfg)?;
-        Ok(g.cfg.clone())
+        drop(g);
+        self.persist_active()?;
+        Ok(self.config())
     }
 
     pub fn shift_after_delete(&self, idx: u8) -> Result<(), String> {
@@ -244,9 +336,7 @@ impl SwitchStore {
         if let Some(graph) = g.cfg.graph.as_mut() {
             switch_graph::shift_after_delete(graph, idx);
         }
-        g.cfg
-            .rules
-            .retain(|r| r.profile != idx);
+        g.cfg.rules.retain(|r| r.profile != idx);
         for r in &mut g.cfg.rules {
             if r.profile > idx {
                 r.profile -= 1;
@@ -254,11 +344,10 @@ impl SwitchStore {
         }
         g.cfg = normalize_config(g.cfg.clone());
         g.rt.reset_seen();
-        Self::persist(&self.file, &g.cfg)
+        drop(g);
+        self.persist_active()
     }
 
-    /// Watch focus without touching HID. Safe to call without the pad lock.
-    /// Returns `(exe, running)` when a stable focus change still needs `apply`.
     pub fn poll(&self, app: &AppHandle) -> Option<(String, Vec<String>)> {
         let path = focus::foreground_exe().unwrap_or_default();
         let exe = exe_basename(&path);
@@ -322,6 +411,9 @@ impl SwitchStore {
 
     /// HID half of a focus change. Call with the pad lock held.
     pub fn apply(&self, pad: &Pad, app: &AppHandle, stable: String, running: Vec<String>) {
+        if pad.is_simulated() {
+            return;
+        }
         if !crate::host::is_present() {
             return;
         }

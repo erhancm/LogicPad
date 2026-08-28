@@ -417,6 +417,15 @@ export default function App() {
     });
   }
 
+  async function reloadSidecar() {
+    try {
+      setLaunches(await api.getLaunches());
+      setSwitchCfg(await api.getSwitchRules());
+    } catch {
+      /* old backend */
+    }
+  }
+
   async function afterLink(label: string) {
     try {
       await syncPadTime();
@@ -430,6 +439,7 @@ export default function App() {
     } catch {
       /* list_pads missing on an old backend */
     }
+    await reloadSidecar();
     setStatus(label);
   }
 
@@ -474,9 +484,6 @@ export default function App() {
 
   useEffect(() => {
     void onConnect();
-    void api.getLaunches().then(setLaunches).catch(() => undefined);
-    void api.getSwitchRules().then(setSwitchCfg).catch(() => undefined);
-    // Connect once on launch; retry with the button if the pad was unplugged.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -636,6 +643,7 @@ export default function App() {
         .loadPad()
         .then((next) => takePad(next))
         .catch(() => undefined);
+      void reloadSidecar();
     }).then((fn) => {
       if (gone) fn();
       else {

@@ -21,18 +21,47 @@ use tauri_plugin_autostart::ManagerExt;
 
 struct AppPad(Arc<Mutex<Pad>>);
 
-#[tauri::command]
-fn connect(pad: State<AppPad>) -> Result<(), String> {
-    pad.0.lock().map_err(|e| e.to_string())?.connect().map_err(Into::into)
+fn sync_active_pad(
+    pad: &State<AppPad>,
+    store: &LaunchStore,
+    switch: &SwitchStore,
+) {
+    if let Ok(g) = pad.0.lock() {
+        let id = g.current_id();
+        store.set_active_pad(&id);
+        switch.set_active_pad(&id);
+    }
 }
 
 #[tauri::command]
-fn connect_to(pad: State<AppPad>, id: String) -> Result<(), String> {
+fn connect(
+    pad: State<AppPad>,
+    store: State<Arc<LaunchStore>>,
+    switch: State<Arc<SwitchStore>>,
+) -> Result<(), String> {
+    pad.0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .connect()
+        .map_err(|e| e.to_string())?;
+    sync_active_pad(&pad, &store, &switch);
+    Ok(())
+}
+
+#[tauri::command]
+fn connect_to(
+    pad: State<AppPad>,
+    store: State<Arc<LaunchStore>>,
+    switch: State<Arc<SwitchStore>>,
+    id: String,
+) -> Result<(), String> {
     pad.0
         .lock()
         .map_err(|e| e.to_string())?
         .connect_to(&id)
-        .map_err(Into::into)
+        .map_err(|e| e.to_string())?;
+    sync_active_pad(&pad, &store, &switch);
+    Ok(())
 }
 
 #[tauri::command]
@@ -407,13 +436,14 @@ pub fn run() {
 
             let handle = app.handle().clone();
             let handle_leds = handle.clone();
+            let launch_cb = store.clone();
             {
                 let pad = app.state::<AppPad>();
                 let g = pad.0.lock().expect("pad");
                 g.set_config_dir(&dir);
                 g.set_on_key(Arc::new(move |profile, key, down| {
                     if down {
-                        if let Err(e) = store.launch(profile, key) {
+                        if let Err(e) = launch_cb.launch(profile, key) {
                             let _ = handle.emit("launch-error", e);
                         }
                     }
@@ -430,6 +460,9 @@ pub fn run() {
                     let _ = handle_leds.emit("pad-leds", frame);
                 }));
                 let _ = g.connect();
+                let pad_id = g.current_id();
+                store.set_active_pad(&pad_id);
+                switch.set_active_pad(&pad_id);
             }
 
             build_tray(app.handle())?;
@@ -454,6 +487,9 @@ pub fn run() {
                             if switched {
                                 retry.state::<Arc<SwitchStore>>().reset_seen();
                                 last_host = None;
+                                let id = g.current_id();
+                                retry.state::<Arc<LaunchStore>>().set_active_pad(&id);
+                                retry.state::<Arc<SwitchStore>>().set_active_pad(&id);
                                 let _ = retry.emit("pad-session", g.current_pad());
                             }
                             let pads = g.list_pads();
@@ -464,8 +500,12 @@ pub fn run() {
                             }
                         }
                     }
-                    let pending = retry.state::<Arc<SwitchStore>>().poll(&retry);
                     if let Ok(g) = retry.state::<AppPad>().0.try_lock() {
+                        let pending = if g.is_simulated() {
+                            None
+                        } else {
+                            retry.state::<Arc<SwitchStore>>().poll(&retry)
+                        };
                         if let Some((exe, running)) = pending {
                             retry
                                 .state::<Arc<SwitchStore>>()

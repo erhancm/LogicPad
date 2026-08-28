@@ -1,11 +1,14 @@
+use crate::sim::SIM_ID;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+const LEGACY_PAD: &str = "__legacy__";
 
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
@@ -25,12 +28,16 @@ pub struct LaunchEntry {
 
 #[derive(Default, Serialize, Deserialize)]
 struct LaunchFile {
+    #[serde(default)]
+    pads: HashMap<String, Vec<LaunchEntry>>,
+    #[serde(default)]
     entries: Vec<LaunchEntry>,
 }
 
 pub struct LaunchStore {
     file: PathBuf,
-    entries: Mutex<Vec<LaunchEntry>>,
+    pads: Mutex<HashMap<String, Vec<LaunchEntry>>>,
+    active_pad: Mutex<String>,
 }
 
 fn new_launch_id() -> String {
@@ -56,30 +63,90 @@ fn ensure_id(entry: &mut LaunchEntry, used: &mut HashSet<String>) {
     used.insert(entry.id.clone());
 }
 
+fn ensure_ids(entries: &mut [LaunchEntry]) {
+    let mut used = HashSet::new();
+    for e in entries.iter_mut() {
+        ensure_id(e, &mut used);
+    }
+}
+
+fn load_launch_pads(file: &Path) -> HashMap<String, Vec<LaunchEntry>> {
+    let mut pads = HashMap::new();
+    let Ok(raw) = fs::read_to_string(file) else {
+        return pads;
+    };
+    let Ok(parsed) = serde_json::from_str::<LaunchFile>(&raw) else {
+        return pads;
+    };
+    if !parsed.pads.is_empty() {
+        for (id, mut entries) in parsed.pads {
+            ensure_ids(&mut entries);
+            pads.insert(id, entries);
+        }
+        return pads;
+    }
+    if !parsed.entries.is_empty() {
+        let mut entries = parsed.entries;
+        ensure_ids(&mut entries);
+        pads.insert(LEGACY_PAD.to_string(), entries);
+    }
+    pads
+}
+
 impl LaunchStore {
     pub fn load(file: PathBuf) -> Self {
-        let mut entries = Vec::new();
-        let mut used = HashSet::new();
-        if let Ok(raw) = fs::read_to_string(&file) {
-            if let Ok(parsed) = serde_json::from_str::<LaunchFile>(&raw) {
-                for mut e in parsed.entries {
-                    ensure_id(&mut e, &mut used);
-                    entries.push(e);
-                }
-            }
-        }
+        let pads = load_launch_pads(&file);
         Self {
             file,
-            entries: Mutex::new(entries),
+            pads: Mutex::new(pads),
+            active_pad: Mutex::new(String::new()),
         }
     }
 
-    fn persist(&self, entries: &[LaunchEntry]) -> Result<(), String> {
+    pub fn set_active_pad(&self, id: &str) {
+        if let Ok(mut active) = self.active_pad.lock() {
+            if *active == id {
+                return;
+            }
+            *active = id.to_string();
+        }
+        let Ok(mut pads) = self.pads.lock() else {
+            return;
+        };
+        if pads.contains_key(id) {
+            return;
+        }
+        if id == SIM_ID {
+            pads.insert(id.to_string(), Vec::new());
+            return;
+        }
+        if let Some(legacy) = pads.remove(LEGACY_PAD) {
+            pads.insert(id.to_string(), legacy);
+        } else {
+            pads.insert(id.to_string(), Vec::new());
+        }
+    }
+
+    fn active_entries(&self) -> Result<Vec<LaunchEntry>, String> {
+        let id = self
+            .active_pad
+            .lock()
+            .map_err(|_| "lock".to_string())?
+            .clone();
+        if id.is_empty() {
+            return Ok(Vec::new());
+        }
+        let pads = self.pads.lock().map_err(|_| "lock".to_string())?;
+        Ok(pads.get(&id).cloned().unwrap_or_default())
+    }
+
+    fn persist_all(&self, pads: &HashMap<String, Vec<LaunchEntry>>) -> Result<(), String> {
         if let Some(dir) = self.file.parent() {
             fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         }
         let file = LaunchFile {
-            entries: entries.to_vec(),
+            pads: pads.clone(),
+            entries: Vec::new(),
         };
         fs::write(
             &self.file,
@@ -88,52 +155,76 @@ impl LaunchStore {
         .map_err(|e| e.to_string())
     }
 
+    fn with_active<F>(&self, f: F) -> Result<(), String>
+    where
+        F: FnOnce(&mut Vec<LaunchEntry>) -> Result<(), String>,
+    {
+        let id = self
+            .active_pad
+            .lock()
+            .map_err(|_| "lock".to_string())?
+            .clone();
+        if id.is_empty() {
+            return Ok(());
+        }
+        let mut pads = self.pads.lock().map_err(|_| "lock".to_string())?;
+        let entries = pads.entry(id).or_default();
+        f(entries)?;
+        self.persist_all(&pads)
+    }
+
     pub fn list(&self) -> Vec<LaunchEntry> {
-        self.entries.lock().map(|g| g.clone()).unwrap_or_default()
+        self.active_entries().unwrap_or_default()
     }
 
     pub fn has_launches(&self) -> bool {
-        self.entries
+        self.pads
             .lock()
-            .map(|g| g.iter().any(|e| !e.path.trim().is_empty()))
+            .map(|g| {
+                g.values()
+                    .flatten()
+                    .any(|e| !e.path.trim().is_empty())
+            })
             .unwrap_or(false)
     }
 
     pub fn set(&self, mut entry: LaunchEntry) -> Result<(), String> {
-        let mut g = self.entries.lock().map_err(|_| "lock".to_string())?;
-        if entry.path.trim().is_empty() {
-            if entry.id.trim().is_empty() {
+        self.with_active(|entries| {
+            if entry.path.trim().is_empty() {
+                if entry.id.trim().is_empty() {
+                    return Ok(());
+                }
+                entries.retain(|e| e.id != entry.id);
                 return Ok(());
             }
-            g.retain(|e| e.id != entry.id);
-            return self.persist(&g);
-        }
-        if entry.id.trim().is_empty() {
-            entry.id = new_launch_id();
-        }
-        if let Some(i) = g.iter().position(|e| e.id == entry.id) {
-            g[i] = entry;
-        } else {
-            g.push(entry);
-        }
-        self.persist(&g)
+            if entry.id.trim().is_empty() {
+                entry.id = new_launch_id();
+            }
+            if let Some(i) = entries.iter().position(|e| e.id == entry.id) {
+                entries[i] = entry;
+            } else {
+                entries.push(entry);
+            }
+            Ok(())
+        })
     }
 
     pub fn shift_after_delete(&self, idx: u8) -> Result<(), String> {
-        let mut g = self.entries.lock().map_err(|_| "lock".to_string())?;
-        g.retain(|e| e.profile != idx);
-        for e in g.iter_mut() {
-            if e.profile > idx {
-                e.profile -= 1;
+        self.with_active(|entries| {
+            entries.retain(|e| e.profile != idx);
+            for e in entries.iter_mut() {
+                if e.profile > idx {
+                    e.profile -= 1;
+                }
             }
-        }
-        self.persist(&g)
+            Ok(())
+        })
     }
 
     pub fn launch(&self, profile: u8, key: u8) -> Result<(), String> {
         let batch: Vec<LaunchEntry> = {
-            let g = self.entries.lock().map_err(|_| "lock".to_string())?;
-            let mut v: Vec<LaunchEntry> = g
+            let entries = self.active_entries()?;
+            let mut v: Vec<LaunchEntry> = entries
                 .iter()
                 .filter(|e| e.profile == profile && e.key == key && !e.path.trim().is_empty())
                 .cloned()
