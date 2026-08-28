@@ -193,7 +193,7 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
   }
   uint8_t cmd = buf[1];
   /* Live LED polls must not keep the OLED USB dot blinking. */
-  if (cmd != CMD_GET_LEDS) {
+  if (cmd != CMD_GET_LEDS && cmd != CMD_PREVIEW_CLOCK) {
     vendor_last_ms = HAL_GetTick();
   }
   const uint8_t *p = &buf[2];
@@ -203,7 +203,7 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
   switch (cmd) {
   case CMD_PING:
     out[0] = 0x01;
-    out[1] = 0x07; /* minor: GET_LEDS live RGB snapshot */
+    out[1] = 0x09; /* minor: PREVIEW_CLOCK live OLED standby */
     vendor_reply(CMD_PING, out, 2);
     break;
   case CMD_GET_META:
@@ -224,7 +224,8 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
     out[9] = (uint8_t)(used >> 8);
     out[10] = (uint8_t)cap;
     out[11] = (uint8_t)(cap >> 8);
-    vendor_reply(cmd, out, 12);
+    out[12] = g_store.clock_style;
+    vendor_reply(cmd, out, 13);
     break;
   }
   case CMD_GET_PROFILE_HDR: {
@@ -409,12 +410,14 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
     break;
   case CMD_SET_SCREEN: {
     uint8_t st = 0;
-    if (p[0] > 10 || p[1] > 1 || p[2] > 4) {
+    if (p[0] > 10 || p[1] > 1 || p[2] > 4 || (p[3] & 0xFu) > 12u || ((p[3] >> 4) & 3u) > 3u ||
+        ((p[3] >> 6) & 1u) > 1u) {
       st = 1;
     } else {
       g_store.contrast = p[0];
       g_store.flip = p[1];
       g_store.sleep = p[2];
+      g_store.clock_style = p[3];
       ui_apply_screen();
       (void)storage_commit();
       g_store.dirty = 1;
@@ -423,10 +426,16 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
     out[0] = p[0];
     out[1] = p[1];
     out[2] = p[2];
-    out[3] = st;
-    vendor_reply(cmd, out, 4);
+    out[3] = p[3];
+    out[4] = st;
+    vendor_reply(cmd, out, 5);
     break;
   }
+  case CMD_PREVIEW_CLOCK:
+    ui_set_clock_preview(p[0] != 0);
+    out[0] = p[0];
+    vendor_reply(cmd, out, 1);
+    break;
   case CMD_GET_LEDS: {
     led_snap_t snap;
     led_mux_snapshot(&snap);

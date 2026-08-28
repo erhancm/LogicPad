@@ -45,6 +45,7 @@ const CMD_SET_TITLE: u8 = 0x14;
 const CMD_SET_HOST: u8 = 0x15;
 const CMD_SET_SCREEN: u8 = 0x16;
 const CMD_GET_LEDS: u8 = 0x17;
+const CMD_PREVIEW_CLOCK: u8 = 0x18;
 const CMD_BL_START: u8 = 0x40;
 const CMD_BL_DATA: u8 = 0x41;
 const CMD_BL_FINISH: u8 = 0x42;
@@ -290,6 +291,7 @@ impl Pad {
         }
         self.disconnect_usb();
         self.open_usb(id)?;
+        let _ = self.preview_clock(false);
         Ok(())
     }
 
@@ -457,6 +459,7 @@ impl Pad {
             contrast: p.get(2).copied().unwrap_or(0),
             flip: p.get(3).copied().unwrap_or(0),
             sleep: p.get(4).copied().unwrap_or(0),
+            clock_style: p.get(12).copied().unwrap_or(0x50),
             in_menu: p.get(5).copied().unwrap_or(0) != 0,
             usb: p.get(6).copied().unwrap_or(0) != 0,
             n_profiles: p.get(7).copied().unwrap_or(0),
@@ -700,14 +703,33 @@ impl Pad {
         Ok(())
     }
 
-    pub fn set_screen(&self, contrast: u8, flip: u8, sleep: u8) -> Result<(), PadError> {
-        if let Some(r) = self.with_sim(|s| s.set_screen(contrast, flip, sleep)) {
+    pub fn set_screen(
+        &self,
+        contrast: u8,
+        flip: u8,
+        sleep: u8,
+        clock_style: u8,
+    ) -> Result<(), PadError> {
+        if let Some(r) = self.with_sim(|s| s.set_screen(contrast, flip, sleep, clock_style)) {
             return r;
         }
-        let p = self.rpc(CMD_SET_SCREEN, &[contrast, flip, sleep])?;
-        if p.get(3).copied().unwrap_or(0) != 0 {
+        let p = self.rpc(CMD_SET_SCREEN, &[contrast, flip, sleep, clock_style])?;
+        let st = if p.len() > 4 {
+            p[4]
+        } else {
+            p.get(3).copied().unwrap_or(0)
+        };
+        if st != 0 {
             return Err(PadError::Msg("Screen values out of range.".into()));
         }
+        Ok(())
+    }
+
+    pub fn preview_clock(&self, on: bool) -> Result<(), PadError> {
+        if self.is_simulated() {
+            return Ok(());
+        }
+        self.rpc(CMD_PREVIEW_CLOCK, &[u8::from(on)])?;
         Ok(())
     }
 
@@ -806,6 +828,8 @@ impl Pad {
                 can_mutate_profiles && n < 4
             },
             can_set_screen: min >= 6,
+            can_set_clock_style: min >= 8,
+            can_preview_clock: min >= 9,
             can_get_leds: min >= 7,
         })
     }
@@ -1340,6 +1364,10 @@ fn pack_key(key: &PadKey, out: &mut [u8]) {
     }
 }
 
+fn default_clock_style() -> u8 {
+    0x50
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Meta {
@@ -1348,6 +1376,8 @@ pub struct Meta {
     pub contrast: u8,
     pub flip: u8,
     pub sleep: u8,
+    #[serde(default = "default_clock_style")]
+    pub clock_style: u8,
     pub in_menu: bool,
     pub usb: bool,
     #[serde(default)]
@@ -1436,6 +1466,10 @@ pub struct Snapshot {
     pub can_add_profiles: bool,
     #[serde(default)]
     pub can_set_screen: bool,
+    #[serde(default)]
+    pub can_set_clock_style: bool,
+    #[serde(default)]
+    pub can_preview_clock: bool,
     #[serde(default)]
     pub can_get_leds: bool,
 }

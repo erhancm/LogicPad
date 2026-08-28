@@ -188,16 +188,26 @@ fn factory_reset(pad: State<AppPad>) -> Result<Snapshot, String> {
 }
 
 #[tauri::command]
+fn preview_clock(pad: State<AppPad>, on: bool) -> Result<(), String> {
+    pad.0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .preview_clock(on)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
 fn set_screen(
     pad: State<AppPad>,
     contrast: u8,
     flip: u8,
     sleep: u8,
+    clock_style: u8,
 ) -> Result<(), String> {
     pad.0
         .lock()
         .map_err(|e| e.to_string())?
-        .set_screen(contrast, flip, sleep)
+        .set_screen(contrast, flip, sleep, clock_style)
         .map_err(Into::into)
 }
 
@@ -406,6 +416,7 @@ pub fn run() {
             reload_store,
             factory_reset,
             set_screen,
+            preview_clock,
             get_leds,
             watch_leds,
             set_time,

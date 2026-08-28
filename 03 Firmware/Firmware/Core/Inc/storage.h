@@ -65,6 +65,7 @@ typedef struct {
   uint8_t flip;
   uint8_t sleep;
   uint8_t menu_idle;
+  uint8_t clock_style; /* packed: anim (0-6), speed (0-3), bar on/off */
   uint8_t dirty;
   uint8_t n_profiles;
 } lp_store_t;

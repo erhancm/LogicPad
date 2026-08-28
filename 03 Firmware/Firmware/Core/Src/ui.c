@@ -40,6 +40,9 @@ typedef enum {
   SCR_CONTRAST,
   SCR_FLIP,
   SCR_SLEEP,
+  SCR_CLK_STYLE,
+  SCR_CLK_SPEED,
+  SCR_CLK_BAR,
   SCR_ABOUT,
   SCR_SAVED,
   SCR_RESET_ALL,
@@ -103,6 +106,49 @@ static const sys_key_t SYS_KEYS[] = {
 #define UI_YELLOW_Y 48
 #define UI_YELLOW_H 16
 #define UI_ROW_H 16
+
+#define CLK_ANIM_BOUNCE 0
+#define CLK_ANIM_SCAN 1
+#define CLK_ANIM_MARCH 2
+#define CLK_ANIM_PULSE 3
+#define CLK_ANIM_WAVE 4
+#define CLK_ANIM_BLOCKS 5
+#define CLK_ANIM_COMET 6
+#define CLK_ANIM_SWING 7
+#define CLK_ANIM_FILL 8
+#define CLK_ANIM_SPARKLE 9
+#define CLK_ANIM_RIPPLE 10
+#define CLK_ANIM_RAIN 11
+#define CLK_ANIM_OFF 12
+
+static const char *const CLK_ANIM_L[] = {"Bounce", "Scan",   "March",  "Pulse", "Wave",
+                                         "Blocks", "Comet",  "Swing",  "Fill",  "Sparkle",
+                                         "Ripple", "Rain",   "Off"};
+static const char *const CLK_SPEED_L[] = {"Slow", "Normal", "Fast", "Rapid"};
+static const uint32_t CLK_SPEED_MS[] = {32u, 16u, 8u, 4u};
+
+static uint8_t clock_preview;
+static uint32_t clock_preview_until;
+
+static uint8_t clk_anim_mode(void) {
+  return g_store.clock_style & 0xFu;
+}
+
+static uint8_t clk_speed_idx(void) {
+  return (g_store.clock_style >> 4) & 3u;
+}
+
+static uint8_t clk_bar_on(void) {
+  return (g_store.clock_style >> 6) & 1u;
+}
+
+static uint8_t clk_pack(uint8_t anim, uint8_t speed, uint8_t bar) {
+  return (uint8_t)((anim & 0xFu) | ((speed & 3u) << 4) | ((bar & 1u) << 6) | 0x40u);
+}
+
+static int clock_preview_active(void);
+static int showing_clock(void);
+static int clock_needs_fast_draw(void);
 
 static int16_t clampi(int16_t v, int16_t lo, int16_t hi) {
   if (v < lo) {
@@ -337,8 +383,153 @@ void ui_set_host_active(int on) {
   }
 }
 
+void ui_set_clock_preview(int on) {
+  if (on) {
+    clock_preview = 1;
+    clock_preview_until = HAL_GetTick() + 2500u;
+  } else {
+    clock_preview = 0;
+    clock_preview_until = 0;
+  }
+  if (scr == SCR_HOME) {
+    need_draw = 1;
+  }
+}
+
 static int idle_shows_clock(void) {
   return !hid_configured() || !host_active;
+}
+
+static void draw_clock_band(void) {
+  uint32_t spd = CLK_SPEED_MS[clk_speed_idx() <= 3 ? clk_speed_idx() : 1u];
+  uint32_t phase = HAL_GetTick() / spd;
+  uint8_t y0 = (uint8_t)(UI_YELLOW_Y + 5);
+
+  ssd1306_FillRect(0, UI_YELLOW_Y, 128, UI_YELLOW_H, Black);
+  if (clk_bar_on()) {
+    uint8_t bar = (uint8_t)((clk_sec * 128u) / 60u);
+    if (bar) {
+      ssd1306_FillRect(0, UI_YELLOW_Y, bar, 2, White);
+    }
+  }
+  if (clk_anim_mode() == CLK_ANIM_OFF) {
+    return;
+  }
+
+  switch (clk_anim_mode()) {
+  case CLK_ANIM_BOUNCE: {
+    uint32_t span = 120u;
+    uint32_t p = phase % (span * 2u);
+    uint8_t x = (uint8_t)(p < span ? p : (span * 2u - p));
+    ssd1306_FillRect(x, y0, 8, 8, White);
+    break;
+  }
+  case CLK_ANIM_SCAN: {
+    uint8_t x = (uint8_t)((phase * 126u) >> 9);
+    ssd1306_FillRect(x, (uint8_t)(UI_YELLOW_Y + 4), 2, 8, White);
+    break;
+  }
+  case CLK_ANIM_MARCH: {
+    uint8_t n = (uint8_t)(phase / 24u);
+    for (uint8_t d = 0; d < 3u; d++) {
+      uint8_t pos = (uint8_t)((n + d * 5u) % 40u);
+      uint8_t x = (uint8_t)(4u + pos * 3u);
+      if (x < 120u) {
+        ssd1306_FillRect(x, (uint8_t)(y0 + 3), 2, 2, White);
+      }
+    }
+    break;
+  }
+  case CLK_ANIM_PULSE: {
+    uint16_t p = (uint16_t)(phase & 0xFFu);
+    uint8_t h = (uint8_t)(p < 128u ? (p / 14u) + 2u : (255u - p) / 14u + 2u);
+    if (h > 10u) {
+      h = 10u;
+    }
+    uint8_t w = (uint8_t)(h * 8u);
+    uint8_t x = (uint8_t)((128u - w) / 2u);
+    ssd1306_FillRect(x, (uint8_t)(UI_YELLOW_Y + UI_YELLOW_H - 2u - h), w, h, White);
+    break;
+  }
+  case CLK_ANIM_WAVE: {
+    for (uint8_t x = 0; x < 128u; x += 2u) {
+      uint32_t s = phase + x;
+      uint8_t y = (uint8_t)(y0 + 2u + ((s >> 2) & 7u));
+      if (y < UI_YELLOW_Y + UI_YELLOW_H - 1) {
+        ssd1306_FillRect(x, y, 2, 2, White);
+      }
+    }
+    break;
+  }
+  case CLK_ANIM_BLOCKS: {
+    uint8_t seg = (uint8_t)((phase >> 5) & 7u);
+    for (uint8_t s = 0; s < 8u; s++) {
+      if (((seg + s) & 7u) < 4u) {
+        ssd1306_FillRect((uint8_t)(s * 16u + 1u), y0, 14, 6, White);
+      }
+    }
+    break;
+  }
+  case CLK_ANIM_COMET: {
+    uint8_t x = (uint8_t)((phase * 126u) >> 9);
+    ssd1306_FillRect(x, y0, 6, 6, White);
+    if (x >= 4u) {
+      ssd1306_FillRect((uint8_t)(x - 4u), (uint8_t)(y0 + 2), 3, 2, White);
+    }
+    if (x >= 8u) {
+      ssd1306_FillRect((uint8_t)(x - 8u), (uint8_t)(y0 + 3), 2, 1, White);
+    }
+    break;
+  }
+  case CLK_ANIM_SWING: {
+    uint16_t p = (uint16_t)(phase & 0xFFu);
+    uint16_t tri = p < 128u ? p : (uint16_t)(255u - p);
+    uint8_t x = (uint8_t)(4u + ((tri * 116u) >> 7));
+    ssd1306_FillRect(x, (uint8_t)(y0 + 1), 4, 6, White);
+    ssd1306_DrawPixel((uint8_t)(x + 2), y0, White);
+  } break;
+  case CLK_ANIM_FILL: {
+    uint8_t w = (uint8_t)((phase * 128u) >> 9);
+    if (w) {
+      ssd1306_FillRect(0, (uint8_t)(y0 + 2), w, 4, White);
+    }
+    break;
+  }
+  case CLK_ANIM_SPARKLE: {
+    for (uint8_t x = 0; x < 128u; x += 11u) {
+      if (((phase + x * 17u) & 31u) < 5u) {
+        uint8_t y = (uint8_t)(y0 + 2u + ((x + phase) & 3u));
+        ssd1306_FillRect(x, y, 2, 2, White);
+      }
+    }
+    break;
+  }
+  case CLK_ANIM_RIPPLE: {
+    uint8_t rad = (uint8_t)((phase >> 2) & 31u);
+    if (rad) {
+      uint8_t l = (uint8_t)(64u - rad);
+      uint8_t r = (uint8_t)(64u + rad);
+      if (l < 128u) {
+        ssd1306_DrawPixel(l, (uint8_t)(y0 + 4), White);
+      }
+      if (r < 128u) {
+        ssd1306_DrawPixel(r, (uint8_t)(y0 + 4), White);
+      }
+      ssd1306_FillRect(62, (uint8_t)(y0 + 3), 4, 4, White);
+    }
+    break;
+  }
+  case CLK_ANIM_RAIN: {
+    for (uint8_t col = 0; col < 12u; col++) {
+      uint8_t x = (uint8_t)(col * 11u + 2u);
+      uint8_t drop = (uint8_t)((phase + col * 37u) & 15u);
+      ssd1306_FillRect(x, (uint8_t)(y0 + drop), 2, 3, White);
+    }
+    break;
+  }
+  default:
+    break;
+  }
 }
 
 static void draw_idle_clock(void) {
@@ -352,24 +543,11 @@ static void draw_idle_clock(void) {
     ssd1306_SetCursor((uint8_t)((128 - n * 6) / 2), 32);
     ssd1306_WriteString(d, Font_6x8, White);
   }
-  /* Yellow band: seconds bar + bouncing block */
-  ssd1306_FillRect(0, UI_YELLOW_Y, 128, UI_YELLOW_H, Black);
-  {
-    uint8_t bar = (uint8_t)((clk_sec * 128u) / 60u);
-    if (bar) {
-      ssd1306_FillRect(0, UI_YELLOW_Y, bar, 2, White);
-    }
-  }
-  {
-    uint16_t phase = (uint16_t)((HAL_GetTick() / 16u) % 240u);
-    uint8_t span = 120;
-    uint8_t x = (uint8_t)(phase < span ? phase : (uint16_t)(span * 2u - phase));
-    ssd1306_FillRect(x, (uint8_t)(UI_YELLOW_Y + 5), 8, 8, White);
-  }
+  draw_clock_band();
 }
 
 static void draw_idle_home(void) {
-  if (idle_shows_clock()) {
+  if (idle_shows_clock() || clock_preview_active()) {
     draw_idle_clock();
     return;
   }
@@ -459,9 +637,10 @@ static uint8_t list_max(void) {
   case SCR_ADD_MOUSE:
   case SCR_SETUP:
   case SCR_LIGHTS:
-  case SCR_SCREEN:
   case SCR_ABOUT:
     return 2;
+  case SCR_SCREEN:
+    return 5;
   case SCR_ADD_KIND:
     return 4;
   case SCR_ADD_SYS:
@@ -493,6 +672,12 @@ static uint8_t list_max(void) {
     return 1;
   case SCR_SLEEP:
     return 4;
+  case SCR_CLK_STYLE:
+    return CLK_ANIM_OFF;
+  case SCR_CLK_SPEED:
+    return 3;
+  case SCR_CLK_BAR:
+    return 1;
   default:
     return 0;
   }
@@ -509,6 +694,9 @@ static int is_value(void) {
   case SCR_CONTRAST:
   case SCR_FLIP:
   case SCR_SLEEP:
+  case SCR_CLK_STYLE:
+  case SCR_CLK_SPEED:
+  case SCR_CLK_BAR:
   case SCR_PROF_NAME:
   case SCR_KEY_NAME:
     return 1;
@@ -612,6 +800,9 @@ static void back(void) {
   case SCR_CONTRAST:
   case SCR_FLIP:
   case SCR_SLEEP:
+  case SCR_CLK_STYLE:
+  case SCR_CLK_SPEED:
+  case SCR_CLK_BAR:
     go(SCR_SCREEN);
     break;
   case SCR_SAVED:
@@ -673,6 +864,21 @@ static void commit_value(void) {
     break;
   case SCR_SLEEP:
     g_store.sleep = (uint8_t)i;
+    dirty();
+    back();
+    break;
+  case SCR_CLK_STYLE:
+    g_store.clock_style = clk_pack((uint8_t)i, clk_speed_idx(), clk_bar_on());
+    dirty();
+    back();
+    break;
+  case SCR_CLK_SPEED:
+    g_store.clock_style = clk_pack(clk_anim_mode(), (uint8_t)i, clk_bar_on());
+    dirty();
+    back();
+    break;
+  case SCR_CLK_BAR:
+    g_store.clock_style = clk_pack(clk_anim_mode(), clk_speed_idx(), (uint8_t)i);
     dirty();
     back();
     break;
@@ -853,7 +1059,8 @@ static void ok(void) {
   const screen_t enter_menu[] = {SCR_PROF_LIST, SCR_KEY_PICK, SCR_SETUP};
   const screen_t enter_setup[] = {SCR_LIGHTS, SCR_SCREEN, SCR_ABOUT};
   const screen_t enter_lights[] = {SCR_LMODE, SCR_LBRIGHT, SCR_LDIM};
-  const screen_t enter_screen[] = {SCR_CONTRAST, SCR_FLIP, SCR_SLEEP};
+  const screen_t enter_screen[] = {SCR_CONTRAST, SCR_FLIP, SCR_SLEEP, SCR_CLK_STYLE,
+                                   SCR_CLK_SPEED, SCR_CLK_BAR};
   if (scr == SCR_MENU) {
     go(enter_menu[i]);
     if (enter_menu[i] == SCR_PROF_LIST) {
@@ -888,18 +1095,29 @@ static void ok(void) {
     return;
   }
   if (scr == SCR_SCREEN) {
-    if (i == 0) {
-      i = g_store.contrast;
-      go(SCR_CONTRAST);
-      i = g_store.contrast;
-    } else if (i == 1) {
-      i = g_store.flip;
-      go(SCR_FLIP);
-      i = g_store.flip;
+    if (i < 3) {
+      if (i == 0) {
+        i = g_store.contrast;
+        go(SCR_CONTRAST);
+        i = g_store.contrast;
+      } else if (i == 1) {
+        i = g_store.flip;
+        go(SCR_FLIP);
+        i = g_store.flip;
+      } else {
+        i = g_store.sleep;
+        go(SCR_SLEEP);
+        i = g_store.sleep;
+      }
+    } else if (i == 3) {
+      i = clk_anim_mode();
+      go(SCR_CLK_STYLE);
+    } else if (i == 4) {
+      i = clk_speed_idx();
+      go(SCR_CLK_SPEED);
     } else {
-      i = g_store.sleep;
-      go(SCR_SLEEP);
-      i = g_store.sleep;
+      i = clk_bar_on();
+      go(SCR_CLK_BAR);
     }
     return;
   }
@@ -1253,8 +1471,8 @@ static void draw(void) {
     break;
   }
   case SCR_SCREEN: {
-    const char *it[] = {"Contrast", "Flip", "Sleep"};
-    big_menu(it, 3, i);
+    const char *it[] = {"Contrast", "Flip", "Sleep", "Style", "Speed", "Bar"};
+    big_menu(it, 6, i);
     header("SCREEN");
     break;
   }
@@ -1278,6 +1496,15 @@ static void draw(void) {
     break;
   case SCR_SLEEP:
     value_screen("SLEEP", SLEEP_L[clampi(i, 0, 4)]);
+    break;
+  case SCR_CLK_STYLE:
+    value_screen("STYLE", CLK_ANIM_L[clampi(i, 0, CLK_ANIM_OFF)]);
+    break;
+  case SCR_CLK_SPEED:
+    value_screen("SPEED", CLK_SPEED_L[clampi(i, 0, 3)]);
+    break;
+  case SCR_CLK_BAR:
+    value_screen("BAR", i ? "On" : "Off");
     break;
   case SCR_ABOUT: {
     const char *it[] = {hid_configured() ? "USB OK" : "USB --", "Save", "Reset"};
@@ -1313,8 +1540,26 @@ static int showing_idle(void) {
   return scr == SCR_SLEEPING || scr == SCR_HOME;
 }
 
+static int clock_preview_active(void) {
+  if (!clock_preview || scr != SCR_HOME) {
+    return 0;
+  }
+  if (HAL_GetTick() >= clock_preview_until) {
+    clock_preview = 0;
+    if (scr == SCR_HOME) {
+      need_draw = 1;
+    }
+    return 0;
+  }
+  return 1;
+}
+
 static int showing_clock(void) {
-  return showing_idle() && idle_shows_clock();
+  return showing_idle() && (idle_shows_clock() || clock_preview_active());
+}
+
+static int clock_needs_fast_draw(void) {
+  return clock_preview_active() || (showing_clock() && clk_anim_mode() != CLK_ANIM_OFF);
 }
 
 void ui_tick(void) {
@@ -1331,11 +1576,27 @@ void ui_tick(void) {
     }
   }
   if (is_live() && scr != SCR_BOOT) {
-    live_idle++;
+    if (!clock_preview_active()) {
+      live_idle++;
+    } else {
+      live_idle = 0;
+    }
   } else {
     live_idle = 0;
   }
-  if (showing_clock() && (clk_ms % 50u) == 0) {
+  if (clock_preview && HAL_GetTick() >= clock_preview_until) {
+    clock_preview = 0;
+    if (scr == SCR_HOME) {
+      need_draw = 1;
+    }
+  }
+  if (clock_needs_fast_draw()) {
+    static uint16_t anim_redraw_ms;
+    if (++anim_redraw_ms >= 33u) {
+      anim_redraw_ms = 0;
+      need_draw = 1;
+    }
+  } else if (showing_clock() && (clk_ms % 50u) == 0) {
     need_draw = 1;
   }
   {
@@ -1405,8 +1666,11 @@ void ui_draw_if_needed(void) {
   if (!need_draw) {
     return;
   }
-  if (!screen_hw && last != 0 && (now - last) < 100) {
-    return;
+  if (!screen_hw && last != 0) {
+    uint32_t throttle = clock_needs_fast_draw() ? 33u : 100u;
+    if ((now - last) < throttle) {
+      return;
+    }
   }
   last = now;
   need_draw = 0;

@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 pub const SIM_ID: &str = "sim";
 pub const SIM_LABEL: &str = "Simulated LogicPad";
 const PROTO_MAJ: u8 = 0x01;
-const PROTO_MIN: u8 = 0x06;
+const PROTO_MIN: u8 = 0x09;
 const STORE_CAP: u16 = 4076;
 const HDR: u16 = 16;
 const EMPTY_ADD: u16 = 16;
@@ -48,8 +48,14 @@ struct Inner {
     contrast: u8,
     flip: u8,
     sleep: u8,
+    #[serde(default = "default_clock_style")]
+    clock_style: u8,
     dirty: bool,
     profiles: Vec<SimProfile>,
+}
+
+fn default_clock_style() -> u8 {
+    0x50
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,6 +101,7 @@ impl SimPad {
             contrast: self.live.contrast,
             flip: self.live.flip,
             sleep: self.live.sleep,
+            clock_style: self.live.clock_style,
             in_menu: false,
             usb: true,
             n_profiles: self.live.profiles.len() as u8,
@@ -158,6 +165,8 @@ impl SimPad {
             can_add_profiles: n8 < MAX_PROFILES
                 && STORE_CAP.saturating_sub(meta.store_used) >= EMPTY_ADD,
             can_set_screen: true,
+            can_set_clock_style: true,
+            can_preview_clock: true,
             can_get_leds: false,
         }
     }
@@ -212,13 +221,20 @@ impl SimPad {
         Ok(())
     }
 
-    pub fn set_screen(&mut self, contrast: u8, flip: u8, sleep: u8) -> Result<(), PadError> {
-        if contrast > 10 || flip > 1 || sleep > 4 {
+    pub fn set_screen(
+        &mut self,
+        contrast: u8,
+        flip: u8,
+        sleep: u8,
+        clock_style: u8,
+    ) -> Result<(), PadError> {
+        if contrast > 10 || flip > 1 || sleep > 4 || (clock_style & 0xf) > 12 || ((clock_style >> 4) & 3) > 3 {
             return Err(PadError::Msg("Screen values out of range.".into()));
         }
         self.live.contrast = contrast;
         self.live.flip = flip;
         self.live.sleep = sleep;
+        self.live.clock_style = clock_style;
         self.live.dirty = true;
         Ok(())
     }
@@ -347,6 +363,7 @@ fn factory_inner() -> Inner {
         contrast: 7,
         flip: 0,
         sleep: 3,
+        clock_style: 0x50,
         dirty: false,
         profiles: (0..4).map(empty_profile).collect(),
     }
@@ -444,12 +461,13 @@ mod tests {
     #[test]
     fn set_screen_updates_meta() {
         let mut s = SimPad::new();
-        s.set_screen(10, 1, 0).unwrap();
+        s.set_screen(10, 1, 0, 0x50).unwrap();
         let m = s.meta();
         assert_eq!(m.contrast, 10);
         assert_eq!(m.flip, 1);
         assert_eq!(m.sleep, 0);
+        assert_eq!(m.clock_style, 0x50);
         assert!(m.dirty);
-        assert!(s.set_screen(11, 0, 0).is_err());
+        assert!(s.set_screen(11, 0, 0, 0x50).is_err());
     }
 }

@@ -233,6 +233,21 @@ static int walk_ok(const uint8_t *b, uint16_t used, uint8_t nprof) {
   return off == used;
 }
 
+static uint8_t clock_style_migrate(uint8_t v) {
+  if ((v & 0x40u) != 0u) {
+    return v;
+  }
+  return (uint8_t)((v & 7u) | (((v >> 3) & 3u) << 4) | (((v >> 5) & 1u) << 6) | 0x40u);
+}
+
+static int clock_style_ok(uint8_t v) {
+  v = clock_style_migrate(v);
+  if ((v & 0xFu) > 12u || ((v >> 4) & 3u) > 3u || ((v >> 6) & 1u) > 1u) {
+    return 0;
+  }
+  return 1;
+}
+
 static int slot_packed_ok(const uint8_t *b) {
   const lp_hdr_t *h = (const lp_hdr_t *)b;
   uint16_t used;
@@ -244,7 +259,7 @@ static int slot_packed_ok(const uint8_t *b) {
     return 0;
   }
   if (h->n_profiles < 1 || h->active >= h->n_profiles || h->contrast > 10 || h->flip > 1 ||
-      h->sleep > 4 || h->menu_idle > 2) {
+      h->sleep > 4 || h->menu_idle > 2 || clock_style_ok(h->_pad) == 0) {
     return 0;
   }
   return walk_ok(b, used, h->n_profiles);
@@ -529,6 +544,7 @@ static void meta_from_hdr(void) {
   g_store.flip = h->flip;
   g_store.sleep = h->sleep;
   g_store.menu_idle = h->menu_idle;
+  g_store.clock_style = clock_style_migrate(h->_pad);
   g_store.n_profiles = h->n_profiles;
 }
 
@@ -541,7 +557,7 @@ static void hdr_from_meta(void) {
   h->menu_idle = g_store.menu_idle;
   h->dirty = 0;
   h->n_profiles = g_store.n_profiles;
-  h->_pad = 0;
+  h->_pad = g_store.clock_style;
 }
 
 static int load_profile(uint8_t idx) {
@@ -643,6 +659,7 @@ void storage_factory(void) {
   g_store.flip = 0;
   g_store.sleep = 3;
   g_store.menu_idle = 1;
+  g_store.clock_style = 0x50u; /* Bounce, Normal, bar on (v2 pack) */
   g_store.dirty = 0;
   g_store.n_profiles = 0;
   hdr_from_meta();
@@ -730,6 +747,7 @@ static void migrate_v4(const lp_store_v4_t *s) {
   g_store.flip = s->flip;
   g_store.sleep = s->sleep;
   g_store.menu_idle = s->menu_idle;
+  g_store.clock_style = 0x50u;
   g_store.dirty = 0;
   g_store.n_profiles = 0;
   hdr_from_meta();

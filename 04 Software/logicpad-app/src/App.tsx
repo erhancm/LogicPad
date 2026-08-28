@@ -342,7 +342,12 @@ export default function App() {
   const hdrBusy = useRef(false);
   const hdrWait = useRef<ProfileHdr | null>(null);
   const screenBusy = useRef(false);
-  const screenWait = useRef<{ contrast: number; flip: number; sleep: number } | null>(null);
+  const screenWait = useRef<{
+    contrast: number;
+    flip: number;
+    sleep: number;
+    clockStyle: number;
+  } | null>(null);
   const skipClick = useRef(false);
   const dragKeyRef = useRef<number | null>(null);
   const dragOrigin = useRef<{ x: number; y: number; i: number } | null>(null);
@@ -1173,13 +1178,19 @@ export default function App() {
     }
   }
 
-  async function pushScreen(next: { contrast: number; flip: number; sleep: number }) {
+  async function pushScreen(next: {
+    contrast: number;
+    flip: number;
+    sleep: number;
+    clockStyle: number;
+  }) {
     const cur = snapRef.current;
     if (!cur) return;
     const copy: Snapshot = structuredClone(cur);
     copy.meta.contrast = next.contrast;
     copy.meta.flip = next.flip;
     copy.meta.sleep = next.sleep;
+    copy.meta.clockStyle = next.clockStyle;
     copy.meta.dirty = true;
     snapRef.current = copy;
     setSnap(copy);

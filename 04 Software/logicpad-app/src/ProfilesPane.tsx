@@ -1,8 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LEDS, LIGHT_MODES, type PadKey, type ProfileHdr, type Snapshot, type SwitchRule } from "./types";
 import { cssLedId, pixOf, type LedFrame } from "./leds";
 import { useLedPreview } from "./ledPreview";
 import { TITLE_MAX } from "./text";
+import {
+  CLOCK_ANIMS,
+  CLOCK_SPEEDS,
+  DEFAULT_CLOCK_STYLE,
+  migrateClockStyle,
+  packClockStyle,
+  unpackClockStyle,
+} from "./clockAnim";
+import { ClockPreview, usePadClockPreview } from "./ClockPreview";
 import "./ProfilesPane.css";
 
 export const SLEEP_LABELS = ["Never", "15s", "30s", "1m", "5m"] as const;
@@ -25,7 +34,12 @@ type Props = {
   onKeyLed: (key: PadKey, led: number) => void;
   onFillLeds: (led: number) => void;
   onCopyLights: (fromIndex: number) => void;
-  onScreen: (next: { contrast: number; flip: number; sleep: number }) => void;
+  onScreen: (next: {
+    contrast: number;
+    flip: number;
+    sleep: number;
+    clockStyle: number;
+  }) => void;
   onRemoveSwitch: (exe: string) => void;
   onOpenSwitch: () => void;
 };
@@ -70,8 +84,15 @@ export function ProfilesPane({
   const canMutate = snap.canMutateProfiles ?? false;
   const canAdd = snap.canAddProfiles ?? snap.profiles.length < 4;
   const canScreen = snap.canSetScreen ?? false;
+  const canClockStyle = snap.canSetClockStyle ?? false;
+  const clockPacked = migrateClockStyle(snap.meta.clockStyle ?? DEFAULT_CLOCK_STYLE);
+  const clockStyle = unpackClockStyle(clockPacked);
   const [paintLed, setPaintLed] = useState(1);
   const [copyFrom, setCopyFrom] = useState("");
+  const [clockHover, setClockHover] = useState(false);
+  const clockSectionRef = useRef<HTMLElement>(null);
+  const canPreviewPad = (snap.canPreviewClock ?? false) && !simulated && !busy;
+  usePadClockPreview(canPreviewPad, clockHover, clockSectionRef, setClockHover);
   const live = useLedPreview({
     simulated,
     canGetLeds: snap.canGetLeds ?? false,
@@ -89,6 +110,25 @@ export function ProfilesPane({
     const next = (k.led + 1) % LEDS.length;
     setPaintLed(next);
     onKeyLed(k, next);
+  }
+
+  function pushScreen(patch: Partial<{ contrast: number; flip: number; sleep: number; clockStyle: number }>) {
+    onScreen({
+      contrast: patch.contrast ?? snap.meta.contrast,
+      flip: patch.flip ?? snap.meta.flip,
+      sleep: patch.sleep ?? snap.meta.sleep,
+      clockStyle: patch.clockStyle ?? clockPacked,
+    });
+  }
+
+  function setClockStyle(next: { anim?: number; speed?: number; bar?: number }) {
+    pushScreen({
+      clockStyle: packClockStyle(
+        next.anim ?? clockStyle.anim,
+        next.speed ?? clockStyle.speed,
+        next.bar ?? clockStyle.bar,
+      ),
+    });
   }
 
   return (
@@ -309,10 +349,8 @@ export function ProfilesPane({
       </section>
 
       <section className="pad-screen">
-        <div>
-          <h2>This pad</h2>
-          <p className="hint">OLED Screen — not per profile. Same as Setup → Screen on the pad.</p>
-        </div>
+        <h2>This pad — screen</h2>
+        <p className="hint">OLED contrast, flip, and sleep. Not per profile.</p>
         {canScreen ? (
           <div className="pad-screen-controls">
             <label>
@@ -323,13 +361,7 @@ export function ProfilesPane({
                 max={10}
                 value={snap.meta.contrast}
                 disabled={busy}
-                onChange={(e) =>
-                  onScreen({
-                    contrast: Number(e.target.value),
-                    flip: snap.meta.flip,
-                    sleep: snap.meta.sleep,
-                  })
-                }
+                onChange={(e) => pushScreen({ contrast: Number(e.target.value) })}
               />
             </label>
             <label className="flip-field">
@@ -339,13 +371,7 @@ export function ProfilesPane({
                 className={`flip-btn${snap.meta.flip ? " on" : ""}`}
                 disabled={busy}
                 aria-pressed={snap.meta.flip !== 0}
-                onClick={() =>
-                  onScreen({
-                    contrast: snap.meta.contrast,
-                    flip: snap.meta.flip ? 0 : 1,
-                    sleep: snap.meta.sleep,
-                  })
-                }
+                onClick={() => pushScreen({ flip: snap.meta.flip ? 0 : 1 })}
               >
                 180°
               </button>
@@ -355,13 +381,7 @@ export function ProfilesPane({
               <select
                 value={snap.meta.sleep}
                 disabled={busy}
-                onChange={(e) =>
-                  onScreen({
-                    contrast: snap.meta.contrast,
-                    flip: snap.meta.flip,
-                    sleep: Number(e.target.value),
-                  })
-                }
+                onChange={(e) => pushScreen({ sleep: Number(e.target.value) })}
               >
                 {SLEEP_LABELS.map((n, i) => (
                   <option key={n} value={i}>
@@ -373,6 +393,75 @@ export function ProfilesPane({
           </div>
         ) : (
           <p className="hint">Update firmware to set contrast, flip, and sleep from this app.</p>
+        )}
+      </section>
+
+      <section
+        ref={clockSectionRef}
+        className="pad-clock"
+        onPointerEnter={() => setClockHover(true)}
+        onPointerLeave={() => setClockHover(false)}
+      >
+        <div className="pad-clock-head">
+          <div>
+            <h2>Standby clock</h2>
+            <p className="hint">
+              Shown when USB is away or the PC is locked. Setup → Screen on the pad has the same
+              options.
+            </p>
+          </div>
+        </div>
+        {canClockStyle ? (
+          <div className="pad-clock-body">
+            <div className="pad-clock-controls">
+              <label>
+                Style
+                <select
+                  value={clockStyle.anim}
+                  disabled={busy}
+                  onChange={(e) => setClockStyle({ anim: Number(e.target.value) })}
+                >
+                  {CLOCK_ANIMS.map((n, i) => (
+                    <option key={n} value={i}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Speed
+                <select
+                  value={clockStyle.speed}
+                  disabled={busy}
+                  onChange={(e) => setClockStyle({ speed: Number(e.target.value) })}
+                >
+                  {CLOCK_SPEEDS.map((n, i) => (
+                    <option key={n} value={i}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Seconds bar
+                <select
+                  value={clockStyle.bar}
+                  disabled={busy}
+                  onChange={(e) => setClockStyle({ bar: Number(e.target.value) })}
+                >
+                  <option value={1}>On</option>
+                  <option value={0}>Off</option>
+                </select>
+              </label>
+            </div>
+            <ClockPreview
+              style={clockStyle}
+              flip={snap.meta.flip !== 0}
+              padPreview={clockHover && canPreviewPad}
+            />
+          </div>
+        ) : (
+          <p className="hint">Update firmware for standby clock style, speed, and bar.</p>
         )}
       </section>
     </div>

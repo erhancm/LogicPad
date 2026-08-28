@@ -20,8 +20,9 @@ export const api = {
   save: () => invoke<void>("save_store"),
   reload: () => invoke<Snapshot>("reload_store"),
   factory: () => invoke<Snapshot>("factory_reset"),
-  setScreen: (t: { contrast: number; flip: number; sleep: number }) =>
+  setScreen: (t: { contrast: number; flip: number; sleep: number; clockStyle: number }) =>
     invoke<void>("set_screen", t),
+  previewClock: (on: boolean) => invoke<void>("preview_clock", { on }),
   getLeds: () => invoke<{ color: number[]; duty: number[] }>("get_leds"),
   watchLeds: (watch: boolean) => invoke<void>("watch_leds", { watch }),
   setTime: (t: {

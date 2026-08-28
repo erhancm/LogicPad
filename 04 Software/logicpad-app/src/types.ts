@@ -57,6 +57,7 @@ export type Meta = {
   contrast: number;
   flip: number;
   sleep: number;
+  clockStyle?: number;
   inMenu: boolean;
   usb: boolean;
   nProfiles?: number;
@@ -82,6 +83,8 @@ export type Snapshot = {
   canTitles?: boolean;
   canAddProfiles?: boolean;
   canSetScreen?: boolean;
+  canSetClockStyle?: boolean;
+  canPreviewClock?: boolean;
   canGetLeds?: boolean;
 };
 
