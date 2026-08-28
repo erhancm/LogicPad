@@ -103,7 +103,7 @@ export function PackDialog(props: {
         <p className="hint">
           {mode === "export"
             ? simulated
-              ? "Save this draft as a YAML file. Switch to a USB LogicPad, then Import… to program it."
+              ? "Save this virtual keypad as a YAML file. Switch to a USB LogicPad, then Import… to program it."
               : "Write a YAML file you can Import onto any LogicPad, including the simulated one."
             : `Apply this file onto ${padLabel}. Profiles you do not select stay as they are.`}
         </p>

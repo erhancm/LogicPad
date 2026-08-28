@@ -95,7 +95,7 @@ const TABS: { id: AppTab; label: string }[] = [
 
 function padChipLabel(pad: PadInfo | undefined, linked: boolean, pads: PadInfo[]): string {
   if (!linked || !pad) return "No pad";
-  if (pad.simulated) return "Draft";
+  if (pad.simulated) return "Virtual keypad";
   const usb = pads.filter((p) => !p.simulated);
   if (usb.length <= 1) return "LogicPad";
   if (pad.serial) {
@@ -144,7 +144,7 @@ function PadSwitch({
         aria-label={`Pad: ${name}. Choose a LogicPad`}
         title={
           simulated
-            ? "Draft on this PC — not a USB LogicPad"
+            ? "Virtual keypad on this PC — not a USB LogicPad"
             : active?.label || "Choose a LogicPad"
         }
         onClick={(e) => {
@@ -177,7 +177,7 @@ function PadSwitch({
               aria-hidden="true"
             />
             <span className="pad-switch-copy">
-              <strong>{p.simulated ? "Draft" : p.label}</strong>
+              <strong>{p.simulated ? "Virtual keypad" : p.label}</strong>
               <em>{p.simulated ? "On this PC" : "USB"}</em>
             </span>
           </button>
@@ -1004,7 +1004,7 @@ export default function App() {
       setSnap(result.snap);
       const mapped = Math.min(packCount, dests.length);
       const onto = activePad?.label ?? "this pad";
-      const saveHint = simulated ? "Save to keep this draft." : "Save to write the pad.";
+      const saveHint = simulated ? "Save to keep this virtual keypad." : "Save to write the pad.";
       setStatus(
         wantSlots && packCount > mapped
           ? `Imported ${mapped} of ${packCount} profiles onto ${onto}. The pad is full — extra profiles were skipped. ${saveHint}`
@@ -1375,10 +1375,10 @@ export default function App() {
         <div className="nav-foot">
           <p className={`nav-link ${linked ? (simulated ? "sim" : "ok") : ""}`}>
             <span className="nav-dot" aria-hidden="true" />
-            {simulated ? "Simulated LogicPad" : linked ? "LogicPad connected" : "Disconnected"}
+            {simulated ? "Virtual keypad" : linked ? "LogicPad connected" : "Disconnected"}
           </p>
           {simulated ? (
-            <p className="nav-meta">Draft on this PC — Save as… then Import on a pad</p>
+            <p className="nav-meta">Virtual keypad on this PC — Save as… then Import on a pad</p>
           ) : activePad && !activePad.simulated ? (
             <p className="nav-meta">{activePad.label}</p>
           ) : null}
@@ -1502,7 +1502,7 @@ export default function App() {
         </header>
         {simulated && snap ? (
           <div className="sim-banner" role="status">
-            Simulated LogicPad — a draft on this PC, not USB. Use <strong>Save as…</strong> for a
+            Virtual keypad — on this PC, not USB. Use <strong>Save as…</strong> for a
             YAML file, switch to a USB LogicPad, then <strong>Import…</strong> to program it.
           </div>
         ) : null}
