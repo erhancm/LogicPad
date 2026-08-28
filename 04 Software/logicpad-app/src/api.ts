@@ -50,4 +50,6 @@ export const api = {
   saveTextFile: (name: string, contents: string) =>
     invoke<string | null>("save_text_file", { name, contents }),
   loadTextFile: () => invoke<[string, string] | null>("load_text_file"),
+  takeShowcaseFlag: () => invoke<boolean>("take_showcase_flag"),
+  queueShowcaseFlag: () => invoke<void>("queue_showcase_flag"),
 };

@@ -287,10 +287,73 @@ pub fn resolve_program(path: &str) -> ResolvedProgram {
             return ResolvedProgram { path: target, args };
         }
     }
+    if Path::new(path).exists() {
+        return ResolvedProgram {
+            path: path.to_string(),
+            args: String::new(),
+        };
+    }
+    #[cfg(windows)]
+    if let Some(found) = find_exe_on_windows(path) {
+        return ResolvedProgram {
+            path: found,
+            args: String::new(),
+        };
+    }
     ResolvedProgram {
         path: path.to_string(),
         args: String::new(),
     }
+}
+
+#[cfg(windows)]
+fn find_exe_on_windows(path: &str) -> Option<String> {
+    let base = Path::new(path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(path)
+        .trim();
+    if base.is_empty() {
+        return None;
+    }
+    if let Ok(out) = Command::new("where").arg(base).output() {
+        if out.status.success() {
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                let hit = line.trim();
+                if !hit.is_empty() && Path::new(hit).exists() {
+                    return Some(hit.to_string());
+                }
+            }
+        }
+    }
+    let local = std::env::var("LOCALAPPDATA").ok()?;
+    let pf = std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".into());
+    let pfx86 = std::env::var("ProgramFiles(x86)").unwrap_or_else(|_| "C:\\Program Files (x86)".into());
+    let base_lower = base.to_ascii_lowercase();
+    let mut candidates: Vec<String> = vec![
+        format!(r"{local}\Programs\cursor\{base}"),
+        format!(r"{local}\Microsoft\WindowsApps\{base}"),
+        format!(r"{pf}\obs-studio\bin\64bit\{base}"),
+        format!(r"{pf}\Microsoft\Teams\current\{base}"),
+        format!(r"{pf}\Google\Chrome\Application\{base}"),
+        format!(r"{pf}\Mozilla Firefox\{base}"),
+        format!(r"{pf}\Figma\{base}"),
+        format!(r"{local}\Discord\{base}"),
+        format!(r"{local}\Programs\Microsoft VS Code\{base}"),
+    ];
+    if base_lower == "teams.exe" {
+        candidates.push(format!(r"{pfx86}\Microsoft\Teams\current\{base}"));
+    }
+    if base_lower == "spotify.exe" {
+        candidates.push(format!(r"{local}\Microsoft\WindowsApps\{base}"));
+        candidates.push(format!(r"{local}\Programs\Spotify\{base}"));
+    }
+    for c in candidates {
+        if Path::new(&c).exists() {
+            return Some(c);
+        }
+    }
+    None
 }
 
 fn is_lnk(path: &str) -> bool {

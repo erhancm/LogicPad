@@ -53,7 +53,7 @@
 import { parse, stringify } from "yaml";
 import { launchesOf } from "./launches";
 import { flattenGraph, graphFromRules } from "./switchGraph";
-import { LIGHT_MODES, type Action, type LaunchEntry, type PadKey, type Snapshot, type SwitchConfig } from "./types";
+import { LIGHT_MODES, type Action, type LaunchEntry, type PadKey, type Snapshot, type SwitchConfig, type SwitchGraph } from "./types";
 
 export const PACK_VERSION = 1;
 const KEY_COUNT = 9;
@@ -110,6 +110,7 @@ export type PackSwitchRule = {
 export type PackAutoSwitch = {
   enabled: boolean;
   rules: PackSwitchRule[];
+  graph?: SwitchGraph;
 };
 
 export type LogicPadPack = {
@@ -238,6 +239,7 @@ export function buildPack(
       rules.push(rule);
     }
     pack.autoSwitch = { enabled: switchCfg.enabled, rules };
+    if (switchCfg.graph) pack.autoSwitch.graph = switchCfg.graph;
   }
   return pack;
 }
@@ -340,7 +342,7 @@ export function applyPack(
       if (i >= 0) nextSwitch.rules[i] = { exe: nextSwitch.rules[i].exe, profile: dest };
       else nextSwitch.rules.push({ exe, profile: dest });
     }
-    nextSwitch.graph = graphFromRules(nextSwitch.rules);
+    nextSwitch.graph = pack.autoSwitch.graph ?? graphFromRules(nextSwitch.rules);
   }
 
   return { snap: nextSnap, launches: nextLaunches, switchCfg: nextSwitch };
@@ -464,7 +466,11 @@ function parseAutoSwitch(raw: unknown): PackAutoSwitch {
     if (profile !== undefined) rule.profile = profile;
     rules.push(rule);
   }
-  return { enabled: Boolean(o.enabled), rules };
+  const out: PackAutoSwitch = { enabled: Boolean(o.enabled), rules };
+  if (o.graph != null && typeof o.graph === "object" && !Array.isArray(o.graph)) {
+    out.graph = o.graph as SwitchGraph;
+  }
+  return out;
 }
 
 function emptyKey(profile: number, index: number): PadKey {

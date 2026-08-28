@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as PE } from "r
 import { listen } from "@tauri-apps/api/event";
 import { LEDS, LIGHT_MODES, type PadKey, type ProfileHdr, type SwitchConfig, type SwitchEdge, type SwitchGraph, type SwitchNode } from "./types";
 import { cssLedId } from "./leds";
-import { autoLayoutGraph, CANVAS_H, CANVAS_W, ensureGraph, isGate, newId, nodeSize, nodeZone, snapNodeToZone, snapToGrid, withGraph, ZONE_LAYOUT } from "./switchGraph";
+import { autoLayoutGraph, CANVAS_H, CANVAS_W, ensureGraph, graphHasCustomLogic, isGate, newId, nodeSize, nodeZone, snapNodeToZone, snapToGrid, withGraph, ZONE_LAYOUT } from "./switchGraph";
 import { GateIcon, GateSymbol, logicGateInfo, LOGIC_GATE_INFO, type LogicGateKind } from "./GateSymbol";
 import { RunningPicker, type OpenWindow } from "./RunningPicker";
+import { SwitchRulesList } from "./SwitchRulesList";
 import { api } from "./api";
 import "./SwitchEditor.css";
 
@@ -245,7 +246,6 @@ const ADD_SECTIONS: AddSection[] = [
     title: "Actions",
     items: [
       { kind: "setProfile", label: "Set profile" },
-      { kind: "setProfile", label: "Set lights", lightsOnly: true },
       { kind: "restore", label: "Restore previous profile" },
     ],
   },
@@ -264,13 +264,17 @@ export function SwitchEditor(props: {
   profiles: ProfileHdr[];
   keys: PadKey[][];
   busy?: boolean;
+  enabled?: boolean;
   onChange: (cfg: SwitchConfig) => void;
+  onStatus?: (msg: string) => void;
   onLights: LightsCb;
   listWindows: () => Promise<OpenWindow[]>;
   pickProgram: () => Promise<string | null>;
 }) {
-  const { open, cfg, profiles, keys, busy, onChange, onLights, listWindows, pickProgram } = props;
+  const { open, cfg, profiles, keys, busy, enabled = cfg.enabled, onChange, onStatus, onLights, listWindows, pickProgram } = props;
   const [graph, setGraph] = useState(() => ensureGraph(cfg));
+  const [advancedOpen, setAdvancedOpen] = useState(() => graphHasCustomLogic(ensureGraph(cfg)));
+  const [ruleHighlight, setRuleHighlight] = useState<string | null>(null);
   const [pan, setPan] = useState({ x: 36, y: 28 });
   const [zoom, setZoom] = useState(1);
   const [sel, setSel] = useState<string | null>(null);
@@ -299,14 +303,21 @@ export function SwitchEditor(props: {
     .join("|");
 
   useEffect(() => {
-    if (open) {
-      const g = ensureGraph(cfg);
-      setGraph({ ...g, nodes: g.nodes.map((n) => snapNodeToZone(n)) });
-      setSel(null);
-      setLinkFrom(null);
-      setAddOpen(null);
-      setMenu(null);
-    }
+    if (!open) return;
+    const g = ensureGraph(cfg);
+    const next = { ...g, nodes: g.nodes.map((n) => snapNodeToZone(n)) };
+    setGraph(next);
+    graphRef.current = next;
+    if (graphHasCustomLogic(g)) setAdvancedOpen(true);
+  }, [cfg, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setSel(null);
+    setRuleHighlight(null);
+    setLinkFrom(null);
+    setAddOpen(null);
+    setMenu(null);
   }, [open]);
 
   useEffect(() => {
@@ -669,8 +680,47 @@ export function SwitchEditor(props: {
         )
       : null;
 
+  function highlightRule(setProfileId: string | null) {
+    setRuleHighlight(setProfileId);
+    if (!setProfileId) return;
+    const node = graph.nodes.find((n) => n.id === setProfileId);
+    if (!node) return;
+    setSel(setProfileId);
+    setAdvancedOpen(true);
+    const el = canvasRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const cx = node.x + nodeSize(node).w / 2;
+    const cy = node.y + nodeSize(node).h / 2;
+    const z = viewRef.current.zoom;
+    setPan({ x: rect.width / 2 - cx * z, y: rect.height / 2 - cy * z });
+  }
+
+  function onRulesChange(next: SwitchConfig) {
+    const g = ensureGraph(next);
+    setGraph({ ...g, nodes: g.nodes.map((n) => snapNodeToZone(n)) });
+    graphRef.current = g;
+    onChange(next);
+  }
+
   return (
     <div className="sw-pane">
+      <SwitchRulesList
+        cfg={cfg}
+        graph={graph}
+        profiles={profiles}
+        busy={busy}
+        enabled={enabled}
+        highlightId={ruleHighlight}
+        advancedOpen={advancedOpen}
+        onAdvancedOpen={setAdvancedOpen}
+        onChange={onRulesChange}
+        onHighlight={highlightRule}
+        onStatus={onStatus}
+        listWindows={listWindows}
+        pickProgram={pickProgram}
+      />
+      <div className={`sw-advanced-wrap${advancedOpen ? "" : " collapsed"}`}>
       <div className="sw-tools">
         {toolbarSections.map((section) => (
           <div key={section.id} className={`sw-add sw-add-${section.id} ${addOpen === section.id ? "open" : ""}`}>
@@ -891,26 +941,12 @@ export function SwitchEditor(props: {
                   </>
                 ) : null}
                 {n.kind === "restore" ? (
-                  <>
-                    <label>
-                      Restore
-                      <select value="previous" disabled>
-                        <option value="previous">Previous profile</option>
-                      </select>
-                    </label>
-                    <label className="sw-check">
-                      <input
-                        type="checkbox"
-                        checked={n.restoreLights !== false}
-                        onChange={(e) =>
-                          patchNode(n.id, (cur) =>
-                            cur.kind === "restore" ? { ...cur, restoreLights: e.target.checked } : cur,
-                          )
-                        }
-                      />
-                      Also restore lights
-                    </label>
-                  </>
+                  <label>
+                    Restore
+                    <select value="previous" disabled>
+                      <option value="previous">Previous profile</option>
+                    </select>
+                  </label>
                 ) : null}
                 {n.kind === "setProfile" && !n.lightsOnly ? (
                   <>
@@ -1060,6 +1096,7 @@ export function SwitchEditor(props: {
             })
           }
         />
+      </div>
       </div>
     </div>
   );

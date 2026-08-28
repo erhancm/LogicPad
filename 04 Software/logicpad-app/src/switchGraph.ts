@@ -235,6 +235,83 @@ function collectKinds(
   return { foreground: uniqExes(foreground), running: uniqExes(running), sawFg, sawRun };
 }
 
+export function graphIsEmpty(graph: SwitchGraph): boolean {
+  return !graph.nodes.some((n) => n.kind === "setProfile" && !n.lightsOnly);
+}
+
+/** True when the graph uses logic beyond simple foreground/running → profile chains. */
+export function graphHasCustomLogic(graph: SwitchGraph): boolean {
+  if (graph.nodes.some((n) => n.kind === "setProfile" && n.lightsOnly)) return true;
+  const allowed = new Set(["foreground", "running", "setProfile", "restore", "and"]);
+  return graph.nodes.some((n) => !allowed.has(n.kind));
+}
+
+export function listRuleCards(graph: SwitchGraph): SwitchCard[] {
+  return graphToCards(graph).filter((c) => c.programs.length > 0 && c.id !== "draft");
+}
+
+export function addSimpleRule(
+  graph: SwitchGraph,
+  exe: string,
+  profile: number,
+  match: "foreground" | "running" = "foreground",
+): SwitchGraph {
+  const base = exe.replace(/^.*[\\/]/, "").trim();
+  if (!base) return graph;
+  const cards = listRuleCards(graph);
+  const newCard: SwitchCard = {
+    id: newId("rule"),
+    match,
+    programs: [base],
+    profile,
+  };
+  return autoLayoutGraph(cardsToGraph([...cards, newCard]));
+}
+
+export function removeRuleCard(graph: SwitchGraph, cardId: string): SwitchGraph {
+  const cards = listRuleCards(graph).filter((c) => c.id !== cardId);
+  return autoLayoutGraph(cardsToGraph(cards));
+}
+
+export function reorderRuleCards(graph: SwitchGraph, fromIndex: number, toIndex: number): SwitchGraph {
+  const cards = listRuleCards(graph);
+  if (fromIndex < 0 || toIndex < 0 || fromIndex >= cards.length || toIndex >= cards.length) {
+    return graph;
+  }
+  const next = cards.slice();
+  const [item] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, item);
+  return autoLayoutGraph(cardsToGraph(next));
+}
+
+export function updateRuleCard(
+  graph: SwitchGraph,
+  cardId: string,
+  patch: Partial<Pick<SwitchCard, "profile" | "match" | "programs">>,
+): SwitchGraph {
+  const cards = listRuleCards(graph).map((c) => (c.id === cardId ? { ...c, ...patch } : c));
+  return autoLayoutGraph(cardsToGraph(cards));
+}
+
+export function ruleCardLabel(card: SwitchCard): string {
+  const app = card.programs[0]?.replace(/\.exe$/i, "").replace(/^.*[\\/]/, "") || "App";
+  if (card.andRunning?.length) {
+    const extra = card.andRunning[0]?.replace(/\.exe$/i, "").replace(/^.*[\\/]/, "") || "app";
+    return `${app} (+ ${extra} running)`;
+  }
+  if (card.match === "running") return `${app} (running)`;
+  return app;
+}
+
+export function ruleCardKind(card: SwitchCard): "simple" | "advanced" {
+  if (card.andRunning?.length) return "advanced";
+  return "simple";
+}
+
+export function stemName(path: string): string {
+  return path.replace(/^.*[\\/]/, "").replace(/\.exe$/i, "");
+}
+
 export function emptyCard(profile: number): SwitchCard {
   return {
     id: newId("if"),

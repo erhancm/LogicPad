@@ -32,6 +32,8 @@ import {
   preventGridMenu,
   type KeyMenuTarget,
 } from "./KeyContextMenu";
+import { applyShowcaseToPad } from "./showcaseApply";
+import { ensureGraph, exeStem, listRuleCards, stemName as exeDisplayName } from "./switchGraph";
 import { SwitchEditor } from "./SwitchEditor";
 import { SyncBadge } from "./SyncBadge";
 import { PackDialog } from "./PackDialog";
@@ -361,6 +363,7 @@ export default function App() {
   const [importDraft, setImportDraft] = useState<LogicPadPack | null>(null);
   const [tab, setTab] = useState<AppTab>("keys");
   const [fwVer, setFwVer] = useState<string | null>(null);
+  const showcaseOnce = useRef(false);
   snapRef.current = snap;
   launchesRef.current = launches;
 
@@ -665,6 +668,36 @@ export default function App() {
       unlisten?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (!snap || busy || showcaseOnce.current) return;
+    let gone = false;
+    void (async () => {
+      try {
+        if (!(await api.takeShowcaseFlag())) return;
+        if (gone) return;
+        if (simulated) {
+          setErr("Showcase demo needs a USB LogicPad connected (not the virtual keypad).");
+          return;
+        }
+        showcaseOnce.current = true;
+        setStatus("Applying showcase demo…");
+        const result = await applyShowcaseToPad(snap, launches, switchCfg);
+        if (gone) return;
+        takePad(result.snap);
+        setLaunches(result.launches);
+        setSwitchCfg(result.switchCfg);
+        setBaseline(cloneSnap(result.snap));
+        setTab("switch");
+        setStatus("Showcase demo saved to your LogicPad");
+      } catch (e) {
+        if (!gone) setErr(String(e));
+      }
+    })();
+    return () => {
+      gone = true;
+    };
+  }, [snap, simulated, busy, launches, switchCfg]);
 
   useEffect(() => {
     let gone = false;
@@ -1030,11 +1063,26 @@ export default function App() {
   }
 
   const bound = switchCfg.rules.filter((r) => r.profile === profile);
-  const focusLabel = focusNow?.exe
-    ? focusNow.profile != null
-      ? `Now: ${focusNow.exe} → ${snap?.profiles[focusNow.profile]?.name || `P${focusNow.profile + 1}`}`
-      : `Now: ${focusNow.exe}`
-    : null;
+  const focusLabel = (() => {
+    if (!focusNow?.exe) return null;
+    const graph = ensureGraph(switchCfg);
+    const cards = listRuleCards(graph);
+    const stem = exeStem(focusNow.exe);
+    const card = cards.find(
+      (c) =>
+        c.programs.some((p) => exeStem(p) === stem) ||
+        c.andRunning?.some((p) => exeStem(p) === stem),
+    );
+    const profName =
+      focusNow.profile != null
+        ? snap?.profiles[focusNow.profile]?.name || `P${focusNow.profile + 1}`
+        : null;
+    if (card && profName) {
+      return `Matched: ${exeDisplayName(card.programs[0] || focusNow.exe)} → ${profName}`;
+    }
+    if (profName) return `Now: ${focusNow.exe} → ${profName}`;
+    return `Now: ${focusNow.exe}`;
+  })();
 
   async function onAddProfile() {
     await run("Profile added", async () => {
@@ -1425,7 +1473,7 @@ export default function App() {
                   {focusLabel.replace(" → ", " -> ")}
                 </p>
               ) : (
-                <p className="sw-now mute">Now: no matching window</p>
+                <p className="sw-now mute">No matching rule</p>
               )}
             </div>
           ) : (
@@ -1542,7 +1590,9 @@ export default function App() {
               profiles={snap?.profiles ?? []}
               keys={snap?.keys ?? []}
               busy={busy}
+              enabled={switchCfg.enabled}
               onChange={(next) => void persistSwitch(next)}
+              onStatus={setStatus}
               onLights={(nextHdr, leds) => {
                 void pushHdr(nextHdr);
                 const cur = snapRef.current;

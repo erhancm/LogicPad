@@ -1,0 +1,545 @@
+# LogicPad setup pack (logicpadPack: 1)
+logicpadPack: 1
+exportedAt: 2026-08-28T16:41:07.585Z
+profiles:
+  - name: Create
+    lightMode: 5
+    bright: 8
+    dim: 3
+    keys:
+      - index: 0
+        label: Copy
+        led: 4
+        acts:
+          - type: 1
+            mods: 1
+            code: 6
+        text: ""
+      - index: 1
+        label: Paste
+        led: 3
+        acts:
+          - type: 1
+            mods: 1
+            code: 25
+        text: ""
+      - index: 2
+        label: Undo
+        led: 2
+        acts:
+          - type: 1
+            mods: 1
+            code: 29
+        text: ""
+      - index: 3
+        label: Save
+        led: 1
+        acts:
+          - type: 1
+            mods: 1
+            code: 22
+        text: ""
+      - index: 4
+        label: Find
+        led: 4
+        acts:
+          - type: 1
+            mods: 1
+            code: 9
+        text: ""
+      - index: 5
+        label: Run
+        led: 1
+        acts:
+          - type: 1
+            mods: 2
+            code: 21
+        text: ""
+      - index: 6
+        label: Term
+        led: 2
+        acts:
+          - type: 1
+            mods: 2
+            code: 23
+        text: ""
+      - index: 7
+        label: Close
+        led: 0
+        acts:
+          - type: 1
+            mods: 1
+            code: 26
+        text: ""
+      - index: 8
+        label: Snippet
+        led: 1
+        acts:
+          - type: 8
+            mods: 0
+            code: 0
+        text: |
+          // LogicPad demo
+        launches:
+          - path: Cursor.exe
+            args: ""
+            slot: 0
+  - name: Stream
+    lightMode: 7
+    bright: 9
+    dim: 2
+    keys:
+      - index: 0
+        label: Rec
+        led: 2
+        acts:
+          - type: 1
+            mods: 4
+            code: 82
+        text: ""
+      - index: 1
+        label: Mute
+        led: 0
+        acts:
+          - type: 6
+            mods: 0
+            code: 226
+        text: ""
+      - index: 2
+        label: Vol+
+        led: 0
+        acts:
+          - type: 6
+            mods: 0
+            code: 233
+        text: ""
+      - index: 3
+        label: Vol-
+        led: 0
+        acts:
+          - type: 6
+            mods: 0
+            code: 234
+        text: ""
+      - index: 4
+        label: Scene
+        led: 3
+        acts:
+          - type: 1
+            mods: 4
+            code: 9
+        text: ""
+      - index: 5
+        label: Mic
+        led: 1
+        acts:
+          - type: 1
+            mods: 4
+            code: 16
+        text: ""
+      - index: 6
+        label: Chat
+        led: 4
+        acts:
+          - type: 1
+            mods: 2
+            code: 9
+        text: ""
+      - index: 7
+        label: Click
+        led: 0
+        acts:
+          - type: 3
+            mods: 1
+            code: 0
+        text: ""
+      - index: 8
+        label: OBS
+        led: 2
+        acts: []
+        text: ""
+        launches:
+          - path: obs64.exe
+            args: ""
+            slot: 0
+  - name: Meet
+    lightMode: 1
+    bright: 6
+    dim: 2
+    keys:
+      - index: 0
+        label: Mute
+        led: 2
+        acts:
+          - type: 6
+            mods: 0
+            code: 226
+        text: ""
+      - index: 1
+        label: Cam
+        led: 1
+        acts:
+          - type: 1
+            mods: 4
+            code: 57
+        text: ""
+      - index: 2
+        label: Share
+        led: 4
+        acts:
+          - type: 1
+            mods: 4
+            code: 19
+        text: ""
+      - index: 3
+        label: Leave
+        led: 2
+        acts:
+          - type: 1
+            mods: 4
+            code: 43
+        text: ""
+      - index: 4
+        label: OK
+        led: 1
+        acts:
+          - type: 1
+            mods: 0
+            code: 40
+        text: ""
+      - index: 5
+        label: Up
+        led: 0
+        acts:
+          - type: 1
+            mods: 0
+            code: 82
+        text: ""
+      - index: 6
+        label: Down
+        led: 0
+        acts:
+          - type: 1
+            mods: 0
+            code: 81
+        text: ""
+      - index: 7
+        label: Hand
+        led: 3
+        acts:
+          - type: 1
+            mods: 4
+            code: 35
+        text: ""
+      - index: 8
+        label: Teams
+        led: 1
+        acts: []
+        text: ""
+        launches:
+          - path: Teams.exe
+            args: ""
+            slot: 0
+  - name: Browse
+    lightMode: 3
+    bright: 7
+    dim: 3
+    keys:
+      - index: 0
+        label: NewTab
+        led: 1
+        acts:
+          - type: 1
+            mods: 1
+            code: 4
+        text: ""
+      - index: 1
+        label: Close
+        led: 0
+        acts:
+          - type: 1
+            mods: 1
+            code: 26
+        text: ""
+      - index: 2
+        label: Back
+        led: 4
+        acts:
+          - type: 1
+            mods: 1
+            code: 80
+        text: ""
+      - index: 3
+        label: Fwd
+        led: 4
+        acts:
+          - type: 1
+            mods: 1
+            code: 79
+        text: ""
+      - index: 4
+        label: Reload
+        led: 1
+        acts:
+          - type: 1
+            mods: 1
+            code: 21
+        text: ""
+      - index: 5
+        label: Find
+        led: 2
+        acts:
+          - type: 1
+            mods: 1
+            code: 9
+        text: ""
+      - index: 6
+        label: Home
+        led: 3
+        acts:
+          - type: 1
+            mods: 1
+            code: 14
+        text: ""
+      - index: 7
+        label: Full
+        led: 0
+        acts:
+          - type: 1
+            mods: 0
+            code: 67
+        text: ""
+      - index: 8
+        label: URL
+        led: 1
+        acts:
+          - type: 8
+            mods: 0
+            code: 0
+        text: |
+          logicpad.dev
+        launches: []
+  - name: Play
+    lightMode: 8
+    bright: 8
+    dim: 2
+    keys:
+      - index: 0
+        label: Prev
+        led: 4
+        acts:
+          - type: 6
+            mods: 0
+            code: 182
+        text: ""
+      - index: 1
+        label: Play
+        led: 3
+        acts:
+          - type: 6
+            mods: 0
+            code: 205
+        text: ""
+      - index: 2
+        label: Next
+        led: 4
+        acts:
+          - type: 6
+            mods: 0
+            code: 181
+        text: ""
+      - index: 3
+        label: Vol+
+        led: 2
+        acts:
+          - type: 6
+            mods: 0
+            code: 233
+        text: ""
+      - index: 4
+        label: Vol-
+        led: 2
+        acts:
+          - type: 6
+            mods: 0
+            code: 234
+        text: ""
+      - index: 5
+        label: Mute
+        led: 1
+        acts:
+          - type: 6
+            mods: 0
+            code: 226
+        text: ""
+      - index: 6
+        label: Like
+        led: 1
+        acts:
+          - type: 1
+            mods: 0
+            code: 15
+        text: ""
+      - index: 7
+        label: Skip
+        led: 0
+        acts:
+          - type: 1
+            mods: 0
+            code: 40
+        text: ""
+      - index: 8
+        label: Macro
+        led: 3
+        acts:
+          - type: 2
+            mods: 0
+            code: 120
+          - type: 1
+            mods: 2
+            code: 4
+          - type: 2
+            mods: 0
+            code: 80
+          - type: 1
+            mods: 0
+            code: 40
+        text: ""
+        launches: []
+autoSwitch:
+  enabled: true
+  rules:
+    - exe: Cursor.exe
+      profileName: Create
+      profile: 0
+    - exe: Code.exe
+      profileName: Create
+      profile: 0
+    - exe: Figma.exe
+      profileName: Create
+      profile: 0
+    - exe: obs64.exe
+      profileName: Stream
+      profile: 1
+    - exe: Teams.exe
+      profileName: Meet
+      profile: 2
+    - exe: Zoom.exe
+      profileName: Meet
+      profile: 2
+    - exe: chrome.exe
+      profileName: Browse
+      profile: 3
+    - exe: msedge.exe
+      profileName: Browse
+      profile: 3
+    - exe: firefox.exe
+      profileName: Browse
+      profile: 3
+    - exe: Spotify.exe
+      profileName: Play
+      profile: 4
+  graph:
+    nodes:
+      - kind: foreground
+        id: rule-createf
+        x: 48
+        y: 40
+        programs:
+          - Cursor.exe
+          - Code.exe
+          - Figma.exe
+      - kind: setProfile
+        id: rule-create
+        x: 528
+        y: 40
+        profile: 0
+        priority: 0
+      - kind: foreground
+        id: rule-streamf
+        x: 48
+        y: 230
+        programs:
+          - obs64.exe
+      - kind: running
+        id: rule-streamr
+        x: 48
+        y: 300
+        programs:
+          - Discord.exe
+      - kind: and
+        id: rule-streama
+        x: 368
+        y: 254
+      - kind: setProfile
+        id: rule-stream
+        x: 528
+        y: 230
+        profile: 1
+        priority: 1
+      - kind: foreground
+        id: rule-meetf
+        x: 48
+        y: 420
+        programs:
+          - Teams.exe
+          - Zoom.exe
+      - kind: setProfile
+        id: rule-meet
+        x: 528
+        y: 420
+        profile: 2
+        priority: 2
+      - kind: foreground
+        id: rule-browsef
+        x: 48
+        y: 610
+        programs:
+          - chrome.exe
+          - msedge.exe
+          - firefox.exe
+      - kind: setProfile
+        id: rule-browse
+        x: 528
+        y: 610
+        profile: 3
+        priority: 3
+      - kind: running
+        id: rule-playr
+        x: 48
+        y: 800
+        programs:
+          - Spotify.exe
+      - kind: setProfile
+        id: rule-play
+        x: 528
+        y: 800
+        profile: 4
+        priority: 4
+      - kind: restore
+        id: else
+        x: 528
+        y: 990
+        priority: 255
+    edges:
+      - id: rule-createe
+        from: rule-createf
+        to: rule-create
+      - id: rule-streame1
+        from: rule-streamf
+        to: rule-streama
+      - id: rule-streame2
+        from: rule-streamr
+        to: rule-streama
+      - id: rule-streame3
+        from: rule-streama
+        to: rule-stream
+      - id: rule-meete
+        from: rule-meetf
+        to: rule-meet
+      - id: rule-browsee
+        from: rule-browsef
+        to: rule-browse
+      - id: rule-playe
+        from: rule-playr
+        to: rule-play
