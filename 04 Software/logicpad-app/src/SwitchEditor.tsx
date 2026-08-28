@@ -2,17 +2,16 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as PE } from "r
 import { listen } from "@tauri-apps/api/event";
 import { LEDS, LIGHT_MODES, type PadKey, type ProfileHdr, type SwitchConfig, type SwitchEdge, type SwitchGraph, type SwitchNode } from "./types";
 import { cssLedId } from "./leds";
-import { ensureGraph, newId, withGraph } from "./switchGraph";
+import { autoLayoutGraph, ensureGraph, newId, nodeSize, snapToGrid, withGraph } from "./switchGraph";
 import { RunningPicker, type OpenWindow } from "./RunningPicker";
 import { api } from "./api";
 import "./SwitchEditor.css";
 
-function nodeSize(n: SwitchNode): { w: number; h: number } {
-  if (n.kind === "and" || n.kind === "or") return { w: 76, h: 76 };
-  if (n.kind === "foreground" || n.kind === "running") return { w: 252, h: 154 };
-  if (n.kind === "restore") return { w: 236, h: 124 };
-  if (n.kind === "setProfile" && n.lightsOnly) return { w: 248, h: 198 };
-  return { w: 228, h: 176 };
+const ZOOM_MIN = 0.3;
+const ZOOM_MAX = 2.5;
+
+function clampZoom(z: number): number {
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 }
 
 function wirePath(x1: number, y1: number, x2: number, y2: number): string {
@@ -236,6 +235,7 @@ export function SwitchEditor(props: {
   const { open, cfg, profiles, keys, busy, onChange, onLights, listWindows, pickProgram } = props;
   const [graph, setGraph] = useState(() => ensureGraph(cfg));
   const [pan, setPan] = useState({ x: 36, y: 28 });
+  const [zoom, setZoom] = useState(1);
   const [sel, setSel] = useState<string | null>(null);
   const [linkFrom, setLinkFrom] = useState<{ id: string; port: number } | null>(null);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
@@ -247,8 +247,10 @@ export function SwitchEditor(props: {
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [addOpen, setAddOpen] = useState(false);
   const [menu, setMenu] = useState<string | null>(null);
-  const drag = useRef<{ id: string; dx: number; dy: number } | null>(null);
+  const drag = useRef<{ id: string; ox: number; oy: number } | null>(null);
   const panning = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+  const viewRef = useRef({ pan, zoom });
+  viewRef.current = { pan, zoom };
   const canvasRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef(graph);
   graphRef.current = graph;
@@ -315,6 +317,26 @@ export function SwitchEditor(props: {
   }, [open, pickNode, programKey]);
 
   useEffect(() => {
+    const el = canvasRef.current;
+    if (!open || !el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+      const { pan: p, zoom: z } = viewRef.current;
+      const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+      const nz = clampZoom(z * factor);
+      const wx = (sx - p.x) / z;
+      const wy = (sy - p.y) / z;
+      setPan({ x: sx - wx * nz, y: sy - wy * nz });
+      setZoom(nz);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [open]);
+
+  useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -349,20 +371,43 @@ export function SwitchEditor(props: {
     });
   }
 
-  function toWorld(e: PE<HTMLElement>): { x: number; y: number } {
+  function toWorld(clientX: number, clientY: number): { x: number; y: number } {
     const r = canvasRef.current?.getBoundingClientRect();
+    const { pan: p, zoom: z } = viewRef.current;
     return {
-      x: e.clientX - (r?.left ?? 0) - pan.x,
-      y: e.clientY - (r?.top ?? 0) - pan.y,
+      x: (clientX - (r?.left ?? 0) - p.x) / z,
+      y: (clientY - (r?.top ?? 0) - p.y) / z,
     };
+  }
+
+  function zoomBy(factor: number, anchor?: { x: number; y: number }) {
+    const el = canvasRef.current;
+    const rect = el?.getBoundingClientRect();
+    const sx = anchor?.x ?? (rect ? rect.width / 2 : 0);
+    const sy = anchor?.y ?? (rect ? rect.height / 2 : 0);
+    const { pan: p, zoom: z } = viewRef.current;
+    const nz = clampZoom(z * factor);
+    const wx = (sx - p.x) / z;
+    const wy = (sy - p.y) / z;
+    setPan({ x: sx - wx * nz, y: sy - wy * nz });
+    setZoom(nz);
+  }
+
+  function resetView() {
+    setPan({ x: 36, y: 28 });
+    setZoom(1);
   }
 
   function addNode(kind: SwitchNode["kind"], lightsOnly = false) {
     setAddOpen(false);
     setMenu(null);
     const id = newId(lightsOnly ? "lt" : kind.slice(0, 2));
-    const x = 90 - pan.x + (graph.nodes.length % 6) * 16;
-    const y = 70 - pan.y + (graph.nodes.length % 5) * 18;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const cx = rect ? rect.width / 2 : 320;
+    const cy = rect ? rect.height / 2 : 240;
+    const center = toWorld(rect ? rect.left + cx : cx, rect ? rect.top + cy : cy);
+    const x = snapToGrid(center.x - 110 + (graph.nodes.length % 6) * 16);
+    const y = snapToGrid(center.y - 60 + (graph.nodes.length % 5) * 18);
     const pri =
       Math.max(
         0,
@@ -425,7 +470,7 @@ export function SwitchEditor(props: {
     e.preventDefault();
     if (side === "out") {
       setLinkFrom({ id, port });
-      setCursor(toWorld(e));
+      setCursor(toWorld(e.clientX, e.clientY));
       return;
     }
     if (linkFrom) tryLink(linkFrom.id, id);
@@ -438,12 +483,13 @@ export function SwitchEditor(props: {
     setMenu(null);
     const n = graph.nodes.find((x) => x.id === id);
     if (!n) return;
-    drag.current = { id, dx: e.clientX - n.x, dy: e.clientY - n.y };
+    const world = toWorld(e.clientX, e.clientY);
+    drag.current = { id, ox: world.x - n.x, oy: world.y - n.y };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   }
 
   function onMove(e: PE<HTMLDivElement>) {
-    if (linkFrom) setCursor(toWorld(e));
+    if (linkFrom) setCursor(toWorld(e.clientX, e.clientY));
     if (panning.current) {
       setPan({
         x: panning.current.px + (e.clientX - panning.current.x),
@@ -453,11 +499,12 @@ export function SwitchEditor(props: {
     }
     const d = drag.current;
     if (!d) return;
+    const world = toWorld(e.clientX, e.clientY);
     commit(
       {
         ...graphRef.current,
         nodes: graphRef.current.nodes.map((n) =>
-          n.id === d.id ? { ...n, x: e.clientX - d.dx, y: e.clientY - d.dy } : n,
+          n.id === d.id ? { ...n, x: world.x - d.ox, y: world.y - d.oy } : n,
         ),
       },
       false,
@@ -475,7 +522,15 @@ export function SwitchEditor(props: {
         setCursor(null);
       }
     }
-    if (drag.current) onChange(withGraph(cfg, graphRef.current));
+    if (drag.current) {
+      const snapped = {
+        ...graphRef.current,
+        nodes: graphRef.current.nodes.map((n) =>
+          n.id === drag.current!.id ? { ...n, x: snapToGrid(n.x), y: snapToGrid(n.y) } : n,
+        ),
+      };
+      commit(snapped);
+    }
     drag.current = null;
     panning.current = null;
   }
@@ -589,13 +644,34 @@ export function SwitchEditor(props: {
           Set lights
         </button>
         {linkFrom ? <span className="hint">Drop on a yellow input</span> : null}
+        <span className="sw-tools-gap" />
+        <div className="sw-zoom">
+          <button type="button" className="sw-tool sw-zoom-btn" title="Zoom out" onClick={() => zoomBy(1 / 1.2)}>
+            −
+          </button>
+          <button type="button" className="sw-tool sw-zoom-label" title="Reset view" onClick={resetView}>
+            {Math.round(zoom * 100)}%
+          </button>
+          <button type="button" className="sw-tool sw-zoom-btn" title="Zoom in" onClick={() => zoomBy(1.2)}>
+            +
+          </button>
+        </div>
+        <button
+          type="button"
+          className="sw-tool"
+          title="Arrange nodes left-to-right by connection"
+          onClick={() => commit(autoLayoutGraph(graph))}
+        >
+          Auto layout
+        </button>
+        <span className="hint sw-canvas-hint">Drag empty area to pan · Scroll to zoom</span>
       </div>
       <div
         ref={canvasRef}
         className="sw-canvas"
         onPointerDown={(e) => {
           const t = e.target as HTMLElement;
-          if (t !== e.currentTarget && !t.classList.contains("sw-wires")) return;
+          if (t.closest(".sw-node, .sw-port, button, input, select, .sw-chip, .sw-menu")) return;
           setSel(null);
           setLinkFrom(null);
           setCursor(null);
@@ -608,7 +684,10 @@ export function SwitchEditor(props: {
         onPointerUp={onUp}
         onPointerCancel={onUp}
       >
-        <div className="sw-world" style={{ transform: `translate(${pan.x}px, ${pan.y}px)` }}>
+        <div
+          className="sw-world"
+          style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+        >
           <svg className="sw-wires" width="3200" height="2200">
             {graph.edges.map((e) => {
               const ports = edgePorts(graph, e);

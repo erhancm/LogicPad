@@ -7,6 +7,73 @@ import type {
   SwitchRule,
 } from "./types";
 
+export const SWITCH_GRID = 22;
+
+export function nodeSize(n: SwitchNode): { w: number; h: number } {
+  if (n.kind === "and" || n.kind === "or") return { w: 76, h: 76 };
+  if (n.kind === "foreground" || n.kind === "running") return { w: 252, h: 154 };
+  if (n.kind === "restore") return { w: 236, h: 124 };
+  if (n.kind === "setProfile" && n.lightsOnly) return { w: 248, h: 198 };
+  return { w: 228, h: 176 };
+}
+
+export function snapToGrid(v: number, grid = SWITCH_GRID): number {
+  return Math.round(v / grid) * grid;
+}
+
+/** Left-to-right layered layout for the auto-switch graph. */
+export function autoLayoutGraph(graph: SwitchGraph): SwitchGraph {
+  const H_GAP = 72;
+  const V_GAP = 36;
+  const MARGIN = 48;
+
+  const rank = new Map<string, number>();
+  for (const n of graph.nodes) rank.set(n.id, 0);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const e of graph.edges) {
+      const next = (rank.get(e.from) ?? 0) + 1;
+      if (next > (rank.get(e.to) ?? 0)) {
+        rank.set(e.to, next);
+        changed = true;
+      }
+    }
+  }
+
+  const layers = new Map<number, SwitchNode[]>();
+  for (const n of graph.nodes) {
+    const r = rank.get(n.id) ?? 0;
+    const list = layers.get(r) ?? [];
+    list.push(n);
+    layers.set(r, list);
+  }
+
+  const nodes = graph.nodes.map((n) => ({ ...n }));
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const ranks = [...layers.keys()].sort((a, b) => a - b);
+  let x = MARGIN;
+
+  for (const r of ranks) {
+    const layer = (layers.get(r) ?? [])
+      .slice()
+      .sort((a, b) => a.y - b.y || a.id.localeCompare(b.id));
+    const colW = Math.max(...layer.map((n) => nodeSize(n).w), 76);
+    let y = MARGIN;
+    for (const src of layer) {
+      const n = byId.get(src.id);
+      if (!n) continue;
+      const { h } = nodeSize(n);
+      n.x = snapToGrid(x);
+      n.y = snapToGrid(y);
+      y += h + V_GAP;
+    }
+    x += colW + H_GAP;
+  }
+
+  return { ...graph, nodes };
+}
+
 export function defaultGraph(): SwitchGraph {
   return {
     nodes: [{ kind: "restore", id: "else", x: 360, y: 200, priority: 255 }],

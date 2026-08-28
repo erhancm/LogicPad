@@ -445,3 +445,32 @@
   color: #6b7380;
   font-size: 12px;
 }
+
+.sw-tools-gap {
+  flex: 1;
+  min-width: 8px;
+}
+
+.sw-zoom {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.sw-zoom-btn {
+  min-width: 32px;
+  padding: 7px 10px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.sw-zoom-label {
+  min-width: 52px;
+  padding: 7px 8px;
+  font-size: 12px;
+  color: #8b8f9a;
+}
+
+.sw-canvas-hint {
+  margin-left: auto;
+}
