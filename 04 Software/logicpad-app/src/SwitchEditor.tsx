@@ -28,11 +28,23 @@ function hasOut(n: SwitchNode): boolean {
 }
 
 function hasIn(n: SwitchNode): boolean {
-  return n.kind !== "foreground" && n.kind !== "running";
+  return (
+    n.kind !== "foreground" &&
+    n.kind !== "running" &&
+    n.kind !== "true" &&
+    n.kind !== "false"
+  );
 }
 
 function isOp(n: SwitchNode): boolean {
-  return n.kind === "and" || n.kind === "or";
+  return (
+    n.kind === "and" ||
+    n.kind === "or" ||
+    n.kind === "if" ||
+    n.kind === "else" ||
+    n.kind === "true" ||
+    n.kind === "false"
+  );
 }
 
 function isCond(n: SwitchNode): boolean {
@@ -216,6 +228,10 @@ const ADD_KINDS: { kind: SwitchNode["kind"]; label: string; lightsOnly?: boolean
   { kind: "running", label: "Running is" },
   { kind: "and", label: "AND" },
   { kind: "or", label: "OR" },
+  { kind: "if", label: "IF" },
+  { kind: "else", label: "ELSE" },
+  { kind: "true", label: "TRUE" },
+  { kind: "false", label: "FALSE" },
   { kind: "setProfile", label: "Set profile" },
   { kind: "setProfile", label: "Set lights", lightsOnly: true },
   { kind: "restore", label: "Restore previous profile" },
@@ -419,7 +435,9 @@ export function SwitchEditor(props: {
     let node: SwitchNode;
     if (kind === "foreground") node = { kind, id, x, y, programs: [] };
     else if (kind === "running") node = { kind, id, x, y, programs: [] };
-    else if (kind === "and" || kind === "or") node = { kind, id, x, y };
+    else if (kind === "and" || kind === "or" || kind === "if" || kind === "else" || kind === "true" || kind === "false") {
+      node = { kind, id, x, y };
+    }
     else if (kind === "restore") node = { kind, id, x, y, priority: Math.min(pri, 255), restoreLights: true };
     else {
       const hdr = profiles.find((p) => p.index === fromProfile) ?? profiles[0];
@@ -592,6 +610,10 @@ export function SwitchEditor(props: {
     if (n.kind === "running") return "Running is";
     if (n.kind === "and") return "AND";
     if (n.kind === "or") return "OR";
+    if (n.kind === "if") return "IF";
+    if (n.kind === "else") return "ELSE";
+    if (n.kind === "true") return "TRUE";
+    if (n.kind === "false") return "FALSE";
     if (n.kind === "restore") return "Restore previous profile";
     if (n.kind === "setProfile" && n.lightsOnly) return "Set lights";
     return "Set profile";
@@ -636,6 +658,18 @@ export function SwitchEditor(props: {
         </button>
         <button type="button" className="sw-tool" onClick={() => addNode("or")}>
           OR
+        </button>
+        <button type="button" className="sw-tool" onClick={() => addNode("if")}>
+          IF
+        </button>
+        <button type="button" className="sw-tool" onClick={() => addNode("else")}>
+          ELSE
+        </button>
+        <button type="button" className="sw-tool" onClick={() => addNode("true")}>
+          TRUE
+        </button>
+        <button type="button" className="sw-tool" onClick={() => addNode("false")}>
+          FALSE
         </button>
         <button type="button" className="sw-tool" onClick={() => addNode("setProfile")}>
           Set profile

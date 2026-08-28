@@ -112,6 +112,10 @@ export type SwitchNode =
   | { kind: "running"; id: string; x: number; y: number; programs: string[] }
   | { kind: "and"; id: string; x: number; y: number }
   | { kind: "or"; id: string; x: number; y: number }
+  | { kind: "if"; id: string; x: number; y: number }
+  | { kind: "else"; id: string; x: number; y: number }
+  | { kind: "true"; id: string; x: number; y: number }
+  | { kind: "false"; id: string; x: number; y: number }
   | {
       kind: "setProfile";
       id: string;

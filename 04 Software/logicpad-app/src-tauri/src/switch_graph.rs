@@ -48,6 +48,26 @@ pub enum GraphNode {
         x: f64,
         y: f64,
     },
+    If {
+        id: String,
+        x: f64,
+        y: f64,
+    },
+    Else {
+        id: String,
+        x: f64,
+        y: f64,
+    },
+    True {
+        id: String,
+        x: f64,
+        y: f64,
+    },
+    False {
+        id: String,
+        x: f64,
+        y: f64,
+    },
     SetProfile {
         id: String,
         x: f64,
@@ -82,6 +102,10 @@ impl GraphNode {
             | GraphNode::Running { id, .. }
             | GraphNode::And { id, .. }
             | GraphNode::Or { id, .. }
+            | GraphNode::If { id, .. }
+            | GraphNode::Else { id, .. }
+            | GraphNode::True { id, .. }
+            | GraphNode::False { id, .. }
             | GraphNode::SetProfile { id, .. }
             | GraphNode::Restore { id, .. } => id,
         }
@@ -229,9 +253,17 @@ fn eval_node(
                     .iter()
                     .all(|src| eval_node(src, by_id, ins, fg, run, visiting))
         }
-        GraphNode::Or { .. } => inputs
+        GraphNode::Or { .. } | GraphNode::If { .. } => inputs
             .iter()
             .any(|src| eval_node(src, by_id, ins, fg, run, visiting)),
+        GraphNode::Else { .. } => {
+            !inputs.is_empty()
+                && !inputs
+                    .iter()
+                    .any(|src| eval_node(src, by_id, ins, fg, run, visiting))
+        }
+        GraphNode::True { .. } => true,
+        GraphNode::False { .. } => false,
         GraphNode::SetProfile { .. } | GraphNode::Restore { .. } => {
             !inputs.is_empty()
                 && inputs
@@ -566,6 +598,38 @@ mod tests {
         }
     }
 
+    fn if_n(id: &str) -> GraphNode {
+        GraphNode::If {
+            id: id.into(),
+            x: 0.0,
+            y: 0.0,
+        }
+    }
+
+    fn else_n(id: &str) -> GraphNode {
+        GraphNode::Else {
+            id: id.into(),
+            x: 0.0,
+            y: 0.0,
+        }
+    }
+
+    fn true_n(id: &str) -> GraphNode {
+        GraphNode::True {
+            id: id.into(),
+            x: 0.0,
+            y: 0.0,
+        }
+    }
+
+    fn false_n(id: &str) -> GraphNode {
+        GraphNode::False {
+            id: id.into(),
+            x: 0.0,
+            y: 0.0,
+        }
+    }
+
     fn set_p(id: &str, profile: u8, priority: u8) -> GraphNode {
         GraphNode::SetProfile {
             id: id.into(),
@@ -699,5 +763,43 @@ mod tests {
         );
         assert_eq!(eval_graph(&g, "chrome.exe", &[]), GraphDecision::Set(1));
         assert_eq!(eval_graph(&g, "x.exe", &[]), GraphDecision::Restore);
+    }
+
+    #[test]
+    fn true_constant_always_matches() {
+        let g = SwitchGraph {
+            nodes: vec![true_n("t"), set_p("p", 3, 0)],
+            edges: vec![edge("e", "t", "p")],
+        };
+        assert_eq!(eval_graph(&g, "anything.exe", &[]), GraphDecision::Set(3));
+    }
+
+    #[test]
+    fn false_constant_never_matches() {
+        let g = SwitchGraph {
+            nodes: vec![false_n("f"), set_p("p", 3, 0)],
+            edges: vec![edge("e", "f", "p")],
+        };
+        assert_eq!(eval_graph(&g, "chrome.exe", &[]), GraphDecision::Miss);
+    }
+
+    #[test]
+    fn else_inverts_condition() {
+        let g = SwitchGraph {
+            nodes: vec![fg("a", &["chrome.exe"]), else_n("el"), set_p("p", 2, 0)],
+            edges: vec![edge("e1", "a", "el"), edge("e2", "el", "p")],
+        };
+        assert_eq!(eval_graph(&g, "chrome.exe", &[]), GraphDecision::Miss);
+        assert_eq!(eval_graph(&g, "notepad.exe", &[]), GraphDecision::Set(2));
+    }
+
+    #[test]
+    fn if_passes_matching_condition() {
+        let g = SwitchGraph {
+            nodes: vec![fg("a", &["chrome.exe"]), if_n("if1"), set_p("p", 1, 0)],
+            edges: vec![edge("e1", "a", "if1"), edge("e2", "if1", "p")],
+        };
+        assert_eq!(eval_graph(&g, "chrome.exe", &[]), GraphDecision::Set(1));
+        assert_eq!(eval_graph(&g, "other.exe", &[]), GraphDecision::Miss);
     }
 }

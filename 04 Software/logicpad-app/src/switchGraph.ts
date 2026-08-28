@@ -10,7 +10,16 @@ import type {
 export const SWITCH_GRID = 22;
 
 export function nodeSize(n: SwitchNode): { w: number; h: number } {
-  if (n.kind === "and" || n.kind === "or") return { w: 76, h: 76 };
+  if (
+    n.kind === "and" ||
+    n.kind === "or" ||
+    n.kind === "if" ||
+    n.kind === "else" ||
+    n.kind === "true" ||
+    n.kind === "false"
+  ) {
+    return { w: 76, h: 76 };
+  }
   if (n.kind === "foreground" || n.kind === "running") return { w: 252, h: 154 };
   if (n.kind === "restore") return { w: 236, h: 124 };
   if (n.kind === "setProfile" && n.lightsOnly) return { w: 248, h: 198 };
@@ -204,7 +213,14 @@ function collectKinds(
       running.push(...node.programs);
       return;
     }
-    if (node.kind === "and" || node.kind === "or") {
+    if (
+      node.kind === "and" ||
+      node.kind === "or" ||
+      node.kind === "if" ||
+      node.kind === "else" ||
+      node.kind === "true" ||
+      node.kind === "false"
+    ) {
       used.add(node.id);
       for (const src of ins.get(node.id) ?? []) visit(src);
     }
