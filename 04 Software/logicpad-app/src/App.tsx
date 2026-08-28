@@ -1526,6 +1526,7 @@ export default function App() {
       <div className="stage-body">
       {tab === "switch" ? (
             <SwitchEditor
+              key={activePad?.id ?? "none"}
               open
               cfg={switchCfg}
               profiles={snap?.profiles ?? []}
