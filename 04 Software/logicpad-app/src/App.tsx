@@ -93,6 +93,100 @@ const TABS: { id: AppTab; label: string }[] = [
   { id: "switch", label: "Auto-switch" },
 ];
 
+function padChipLabel(pad: PadInfo | undefined, linked: boolean, pads: PadInfo[]): string {
+  if (!linked || !pad) return "No pad";
+  if (pad.simulated) return "Draft";
+  const usb = pads.filter((p) => !p.simulated);
+  if (usb.length <= 1) return "LogicPad";
+  if (pad.serial) {
+    const s = pad.serial;
+    return s.length > 8 ? s.slice(0, 8) : s;
+  }
+  const i = usb.findIndex((p) => p.id === pad.id);
+  return i >= 0 ? `LogicPad ${i + 1}` : "LogicPad";
+}
+
+function PadSwitch({
+  pads,
+  activeId,
+  simulated,
+  linked,
+  disabled,
+  onSelect,
+}: {
+  pads: PadInfo[];
+  activeId: string;
+  simulated: boolean;
+  linked: boolean;
+  disabled: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const active = pads.find((p) => p.id === activeId);
+  const name = padChipLabel(active, linked, pads);
+  const tone = !linked ? "off" : simulated ? "sim" : "usb";
+
+  useEffect(() => {
+    const el = detailsRef.current;
+    if (!el) return;
+    const onDoc = (e: globalThis.PointerEvent) => {
+      if (!el.open) return;
+      if (!el.contains(e.target as Node)) el.open = false;
+    };
+    document.addEventListener("pointerdown", onDoc);
+    return () => document.removeEventListener("pointerdown", onDoc);
+  }, []);
+
+  return (
+    <details ref={detailsRef} className={`pad-switch ${tone}`}>
+      <summary
+        aria-disabled={disabled}
+        aria-label={`Pad: ${name}. Choose a LogicPad`}
+        title={
+          simulated
+            ? "Draft on this PC — not a USB LogicPad"
+            : active?.label || "Choose a LogicPad"
+        }
+        onClick={(e) => {
+          if (!disabled) return;
+          e.preventDefault();
+        }}
+        onKeyDown={(e) => {
+          if (disabled && (e.key === "Enter" || e.key === " ")) e.preventDefault();
+        }}
+      >
+        <span className="pad-switch-dot" aria-hidden="true" />
+        <span className="pad-switch-name">{name}</span>
+      </summary>
+      <div className="pad-switch-list" role="listbox" aria-label="LogicPads">
+        {pads.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            role="option"
+            aria-selected={p.id === activeId}
+            className={p.id === activeId ? "on" : ""}
+            disabled={disabled}
+            onClick={() => {
+              if (detailsRef.current) detailsRef.current.open = false;
+              onSelect(p.id);
+            }}
+          >
+            <span
+              className={`pad-switch-dot ${p.simulated ? "sim" : "usb"}`}
+              aria-hidden="true"
+            />
+            <span className="pad-switch-copy">
+              <strong>{p.simulated ? "Draft" : p.label}</strong>
+              <em>{p.simulated ? "On this PC" : "USB"}</em>
+            </span>
+          </button>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 function TabGlyph({ tab }: { tab: AppTab }) {
   const common = {
     width: 16,
@@ -246,6 +340,8 @@ export default function App() {
   const launchesRef = useRef(launches);
   const hdrBusy = useRef(false);
   const hdrWait = useRef<ProfileHdr | null>(null);
+  const screenBusy = useRef(false);
+  const screenWait = useRef<{ contrast: number; flip: number; sleep: number } | null>(null);
   const skipClick = useRef(false);
   const dragKeyRef = useRef<number | null>(null);
   const dragOrigin = useRef<{ x: number; y: number; i: number } | null>(null);
@@ -1076,11 +1172,25 @@ export default function App() {
     copy.meta.flip = next.flip;
     copy.meta.sleep = next.sleep;
     copy.meta.dirty = true;
+    snapRef.current = copy;
     setSnap(copy);
+    screenWait.current = next;
+    if (screenBusy.current) return;
+    screenBusy.current = true;
     try {
-      await api.setScreen(next);
-    } catch (e) {
-      setErr(String(e));
+      while (screenWait.current) {
+        const send = screenWait.current;
+        screenWait.current = null;
+        try {
+          await api.setScreen(send);
+        } catch (e) {
+          setErr(String(e));
+          break;
+        }
+      }
+    } finally {
+      screenBusy.current = false;
+      if (screenWait.current) void pushScreen(screenWait.current);
     }
   }
 
@@ -1304,106 +1414,96 @@ export default function App() {
             <p className="topbar-status">{hdr ? hdr.name || `P${profile + 1}` : "LogicPad"}</p>
           )}
           <div className="bar">
-            <label className={`pad-pick-wrap${simulated ? " sim" : ""}`}>
-              <span>Pad</span>
-              <select
-                className={`pad-pick${simulated ? " sim" : ""}`}
-                value={activePad?.id ?? "sim"}
-                disabled={busy || Boolean(flash)}
-                title={
-                  simulated
-                    ? "Simulated LogicPad — not a USB device"
-                    : activePad?.label || "Select a LogicPad"
-                }
-                onChange={(e) => void selectPad(e.target.value)}
-              >
-                {padOptions.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.simulated ? "Simulated LogicPad" : p.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              disabled={busy || !snap}
-              onClick={() =>
-                run("Saved", async () => {
-                  await api.save();
-                  takePad(await api.loadPad());
-                })
-              }
-            >
-              Save
-            </button>
-            <button type="button" disabled={!snap} onClick={() => setPackMode("export")}>
-              Save as…
-            </button>
-            <button type="button" disabled={!snap || busy} onClick={() => void onImportPick()}>
-              Import…
-            </button>
-            <details className="more">
-              <summary>More</summary>
-              <div className="more-list">
-                <button
-                  type="button"
-                  disabled={busy || !snap}
-                  onClick={() =>
-                    run("Reloaded", async () => {
-                      takePad(await api.reload());
-                    })
-                  }
-                >
-                  Reload
-                </button>
-                <button type="button" disabled={!snap} onClick={() => setPrintOpen(true)}>
-                  Print
-                </button>
-                <button
-                  type="button"
-                  className="danger"
-                  disabled={busy || !snap}
-                  onClick={() => {
-                    if (!confirm("Reset all profiles to empty factory keys?")) return;
-                    run("Factory reset", async () => {
-                      takePad(await api.factory());
-                    });
-                  }}
-                >
-                  Factory
-                </button>
-                <button
-                  type="button"
-                  disabled={busy || simulated}
-                  title={
-                    simulated
-                      ? "Can't update firmware on the simulated LogicPad"
-                      : "Write LogicPad.bin to the selected pad"
-                  }
-                  onClick={() => fwInput.current?.click()}
-                >
-                  {flash ? `Updating ${flashPct}%` : "Update firmware"}
-                </button>
-              </div>
-            </details>
-            <input
-              ref={fwInput}
-              type="file"
-              accept=".bin,application/octet-stream"
-              hidden
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = "";
-                if (f) void onFlashFile(f);
-              }}
+            <PadSwitch
+              pads={padOptions}
+              activeId={activePad?.id ?? "sim"}
+              simulated={simulated}
+              linked={linked}
+              disabled={busy || Boolean(flash)}
+              onSelect={(id) => void selectPad(id)}
             />
+            <span className="bar-split" aria-hidden="true" />
+            <div className="bar-actions">
+              <button
+                disabled={busy || !snap}
+                onClick={() =>
+                  run("Saved", async () => {
+                    await api.save();
+                    takePad(await api.loadPad());
+                  })
+                }
+              >
+                Save
+              </button>
+              <button type="button" disabled={!snap} onClick={() => setPackMode("export")}>
+                Save as…
+              </button>
+              <button type="button" disabled={!snap || busy} onClick={() => void onImportPick()}>
+                Import…
+              </button>
+              <details className="more">
+                <summary>More</summary>
+                <div className="more-list">
+                  <button
+                    type="button"
+                    disabled={busy || !snap}
+                    onClick={() =>
+                      run("Reloaded", async () => {
+                        takePad(await api.reload());
+                      })
+                    }
+                  >
+                    Reload
+                  </button>
+                  <button type="button" disabled={!snap} onClick={() => setPrintOpen(true)}>
+                    Print
+                  </button>
+                  <button
+                    type="button"
+                    className="danger"
+                    disabled={busy || !snap}
+                    onClick={() => {
+                      if (!confirm("Reset all profiles to empty factory keys?")) return;
+                      run("Factory reset", async () => {
+                        takePad(await api.factory());
+                      });
+                    }}
+                  >
+                    Factory
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || simulated}
+                    title={
+                      simulated
+                        ? "Can't update firmware on the simulated LogicPad"
+                        : "Write LogicPad.bin to the selected pad"
+                    }
+                    onClick={() => fwInput.current?.click()}
+                  >
+                    {flash ? `Updating ${flashPct}%` : "Update firmware"}
+                  </button>
+                </div>
+              </details>
+              <input
+                ref={fwInput}
+                type="file"
+                accept=".bin,application/octet-stream"
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) void onFlashFile(f);
+                }}
+              />
+            </div>
             <SyncBadge status={syncStatus({ linked, snap, baseline })} />
           </div>
         </header>
         {simulated && snap ? (
           <div className="sim-banner" role="status">
             Simulated LogicPad — a draft on this PC, not USB. Use <strong>Save as…</strong> for a
-            YAML file, pick a LogicPad in <strong>Pad</strong>, then <strong>Import…</strong> to
-            program it.
+            YAML file, switch to a USB LogicPad, then <strong>Import…</strong> to program it.
           </div>
         ) : null}
         {flash ? (

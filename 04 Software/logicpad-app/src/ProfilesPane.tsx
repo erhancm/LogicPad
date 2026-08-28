@@ -332,20 +332,23 @@ export function ProfilesPane({
                 }
               />
             </label>
-            <label className="flip-row">
-              <span>Flip 180°</span>
-              <input
-                type="checkbox"
-                checked={snap.meta.flip !== 0}
+            <label className="flip-field">
+              Flip
+              <button
+                type="button"
+                className={`flip-btn${snap.meta.flip ? " on" : ""}`}
                 disabled={busy}
-                onChange={(e) =>
+                aria-pressed={snap.meta.flip !== 0}
+                onClick={() =>
                   onScreen({
                     contrast: snap.meta.contrast,
-                    flip: e.target.checked ? 1 : 0,
+                    flip: snap.meta.flip ? 0 : 1,
                     sleep: snap.meta.sleep,
                   })
                 }
-              />
+              >
+                180°
+              </button>
             </label>
             <label>
               Sleep

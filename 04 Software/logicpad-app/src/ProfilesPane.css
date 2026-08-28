@@ -187,14 +187,37 @@
   margin-top: 8px;
 }
 
-.flip-row {
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
+.pad-screen-controls > label {
+  margin: 0;
 }
 
-.flip-row input {
-  width: auto;
+.pad-screen-controls select,
+.pad-screen-controls .flip-btn {
+  height: 32px;
+  padding: 0 12px;
+  box-sizing: border-box;
+}
+
+.flip-btn {
+  background: #1c212c;
+  border: 1px solid #3a4150;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.flip-btn:hover:not(:disabled) {
+  border-color: #f0d060;
+}
+
+.flip-btn.on {
+  background: #2a2618;
+  border-color: #f0d060;
+  color: #f0d060;
 }
 
 @media (max-width: 900px) {

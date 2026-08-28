@@ -56,6 +56,7 @@ static uint16_t t_ms;
 static uint32_t idle_ms;
 static uint32_t live_idle;
 static uint8_t need_draw = 1;
+static uint8_t need_screen_hw;
 static uint8_t toast_key;
 static char name_buf[13];
 
@@ -141,6 +142,9 @@ static void dirty(void) {
 static void go(screen_t s) {
   if (scr == SCR_CONTRAST && s != SCR_CONTRAST) {
     set_hw_contrast(g_store.contrast);
+  }
+  if (scr == SCR_FLIP && s != SCR_FLIP) {
+    ssd1306_SetFlip(g_store.flip);
   }
   scr = s;
   i = 0;
@@ -540,7 +544,8 @@ static void apply_screen_hw(void) {
 }
 
 void ui_apply_screen(void) {
-  apply_screen_hw();
+  /* USB OutEvent must not I2C; contrast/flip land on the next draw tick. */
+  need_screen_hw = 1;
   need_draw = 1;
 }
 
@@ -945,6 +950,9 @@ static void nav(int dir) {
   }
   if (scr == SCR_CONTRAST) {
     set_hw_contrast((uint8_t)i);
+  }
+  if (scr == SCR_FLIP) {
+    ssd1306_SetFlip((uint8_t)i);
   }
   need_draw = 1;
 }
@@ -1386,12 +1394,18 @@ void ui_show_update(void) {
 void ui_draw_if_needed(void) {
   static uint32_t last;
   uint32_t now = HAL_GetTick();
+  uint8_t screen_hw = need_screen_hw;
+  if (screen_hw) {
+    need_screen_hw = 0;
+    apply_screen_hw();
+    need_draw = 1;
+  }
   /* Skip the ~25 ms I2C refresh when the framebuffer has not changed.
    * A 10 Hz idle redraw used to deafen the keypad during blocking writes. */
   if (!need_draw) {
     return;
   }
-  if (last != 0 && (now - last) < 100) {
+  if (!screen_hw && last != 0 && (now - last) < 100) {
     return;
   }
   last = now;
