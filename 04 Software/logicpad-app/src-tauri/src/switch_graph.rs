@@ -48,6 +48,16 @@ pub enum GraphNode {
         x: f64,
         y: f64,
     },
+    Not {
+        id: String,
+        x: f64,
+        y: f64,
+    },
+    Xor {
+        id: String,
+        x: f64,
+        y: f64,
+    },
     If {
         id: String,
         x: f64,
@@ -102,6 +112,8 @@ impl GraphNode {
             | GraphNode::Running { id, .. }
             | GraphNode::And { id, .. }
             | GraphNode::Or { id, .. }
+            | GraphNode::Not { id, .. }
+            | GraphNode::Xor { id, .. }
             | GraphNode::If { id, .. }
             | GraphNode::Else { id, .. }
             | GraphNode::True { id, .. }
@@ -256,6 +268,18 @@ fn eval_node(
         GraphNode::Or { .. } | GraphNode::If { .. } => inputs
             .iter()
             .any(|src| eval_node(src, by_id, ins, fg, run, visiting)),
+        GraphNode::Not { .. } => inputs.first().is_some_and(|src| {
+            !eval_node(src, by_id, ins, fg, run, visiting)
+        }),
+        GraphNode::Xor { .. } => {
+            let mut hits = 0u32;
+            for src in inputs {
+                if eval_node(src, by_id, ins, fg, run, visiting) {
+                    hits += 1;
+                }
+            }
+            hits % 2 == 1
+        }
         GraphNode::Else { .. } => {
             !inputs.is_empty()
                 && !inputs
@@ -801,5 +825,57 @@ mod tests {
         };
         assert_eq!(eval_graph(&g, "chrome.exe", &[]), GraphDecision::Set(1));
         assert_eq!(eval_graph(&g, "other.exe", &[]), GraphDecision::Miss);
+    }
+
+    fn not_n(id: &str) -> GraphNode {
+        GraphNode::Not {
+            id: id.into(),
+            x: 0.0,
+            y: 0.0,
+        }
+    }
+
+    fn xor_n(id: &str) -> GraphNode {
+        GraphNode::Xor {
+            id: id.into(),
+            x: 0.0,
+            y: 0.0,
+        }
+    }
+
+    #[test]
+    fn not_inverts_condition() {
+        let g = SwitchGraph {
+            nodes: vec![fg("a", &["chrome.exe"]), not_n("n1"), set_p("p", 2, 0)],
+            edges: vec![edge("e1", "a", "n1"), edge("e2", "n1", "p")],
+        };
+        assert_eq!(eval_graph(&g, "chrome.exe", &[]), GraphDecision::Miss);
+        assert_eq!(eval_graph(&g, "notepad.exe", &[]), GraphDecision::Set(2));
+    }
+
+    #[test]
+    fn xor_needs_odd_true_inputs() {
+        let g = SwitchGraph {
+            nodes: vec![
+                fg("a", &["chrome.exe"]),
+                run_n("b", &["Discord.exe"]),
+                xor_n("x1"),
+                set_p("p", 1, 0),
+            ],
+            edges: vec![
+                edge("e1", "a", "x1"),
+                edge("e2", "b", "x1"),
+                edge("e3", "x1", "p"),
+            ],
+        };
+        assert_eq!(
+            eval_graph(&g, "chrome.exe", &["Discord.exe".into()]),
+            GraphDecision::Miss
+        );
+        assert_eq!(eval_graph(&g, "chrome.exe", &[]), GraphDecision::Set(1));
+        assert_eq!(
+            eval_graph(&g, "notepad.exe", &["Discord.exe".into()]),
+            GraphDecision::Set(1)
+        );
     }
 }

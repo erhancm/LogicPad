@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as PE } from "r
 import { listen } from "@tauri-apps/api/event";
 import { LEDS, LIGHT_MODES, type PadKey, type ProfileHdr, type SwitchConfig, type SwitchEdge, type SwitchGraph, type SwitchNode } from "./types";
 import { cssLedId } from "./leds";
-import { autoLayoutGraph, ensureGraph, newId, nodeSize, snapToGrid, withGraph } from "./switchGraph";
+import { autoLayoutGraph, CANVAS_H, CANVAS_W, ensureGraph, isGate, newId, nodeSize, nodeZone, snapNodeToZone, snapToGrid, withGraph, ZONE_LAYOUT } from "./switchGraph";
+import { GateIcon, GateSymbol } from "./GateSymbol";
 import { RunningPicker, type OpenWindow } from "./RunningPicker";
 import { api } from "./api";
 import "./SwitchEditor.css";
@@ -37,14 +38,36 @@ function hasIn(n: SwitchNode): boolean {
 }
 
 function isOp(n: SwitchNode): boolean {
-  return (
-    n.kind === "and" ||
-    n.kind === "or" ||
-    n.kind === "if" ||
-    n.kind === "else" ||
-    n.kind === "true" ||
-    n.kind === "false"
-  );
+  return isGate(n);
+}
+
+function isUnaryOp(n: SwitchNode): boolean {
+  return n.kind === "not";
+}
+
+const LOGIC_KINDS: SwitchNode["kind"][] = ["and", "or", "not", "xor", "if", "else", "true", "false"];
+
+function logicLabel(kind: SwitchNode["kind"]): { title: string; hint: string } {
+  switch (kind) {
+    case "and":
+      return { title: "AND", hint: "All inputs must match" };
+    case "or":
+      return { title: "OR", hint: "Any input matches" };
+    case "not":
+      return { title: "Inverter", hint: "Invert signal (NOT)" };
+    case "xor":
+      return { title: "XOR", hint: "Odd number of true inputs" };
+    case "if":
+      return { title: "Buffer", hint: "Pass when input is true" };
+    case "else":
+      return { title: "NOR branch", hint: "Pass when input is false" };
+    case "true":
+      return { title: "Logic 1", hint: "Always high" };
+    case "false":
+      return { title: "Logic 0", hint: "Always low" };
+    default:
+      return { title: kind, hint: "" };
+  }
 }
 
 function isCond(n: SwitchNode): boolean {
@@ -184,7 +207,7 @@ function portCount(node: SwitchNode, graph: SwitchGraph, side: "in" | "out"): nu
     side === "in"
       ? graph.edges.filter((e) => e.to === node.id).length
       : graph.edges.filter((e) => e.from === node.id).length;
-  if (isOp(node)) return Math.max(2, n);
+  if (isOp(node)) return isUnaryOp(node) ? Math.max(1, n) : Math.max(2, n);
   if (side === "out" && (node.kind === "foreground" || node.kind === "running")) {
     return Math.max(node.programs.length >= 2 ? 2 : 1, n);
   }
@@ -223,19 +246,46 @@ function edgePorts(graph: SwitchGraph, edge: SwitchEdge): { a: { x: number; y: n
 
 type LightsCb = (hdr: ProfileHdr, leds: number[] | undefined) => void;
 
-const ADD_KINDS: { kind: SwitchNode["kind"]; label: string; lightsOnly?: boolean }[] = [
-  { kind: "foreground", label: "Foreground is" },
-  { kind: "running", label: "Running is" },
-  { kind: "and", label: "AND" },
-  { kind: "or", label: "OR" },
-  { kind: "if", label: "IF" },
-  { kind: "else", label: "ELSE" },
-  { kind: "true", label: "TRUE" },
-  { kind: "false", label: "FALSE" },
-  { kind: "setProfile", label: "Set profile" },
-  { kind: "setProfile", label: "Set lights", lightsOnly: true },
-  { kind: "restore", label: "Restore previous profile" },
+type AddItem = { kind: SwitchNode["kind"]; label: string; hint?: string; lightsOnly?: boolean };
+type AddSection = { title: string; items: AddItem[] };
+
+const ADD_SECTIONS: AddSection[] = [
+  {
+    title: "Conditions",
+    items: [
+      { kind: "foreground", label: "Foreground is", hint: "Active window" },
+      { kind: "running", label: "Running is", hint: "Process open anywhere" },
+    ],
+  },
+  {
+    title: "Logic gates",
+    items: [
+      { kind: "and", label: "AND gate", hint: "All inputs high" },
+      { kind: "or", label: "OR gate", hint: "Any input high" },
+      { kind: "not", label: "Inverter", hint: "Output inverted" },
+      { kind: "xor", label: "XOR gate", hint: "Exclusive OR" },
+      { kind: "if", label: "Buffer", hint: "Pass signal through" },
+      { kind: "else", label: "Inverted branch", hint: "Pass when low" },
+      { kind: "true", label: "Logic 1", hint: "Constant high" },
+      { kind: "false", label: "Logic 0", hint: "Constant low" },
+    ],
+  },
+  {
+    title: "Actions",
+    items: [
+      { kind: "setProfile", label: "Set profile" },
+      { kind: "setProfile", label: "Set lights", lightsOnly: true },
+      { kind: "restore", label: "Restore previous profile" },
+    ],
+  },
 ];
+
+function nextYInZone(graph: SwitchGraph, zone: ReturnType<typeof nodeZone>): number {
+  const inZone = graph.nodes.filter((n) => nodeZone(n) === zone);
+  if (!inZone.length) return 56;
+  const bottom = Math.max(...inZone.map((n) => n.y + nodeSize(n).h));
+  return snapToGrid(bottom + 24);
+}
 
 export function SwitchEditor(props: {
   open: boolean;
@@ -261,7 +311,7 @@ export function SwitchEditor(props: {
   const [winErr, setWinErr] = useState("");
   const [looks, setLooks] = useState<Record<string, ChipLook>>({});
   const [previews, setPreviews] = useState<Record<string, string>>({});
-  const [addOpen, setAddOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState<"conditions" | "logic" | "actions" | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
   const drag = useRef<{ id: string; ox: number; oy: number } | null>(null);
   const panning = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
@@ -279,10 +329,11 @@ export function SwitchEditor(props: {
 
   useEffect(() => {
     if (open) {
-      setGraph(ensureGraph(cfg));
+      const g = ensureGraph(cfg);
+      setGraph({ ...g, nodes: g.nodes.map((n) => snapNodeToZone(n)) });
       setSel(null);
       setLinkFrom(null);
-      setAddOpen(false);
+      setAddOpen(null);
       setMenu(null);
     }
   }, [open]);
@@ -358,7 +409,7 @@ export function SwitchEditor(props: {
       if (e.key === "Escape") {
         if (pickNode) setPickNode(null);
         else if (linkFrom) setLinkFrom(null);
-        else if (addOpen) setAddOpen(false);
+        else if (addOpen) setAddOpen(null);
         else if (menu) setMenu(null);
         else setSel(null);
       }
@@ -415,15 +466,9 @@ export function SwitchEditor(props: {
   }
 
   function addNode(kind: SwitchNode["kind"], lightsOnly = false) {
-    setAddOpen(false);
+    setAddOpen(null);
     setMenu(null);
     const id = newId(lightsOnly ? "lt" : kind.slice(0, 2));
-    const rect = canvasRef.current?.getBoundingClientRect();
-    const cx = rect ? rect.width / 2 : 320;
-    const cy = rect ? rect.height / 2 : 240;
-    const center = toWorld(rect ? rect.left + cx : cx, rect ? rect.top + cy : cy);
-    const x = snapToGrid(center.x - 110 + (graph.nodes.length % 6) * 16);
-    const y = snapToGrid(center.y - 60 + (graph.nodes.length % 5) * 18);
     const pri =
       Math.max(
         0,
@@ -433,19 +478,28 @@ export function SwitchEditor(props: {
     const fromProfile =
       selected?.kind === "setProfile" ? selected.profile : (profiles[0]?.index ?? 0);
     let node: SwitchNode;
-    if (kind === "foreground") node = { kind, id, x, y, programs: [] };
-    else if (kind === "running") node = { kind, id, x, y, programs: [] };
-    else if (kind === "and" || kind === "or" || kind === "if" || kind === "else" || kind === "true" || kind === "false") {
-      node = { kind, id, x, y };
+    if (kind === "foreground") node = { kind, id, x: 0, y: 0, programs: [] };
+    else if (kind === "running") node = { kind, id, x: 0, y: 0, programs: [] };
+    else if (
+      kind === "and" ||
+      kind === "or" ||
+      kind === "not" ||
+      kind === "xor" ||
+      kind === "if" ||
+      kind === "else" ||
+      kind === "true" ||
+      kind === "false"
+    ) {
+      node = { kind, id, x: 0, y: 0 };
     }
-    else if (kind === "restore") node = { kind, id, x, y, priority: Math.min(pri, 255), restoreLights: true };
+    else if (kind === "restore") node = { kind, id, x: 0, y: 0, priority: Math.min(pri, 255), restoreLights: true };
     else {
       const hdr = profiles.find((p) => p.index === fromProfile) ?? profiles[0];
       node = {
         kind: "setProfile",
         id,
-        x,
-        y,
+        x: 0,
+        y: 0,
         profile: hdr?.index ?? 0,
         priority: Math.min(pri, 255),
         lightsOnly,
@@ -455,6 +509,8 @@ export function SwitchEditor(props: {
         leds: keys[hdr?.index ?? 0]?.map((k) => k.led),
       };
     }
+    const zone = nodeZone(node);
+    node = snapNodeToZone({ ...node, y: nextYInZone(graph, zone) });
     const edges = [...graph.edges];
     if (selected && hasOut(selected) && hasIn(node)) {
       edges.push({ id: newId("e"), from: selected.id, to: id });
@@ -544,7 +600,7 @@ export function SwitchEditor(props: {
       const snapped = {
         ...graphRef.current,
         nodes: graphRef.current.nodes.map((n) =>
-          n.id === drag.current!.id ? { ...n, x: snapToGrid(n.x), y: snapToGrid(n.y) } : n,
+          n.id === drag.current!.id ? snapNodeToZone({ ...n, y: snapToGrid(n.y) }) : n,
         ),
       };
       commit(snapped);
@@ -605,19 +661,31 @@ export function SwitchEditor(props: {
     );
   }
 
+  function convertLogic(id: string, kind: SwitchNode["kind"]) {
+    patchNode(id, (n) => {
+      if (!isOp(n)) return n;
+      return snapNodeToZone({ kind, id: n.id, x: n.x, y: n.y } as SwitchNode);
+    });
+    setMenu(null);
+  }
+
   function nodeTitle(n: SwitchNode): string {
     if (n.kind === "foreground") return "Foreground is";
     if (n.kind === "running") return "Running is";
-    if (n.kind === "and") return "AND";
-    if (n.kind === "or") return "OR";
-    if (n.kind === "if") return "IF";
-    if (n.kind === "else") return "ELSE";
-    if (n.kind === "true") return "TRUE";
-    if (n.kind === "false") return "FALSE";
+    if (isOp(n)) return logicLabel(n.kind).title;
     if (n.kind === "restore") return "Restore previous profile";
     if (n.kind === "setProfile" && n.lightsOnly) return "Set lights";
     return "Set profile";
   }
+
+  const toolbarSections = ADD_SECTIONS.map((s) => ({
+    id: s.title.toLowerCase().includes("condition")
+      ? ("conditions" as const)
+      : s.title.toLowerCase().includes("logic")
+        ? ("logic" as const)
+        : ("actions" as const),
+    ...s,
+  }));
 
   const linkSrc = linkFrom ? graph.nodes.find((n) => n.id === linkFrom.id) : undefined;
   const rubber =
@@ -633,50 +701,37 @@ export function SwitchEditor(props: {
   return (
     <div className="sw-pane">
       <div className="sw-tools">
-        <div className={`sw-add ${addOpen ? "open" : ""}`}>
-          <button type="button" className="sw-tool" onClick={() => setAddOpen((v) => !v)}>
-            + Add node
-          </button>
-          {addOpen ? (
-            <div className="sw-add-menu">
-              {ADD_KINDS.map((k) => (
-                <button key={k.label} type="button" onClick={() => addNode(k.kind, k.lightsOnly)}>
-                  {k.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-        <button type="button" className="sw-tool" onClick={() => addNode("foreground")}>
-          Foreground is
-        </button>
-        <button type="button" className="sw-tool" onClick={() => addNode("running")}>
-          Running is
-        </button>
-        <button type="button" className="sw-tool" onClick={() => addNode("and")}>
-          AND
-        </button>
-        <button type="button" className="sw-tool" onClick={() => addNode("or")}>
-          OR
-        </button>
-        <button type="button" className="sw-tool" onClick={() => addNode("if")}>
-          IF
-        </button>
-        <button type="button" className="sw-tool" onClick={() => addNode("else")}>
-          ELSE
-        </button>
-        <button type="button" className="sw-tool" onClick={() => addNode("true")}>
-          TRUE
-        </button>
-        <button type="button" className="sw-tool" onClick={() => addNode("false")}>
-          FALSE
-        </button>
-        <button type="button" className="sw-tool" onClick={() => addNode("setProfile")}>
-          Set profile
-        </button>
-        <button type="button" className="sw-tool" onClick={() => addNode("setProfile", true)}>
-          Set lights
-        </button>
+        {toolbarSections.map((section) => (
+          <div key={section.id} className={`sw-add sw-add-${section.id} ${addOpen === section.id ? "open" : ""}`}>
+            <button
+              type="button"
+              className={`sw-tool sw-tool-${section.id}`}
+              onClick={() => setAddOpen((cur) => (cur === section.id ? null : section.id))}
+            >
+              + {section.title}
+            </button>
+            {addOpen === section.id ? (
+              <div className="sw-add-menu">
+                {section.items.map((k) => (
+                  <button
+                    key={`${section.id}-${k.label}`}
+                    type="button"
+                    title={k.hint}
+                    onClick={() => addNode(k.kind, k.lightsOnly)}
+                  >
+                    {section.id === "logic" && isGate({ kind: k.kind, id: "", x: 0, y: 0 } as SwitchNode) ? (
+                      <GateIcon kind={k.kind} size={26} />
+                    ) : null}
+                    <span>
+                      <strong>{k.label}</strong>
+                      {k.hint ? <em>{k.hint}</em> : null}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ))}
         {linkFrom ? <span className="hint">Drop on a yellow input</span> : null}
         <span className="sw-tools-gap" />
         <div className="sw-zoom">
@@ -693,7 +748,7 @@ export function SwitchEditor(props: {
         <button
           type="button"
           className="sw-tool"
-          title="Arrange nodes left-to-right by connection"
+          title="Arrange nodes into condition / logic / action columns"
           onClick={() => commit(autoLayoutGraph(graph))}
         >
           Auto layout
@@ -709,7 +764,7 @@ export function SwitchEditor(props: {
           setSel(null);
           setLinkFrom(null);
           setCursor(null);
-          setAddOpen(false);
+          setAddOpen(null);
           setMenu(null);
           panning.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -722,7 +777,18 @@ export function SwitchEditor(props: {
           className="sw-world"
           style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
         >
-          <svg className="sw-wires" width="3200" height="2200">
+          <div className="sw-zones" aria-hidden>
+            {(Object.keys(ZONE_LAYOUT) as Array<keyof typeof ZONE_LAYOUT>).map((key) => (
+              <div
+                key={key}
+                className={`sw-zone sw-zone-${key}`}
+                style={{ left: ZONE_LAYOUT[key].x - 12, width: ZONE_LAYOUT[key].w + 24, height: CANVAS_H }}
+              >
+                <span className="sw-zone-label">{ZONE_LAYOUT[key].label}</span>
+              </div>
+            ))}
+          </div>
+          <svg className="sw-wires" width={CANVAS_W} height={CANVAS_H}>
             {graph.edges.map((e) => {
               const ports = edgePorts(graph, e);
               if (!ports) return null;
@@ -747,7 +813,7 @@ export function SwitchEditor(props: {
             return (
               <div
                 key={n.id}
-                className={`sw-node sw-${n.kind}${isLights(n) ? " sw-lights-node" : ""}${sel === n.id ? " on" : ""}`}
+                className={`sw-node sw-${n.kind}${isLights(n) ? " sw-lights-node" : ""}${isOp(n) ? " sw-gate sw-logic" : ""}${n.kind === "foreground" || n.kind === "running" ? " sw-cond" : ""}${n.kind === "setProfile" || n.kind === "restore" ? " sw-action" : ""}${sel === n.id ? " on" : ""}`}
                 style={{ left: n.x, top: n.y, width: nodeSize(n).w, height: isOp(n) ? nodeSize(n).h : undefined }}
                 onPointerDown={(e) => onNodeDown(e, n.id)}
               >
@@ -775,7 +841,14 @@ export function SwitchEditor(props: {
                   />
                 ))}
                 <header>
-                  {isOp(n) ? <span className="sw-op">{nodeTitle(n)}</span> : <span>{nodeTitle(n)}</span>}
+                  {isOp(n) ? (
+                    <span className="sw-op" title={logicLabel(n.kind).hint}>
+                      <GateSymbol kind={n.kind} />
+                      <small>{nodeTitle(n)}</small>
+                    </span>
+                  ) : (
+                    <span>{nodeTitle(n)}</span>
+                  )}
                   <div className={`sw-menu ${menu === n.id ? "open" : ""}`}>
                     <button
                       type="button"
@@ -790,6 +863,13 @@ export function SwitchEditor(props: {
                     </button>
                     {menu === n.id ? (
                       <div className="sw-menu-list">
+                        {isOp(n)
+                          ? LOGIC_KINDS.filter((k) => k !== n.kind).map((k) => (
+                              <button key={k} type="button" onClick={() => convertLogic(n.id, k)}>
+                                {logicLabel(k).title}
+                              </button>
+                            ))
+                          : null}
                         <button type="button" onClick={() => removeNode(n.id)}>
                           Delete
                         </button>

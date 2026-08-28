@@ -9,16 +9,47 @@ import type {
 
 export const SWITCH_GRID = 22;
 
-export function nodeSize(n: SwitchNode): { w: number; h: number } {
-  if (
+export type SwitchZone = "conditions" | "logic" | "actions";
+
+export const ZONE_LAYOUT: Record<SwitchZone, { x: number; w: number; label: string }> = {
+  conditions: { x: 48, w: 280, label: "Conditions" },
+  logic: { x: 368, w: 120, label: "Logic gates" },
+  actions: { x: 528, w: 280, label: "Actions" },
+};
+
+export const CANVAS_W = 860;
+export const CANVAS_H = 2200;
+
+export function nodeZone(n: SwitchNode): SwitchZone {
+  if (n.kind === "foreground" || n.kind === "running") return "conditions";
+  if (n.kind === "setProfile" || n.kind === "restore") return "actions";
+  return "logic";
+}
+
+export function zoneX(zone: SwitchZone): number {
+  return ZONE_LAYOUT[zone].x;
+}
+
+export function snapNodeToZone(n: SwitchNode): SwitchNode {
+  return { ...n, x: zoneX(nodeZone(n)) };
+}
+
+export function isGate(n: SwitchNode): boolean {
+  return (
     n.kind === "and" ||
     n.kind === "or" ||
+    n.kind === "not" ||
+    n.kind === "xor" ||
     n.kind === "if" ||
     n.kind === "else" ||
     n.kind === "true" ||
     n.kind === "false"
-  ) {
-    return { w: 76, h: 76 };
+  );
+}
+
+export function nodeSize(n: SwitchNode): { w: number; h: number } {
+  if (isGate(n)) {
+    return { w: n.kind === "not" || n.kind === "if" ? 88 : 96, h: 68 };
   }
   if (n.kind === "foreground" || n.kind === "running") return { w: 252, h: 154 };
   if (n.kind === "restore") return { w: 236, h: 124 };
@@ -30,54 +61,27 @@ export function snapToGrid(v: number, grid = SWITCH_GRID): number {
   return Math.round(v / grid) * grid;
 }
 
-/** Left-to-right layered layout for the auto-switch graph. */
+/** Stack nodes into fixed condition / logic / action columns. */
 export function autoLayoutGraph(graph: SwitchGraph): SwitchGraph {
-  const H_GAP = 72;
-  const V_GAP = 36;
-  const MARGIN = 48;
-
-  const rank = new Map<string, number>();
-  for (const n of graph.nodes) rank.set(n.id, 0);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const e of graph.edges) {
-      const next = (rank.get(e.from) ?? 0) + 1;
-      if (next > (rank.get(e.to) ?? 0)) {
-        rank.set(e.to, next);
-        changed = true;
-      }
-    }
-  }
-
-  const layers = new Map<number, SwitchNode[]>();
-  for (const n of graph.nodes) {
-    const r = rank.get(n.id) ?? 0;
-    const list = layers.get(r) ?? [];
-    list.push(n);
-    layers.set(r, list);
-  }
-
+  const V_GAP = 40;
+  const MARGIN_Y = 56;
+  const zones: SwitchZone[] = ["conditions", "logic", "actions"];
   const nodes = graph.nodes.map((n) => ({ ...n }));
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const ranks = [...layers.keys()].sort((a, b) => a - b);
-  let x = MARGIN;
 
-  for (const r of ranks) {
-    const layer = (layers.get(r) ?? [])
+  for (const zone of zones) {
+    const inZone = nodes
+      .filter((n) => nodeZone(n) === zone)
       .slice()
       .sort((a, b) => a.y - b.y || a.id.localeCompare(b.id));
-    const colW = Math.max(...layer.map((n) => nodeSize(n).w), 76);
-    let y = MARGIN;
-    for (const src of layer) {
+    let y = MARGIN_Y;
+    for (const src of inZone) {
       const n = byId.get(src.id);
       if (!n) continue;
-      const { h } = nodeSize(n);
-      n.x = snapToGrid(x);
+      n.x = zoneX(zone);
       n.y = snapToGrid(y);
-      y += h + V_GAP;
+      y += nodeSize(n).h + V_GAP;
     }
-    x += colW + H_GAP;
   }
 
   return { ...graph, nodes };
@@ -85,7 +89,7 @@ export function autoLayoutGraph(graph: SwitchGraph): SwitchGraph {
 
 export function defaultGraph(): SwitchGraph {
   return {
-    nodes: [{ kind: "restore", id: "else", x: 360, y: 200, priority: 255 }],
+    nodes: [{ kind: "restore", id: "else", x: zoneX("actions"), y: 200, priority: 255 }],
     edges: [],
   };
 }
@@ -97,11 +101,11 @@ export function graphFromRules(rules: SwitchRule[]): SwitchGraph {
     const y = 40 + i * 170;
     const fid = `fg${i}`;
     const pid = `sp${i}`;
-    nodes.push({ kind: "foreground", id: fid, x: 48, y, programs: [r.exe] });
+    nodes.push({ kind: "foreground", id: fid, x: zoneX("conditions"), y, programs: [r.exe] });
     nodes.push({
       kind: "setProfile",
       id: pid,
-      x: 340,
+      x: zoneX("actions"),
       y,
       profile: r.profile,
       priority: Math.min(i, 255),
@@ -111,7 +115,7 @@ export function graphFromRules(rules: SwitchRule[]): SwitchGraph {
   nodes.push({
     kind: "restore",
     id: "else",
-    x: 340,
+    x: zoneX("actions"),
     y: 40 + rules.length * 170,
     priority: 255,
   });
@@ -216,6 +220,8 @@ function collectKinds(
     if (
       node.kind === "and" ||
       node.kind === "or" ||
+      node.kind === "not" ||
+      node.kind === "xor" ||
       node.kind === "if" ||
       node.kind === "else" ||
       node.kind === "true" ||
@@ -287,27 +293,27 @@ export function cardsToGraph(cards: SwitchCard[]): SwitchGraph {
     const useAnd = card.match === "foreground" && card.andRunning != null;
     if (card.match === "running") {
       const rid = `${pid}r`;
-      nodes.push({ kind: "running", id: rid, x: 48, y, programs });
+      nodes.push({ kind: "running", id: rid, x: zoneX("conditions"), y, programs });
       edges.push({ id: `${pid}e`, from: rid, to: pid });
     } else if (useAnd) {
       const fid = `${pid}f`;
       const rid = `${pid}r`;
       const aid = `${pid}a`;
-      nodes.push({ kind: "foreground", id: fid, x: 48, y, programs });
-      nodes.push({ kind: "running", id: rid, x: 48, y: y + 70, programs: extra });
-      nodes.push({ kind: "and", id: aid, x: 200, y: y + 24 });
+      nodes.push({ kind: "foreground", id: fid, x: zoneX("conditions"), y, programs });
+      nodes.push({ kind: "running", id: rid, x: zoneX("conditions"), y: y + 70, programs: extra });
+      nodes.push({ kind: "and", id: aid, x: zoneX("logic"), y: y + 24 });
       edges.push({ id: `${pid}e1`, from: fid, to: aid });
       edges.push({ id: `${pid}e2`, from: rid, to: aid });
       edges.push({ id: `${pid}e3`, from: aid, to: pid });
     } else {
       const fid = `${pid}f`;
-      nodes.push({ kind: "foreground", id: fid, x: 48, y, programs });
+      nodes.push({ kind: "foreground", id: fid, x: zoneX("conditions"), y, programs });
       edges.push({ id: `${pid}e`, from: fid, to: pid });
     }
     nodes.push({
       kind: "setProfile",
       id: pid,
-      x: 340,
+      x: zoneX("actions"),
       y,
       profile: card.profile,
       priority: Math.min(i, 255),
@@ -320,7 +326,7 @@ export function cardsToGraph(cards: SwitchCard[]): SwitchGraph {
   nodes.push({
     kind: "restore",
     id: "else",
-    x: 340,
+    x: zoneX("actions"),
     y: 40 + cards.length * 190,
     priority: 255,
   });
