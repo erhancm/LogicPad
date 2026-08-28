@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { LEDS, LIGHT_MODES, type PadKey, type ProfileHdr, type Snapshot, type SwitchRule } from "./types";
+import { cssLedId, pixOf, type LedFrame } from "./leds";
+import { useLedPreview } from "./ledPreview";
 import { TITLE_MAX } from "./text";
 import "./ProfilesPane.css";
 
-const LED_HEX = ["#2a2e38", "#e8e4d8", "#c04040", "#40a060", "#3a7ec0"];
 export const SLEEP_LABELS = ["Never", "15s", "30s", "1m", "5m"] as const;
 
 type Props = {
@@ -12,6 +13,7 @@ type Props = {
   keys: PadKey[];
   bound: SwitchRule[];
   busy: boolean;
+  simulated: boolean;
   memHint: string;
   onActivate: (index: number) => void;
   onAdd: () => void;
@@ -28,12 +30,15 @@ type Props = {
   onOpenSwitch: () => void;
 };
 
-function MiniLeds({ keys }: { keys: PadKey[] }) {
+function MiniLeds({ keys, live }: { keys: PadKey[]; live?: LedFrame | null }) {
+  const pix = [9, -1, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8];
   return (
     <span className="prof-mini-leds" aria-hidden="true">
-      {Array.from({ length: 9 }, (_, i) => {
-        const led = keys[i]?.led ?? 0;
-        return <i key={i} style={{ background: LED_HEX[led] ?? LED_HEX[0] }} />;
+      {pix.map((idx, i) => {
+        if (idx < 0) return <i key={i} className="skip" />;
+        const fallback = keys[idx === 9 ? 0 : idx]?.led ?? 0;
+        const { background } = pixOf(live, idx, fallback);
+        return <i key={i} style={{ background }} />;
       })}
     </span>
   );
@@ -45,6 +50,7 @@ export function ProfilesPane({
   keys,
   bound,
   busy,
+  simulated,
   memHint,
   onActivate,
   onAdd,
@@ -66,6 +72,12 @@ export function ProfilesPane({
   const canScreen = snap.canSetScreen ?? false;
   const [paintLed, setPaintLed] = useState(1);
   const [copyFrom, setCopyFrom] = useState("");
+  const live = useLedPreview({
+    simulated,
+    canGetLeds: snap.canGetLeds ?? false,
+    hdr,
+    keys,
+  });
 
   useEffect(() => {
     const first = keys.find((k) => k.led > 0)?.led;
@@ -100,7 +112,10 @@ export function ProfilesPane({
                 </strong>
                 <em>{LIGHT_MODES[p.lightMode] ?? "Off"}</em>
               </span>
-              <MiniLeds keys={snap.keys[p.index] ?? []} />
+              <MiniLeds
+                keys={snap.keys[p.index] ?? []}
+                live={p.index === profile ? live : null}
+              />
             </button>
           ))}
         </div>
@@ -180,17 +195,36 @@ export function ProfilesPane({
               />
             </label>
             <h3>Key LEDs</h3>
-            <div className="light-grid">
+            <div className="light-grid pad-leds">
+              {(() => {
+                const k0 = keys[0];
+                const sel = pixOf(live, 9, k0?.led ?? 0);
+                return (
+                  <button
+                    type="button"
+                    className="light-cell sel"
+                    disabled={busy || !k0}
+                    style={sel}
+                    title="Select — follows key 1 in Solid"
+                    onClick={() => k0 && cycleLed(k0)}
+                  >
+                    SEL
+                  </button>
+                );
+              })()}
+              <span className="light-skip" />
+              <span className="light-skip" />
               {Array.from({ length: 9 }, (_, i) => {
                 const k = keys[i];
                 const led = k?.led ?? 0;
+                const pix = pixOf(live, i, led);
                 return (
                   <button
                     key={i}
                     type="button"
                     className="light-cell"
                     disabled={busy || !k}
-                    style={{ background: LED_HEX[led] ?? LED_HEX[0] }}
+                    style={pix}
                     title={`${k?.label || `Key ${i + 1}`} — ${LEDS[led] ?? "Off"}`}
                     onClick={() => k && cycleLed(k)}
                   >
@@ -207,7 +241,7 @@ export function ProfilesPane({
                     key={n}
                     type="button"
                     className={`light-cell swatch${paintLed === i ? " on" : ""}`}
-                    style={{ background: LED_HEX[i] }}
+                    style={{ background: cssLedId(i), color: "#e8e4d8" }}
                     title={n}
                     disabled={busy}
                     onClick={() => setPaintLed(i)}
@@ -239,7 +273,15 @@ export function ProfilesPane({
                 </select>
               </label>
             </div>
-            <p className="hint">Per-key LEDs also live on each key in Keys.</p>
+            <p className="hint">
+              SEL sits above key 1 and follows it in Solid. These cells match the pad lights
+              {simulated
+                ? " (same engine as firmware)."
+                : snap.canGetLeds
+                  ? " (live from the pad)."
+                  : " — update firmware for a live match."}{" "}
+              Per-key colors also live on each key in Keys.
+            </p>
             <h3>This profile in Auto-switch</h3>
             {bound.length ? (
               <ul className="switch-list">

@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as PE } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { LEDS, LIGHT_MODES, type PadKey, type ProfileHdr, type SwitchConfig, type SwitchEdge, type SwitchGraph, type SwitchNode } from "./types";
+import { cssLedId } from "./leds";
 import { ensureGraph, newId, withGraph } from "./switchGraph";
 import { RunningPicker, type OpenWindow } from "./RunningPicker";
 import { api } from "./api";
 import "./SwitchEditor.css";
-
-const LED_HEX = ["#2a2e38", "#e8e4d8", "#c04040", "#40a060", "#3a7ec0"];
 
 function nodeSize(n: SwitchNode): { w: number; h: number } {
   if (n.kind === "and" || n.kind === "or") return { w: 76, h: 76 };
@@ -856,7 +855,7 @@ export function SwitchEditor(props: {
                             key={i}
                             type="button"
                             className="sw-led"
-                            style={{ background: LED_HEX[led] ?? LED_HEX[0] }}
+                            style={{ background: cssLedId(led) }}
                             title={LEDS[led] ?? "Off"}
                             onClick={() => {
                               const leds = Array.from(

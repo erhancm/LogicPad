@@ -158,6 +158,7 @@ impl SimPad {
             can_add_profiles: n8 < MAX_PROFILES
                 && STORE_CAP.saturating_sub(meta.store_used) >= EMPTY_ADD,
             can_set_screen: true,
+            can_get_leds: false,
         }
     }
 
@@ -437,6 +438,7 @@ mod tests {
         assert!(snap.can_add_profiles);
         assert!(snap.can_titles);
         assert!(snap.can_set_screen);
+        assert!(!snap.can_get_leds);
     }
 
     #[test]

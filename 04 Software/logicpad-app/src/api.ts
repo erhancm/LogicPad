@@ -22,6 +22,8 @@ export const api = {
   factory: () => invoke<Snapshot>("factory_reset"),
   setScreen: (t: { contrast: number; flip: number; sleep: number }) =>
     invoke<void>("set_screen", t),
+  getLeds: () => invoke<{ color: number[]; duty: number[] }>("get_leds"),
+  watchLeds: (watch: boolean) => invoke<void>("watch_leds", { watch }),
   setTime: (t: {
     year: number;
     month: number;

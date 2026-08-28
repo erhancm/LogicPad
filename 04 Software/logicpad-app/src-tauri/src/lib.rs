@@ -173,6 +173,24 @@ fn set_screen(
 }
 
 #[tauri::command]
+fn get_leds(pad: State<AppPad>) -> Result<crate::hid::LedFrame, String> {
+    pad.0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get_leds()
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn watch_leds(pad: State<AppPad>, watch: bool) -> Result<(), String> {
+    pad.0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .watch_leds(watch);
+    Ok(())
+}
+
+#[tauri::command]
 fn set_time(
     pad: State<AppPad>,
     year: u16,
@@ -359,6 +377,8 @@ pub fn run() {
             reload_store,
             factory_reset,
             set_screen,
+            get_leds,
+            watch_leds,
             set_time,
             flash_firmware,
             get_launches,
@@ -386,6 +406,7 @@ pub fn run() {
             sync_autostart(app.handle(), &store, &switch);
 
             let handle = app.handle().clone();
+            let handle_leds = handle.clone();
             {
                 let pad = app.state::<AppPad>();
                 let g = pad.0.lock().expect("pad");
@@ -404,6 +425,9 @@ pub fn run() {
                             down,
                         },
                     );
+                }));
+                g.set_on_leds(Arc::new(move |frame| {
+                    let _ = handle_leds.emit("pad-leds", frame);
                 }));
                 let _ = g.connect();
             }

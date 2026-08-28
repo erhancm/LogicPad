@@ -1,9 +1,10 @@
 use crate::sim::{SimPad, SIM_ID, SIM_LABEL};
 use hidapi::{HidApi, HidDevice};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -43,6 +44,7 @@ const CMD_GET_TITLE: u8 = 0x13;
 const CMD_SET_TITLE: u8 = 0x14;
 const CMD_SET_HOST: u8 = 0x15;
 const CMD_SET_SCREEN: u8 = 0x16;
+const CMD_GET_LEDS: u8 = 0x17;
 const CMD_BL_START: u8 = 0x40;
 const CMD_BL_DATA: u8 = 0x41;
 const CMD_BL_FINISH: u8 = 0x42;
@@ -67,6 +69,7 @@ impl From<PadError> for String {
 }
 
 pub type KeyCallback = Arc<dyn Fn(u8, u8, bool) + Send + Sync>;
+pub type LedCallback = Arc<dyn Fn(LedFrame) + Send + Sync>;
 
 enum HidReq {
     Rpc {
@@ -78,11 +81,23 @@ enum HidReq {
     Stop,
 }
 
+enum Pending {
+    Rpc {
+        cmd: u8,
+        deadline: Instant,
+        tx: Sender<Result<Vec<u8>, PadError>>,
+    },
+    Leds {
+        deadline: Instant,
+    },
+}
+
 pub struct Pad {
     api: Mutex<HidApi>,
     tx: Mutex<Option<Sender<HidReq>>>,
     worker: Mutex<Option<JoinHandle<()>>>,
     on_key: Mutex<Option<KeyCallback>>,
+    on_leds: Mutex<Option<LedCallback>>,
     has_text: Mutex<bool>,
     has_titles: Mutex<bool>,
     has_host: Mutex<bool>,
@@ -91,6 +106,8 @@ pub struct Pad {
     user_pick: Mutex<bool>,
     last_path: Mutex<PathBuf>,
     flashing: Mutex<bool>,
+    led_watch: Arc<AtomicBool>,
+    led_last: Arc<Mutex<Option<LedFrame>>>,
 }
 
 impl Pad {
@@ -101,6 +118,7 @@ impl Pad {
             tx: Mutex::new(None),
             worker: Mutex::new(None),
             on_key: Mutex::new(None),
+            on_leds: Mutex::new(None),
             has_text: Mutex::new(false),
             has_titles: Mutex::new(false),
             has_host: Mutex::new(false),
@@ -109,6 +127,8 @@ impl Pad {
             user_pick: Mutex::new(false),
             last_path: Mutex::new(PathBuf::new()),
             flashing: Mutex::new(false),
+            led_watch: Arc::new(AtomicBool::new(false)),
+            led_last: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -123,6 +143,12 @@ impl Pad {
 
     pub fn set_on_key(&self, cb: KeyCallback) {
         if let Ok(mut g) = self.on_key.lock() {
+            *g = Some(cb);
+        }
+    }
+
+    pub fn set_on_leds(&self, cb: LedCallback) {
+        if let Ok(mut g) = self.on_leds.lock() {
             *g = Some(cb);
         }
     }
@@ -314,8 +340,12 @@ impl Pad {
             *g = proto_min >= 4;
         }
         let on_key = self.on_key.lock().ok().and_then(|g| g.clone());
+        let on_leds = self.on_leds.lock().ok().and_then(|g| g.clone());
+        let watch = self.led_watch.clone();
+        let last = self.led_last.clone();
+        let leds_ok = proto_min >= 7;
         let (tx, rx) = mpsc::channel();
-        let handle = thread::spawn(move || hid_worker(dev, rx, on_key));
+        let handle = thread::spawn(move || hid_worker(dev, rx, on_key, on_leds, watch, last, leds_ok));
         if let Ok(mut g) = self.tx.lock() {
             *g = Some(tx);
         }
@@ -681,6 +711,26 @@ impl Pad {
         Ok(())
     }
 
+    pub fn watch_leds(&self, on: bool) {
+        self.led_watch.store(on, Ordering::Relaxed);
+        if !on {
+            if let Ok(mut g) = self.led_last.lock() {
+                *g = None;
+            }
+        }
+    }
+
+    pub fn get_leds(&self) -> Result<LedFrame, PadError> {
+        if self.is_simulated() {
+            return Err(PadError::Msg("simulated".into()));
+        }
+        self.led_last
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
+            .ok_or_else(|| PadError::Msg("no LED snapshot yet".into()))
+    }
+
     pub fn load_all(&self) -> Result<Snapshot, PadError> {
         if let Some(r) = self.with_sim(|s| Ok(s.snapshot())) {
             return r;
@@ -756,6 +806,7 @@ impl Pad {
                 can_mutate_profiles && n < 4
             },
             can_set_screen: min >= 6,
+            can_get_leds: min >= 7,
         })
     }
 
@@ -845,61 +896,160 @@ fn write_report(dev: &HidDevice, cmd: u8, payload: &[u8]) -> Result<(), PadError
         .map_err(|e| PadError::Msg(format!("write: {e}")))
 }
 
-fn hid_worker(dev: HidDevice, rx: Receiver<HidReq>, on_key: Option<KeyCallback>) {
-    let mut pending: Option<(u8, Instant, Sender<Result<Vec<u8>, PadError>>)> = None;
+fn split_vendor_in(buf: &[u8], n: usize) -> Option<(u8, &[u8])> {
+    if n < 1 {
+        return None;
+    }
+    if buf[0] == REPORT_ID {
+        if n < 2 {
+            return None;
+        }
+        Some((buf[1], &buf[2..n]))
+    } else {
+        Some((buf[0], &buf[1..n]))
+    }
+}
+
+fn parse_led_frame(payload: &[u8]) -> Option<LedFrame> {
+    if payload.len() < 20 {
+        return None;
+    }
+    let mut f = LedFrame {
+        color: payload[..10].to_vec(),
+        duty: payload[10..20].to_vec(),
+        anim_ms: 0,
+        idle_ms: 0,
+        flash_key: 0xff,
+        flash_ms: 0,
+        ripple_key: 0xff,
+        ripple_age: 0,
+        flood: 0,
+        clocks: false,
+    };
+    if payload.len() >= 31 {
+        f.anim_ms = u16::from_le_bytes([payload[20], payload[21]]);
+        f.idle_ms = u16::from_le_bytes([payload[22], payload[23]]);
+        f.flash_key = payload[24];
+        f.flash_ms = u16::from_le_bytes([payload[25], payload[26]]);
+        f.ripple_key = payload[27];
+        f.ripple_age = u16::from_le_bytes([payload[28], payload[29]]);
+        f.flood = payload[30];
+        f.clocks = true;
+    }
+    Some(f)
+}
+
+fn hid_worker(
+    dev: HidDevice,
+    rx: Receiver<HidReq>,
+    on_key: Option<KeyCallback>,
+    on_leds: Option<LedCallback>,
+    watch: Arc<AtomicBool>,
+    last: Arc<Mutex<Option<LedFrame>>>,
+    leds_ok: bool,
+) {
+    let mut pending: Option<Pending> = None;
+    let mut queue: VecDeque<(u8, Vec<u8>, u32, Sender<Result<Vec<u8>, PadError>>)> = VecDeque::new();
     let mut buf = [0u8; REPORT_LEN];
+    let mut led_due = Instant::now();
     loop {
-        if pending.is_none() {
-            match rx.recv_timeout(Duration::from_millis(15)) {
+        let watching = leds_ok && watch.load(Ordering::Relaxed);
+        let idle_ms = if watching { 4 } else { 15 };
+        if pending.is_none() && queue.is_empty() {
+            match rx.recv_timeout(Duration::from_millis(idle_ms)) {
                 Ok(HidReq::Stop) => break,
                 Ok(HidReq::Rpc {
                     cmd,
                     payload,
                     timeout_ms,
                     tx,
-                }) => match write_report(&dev, cmd, &payload) {
-                    Ok(()) => {
-                        pending = Some((
-                            cmd,
-                            Instant::now() + Duration::from_millis(timeout_ms as u64),
-                            tx,
-                        ));
-                    }
-                    Err(e) => {
-                        let _ = tx.send(Err(e));
-                    }
-                },
+                }) => queue.push_back((cmd, payload, timeout_ms, tx)),
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => break,
             }
         } else {
             match rx.try_recv() {
                 Ok(HidReq::Stop) => break,
-                Ok(HidReq::Rpc { tx, .. }) => {
-                    let _ = tx.send(Err(PadError::Msg("busy".into())));
-                }
+                Ok(HidReq::Rpc {
+                    cmd,
+                    payload,
+                    timeout_ms,
+                    tx,
+                }) => queue.push_back((cmd, payload, timeout_ms, tx)),
                 Err(_) => {}
             }
         }
 
-        match dev.read_timeout(&mut buf, 15) {
-            Ok(n) if n > 0 && buf[0] == REPORT_ID => {
-                if buf[1] == CMD_KEY_EVENT {
-                    if let Some(cb) = &on_key {
-                        cb(buf[2], buf[3], buf[4] != 0);
+        if pending.is_none() {
+            if let Some((cmd, payload, timeout_ms, tx)) = queue.pop_front() {
+                match write_report(&dev, cmd, &payload) {
+                    Ok(()) => {
+                        pending = Some(Pending::Rpc {
+                            cmd,
+                            deadline: Instant::now() + Duration::from_millis(timeout_ms as u64),
+                            tx,
+                        });
                     }
-                } else if pending.as_ref().is_some_and(|(c, _, _)| *c == buf[1]) {
-                    let (_, _, tx) = pending.take().unwrap();
-                    let _ = tx.send(Ok(buf[2..].to_vec()));
+                    Err(e) => {
+                        let _ = tx.send(Err(e));
+                    }
+                }
+            } else if watching && Instant::now() >= led_due {
+                if write_report(&dev, CMD_GET_LEDS, &[]).is_ok() {
+                    pending = Some(Pending::Leds {
+                        deadline: Instant::now() + Duration::from_millis(80),
+                    });
+                }
+                led_due = Instant::now() + Duration::from_millis(16);
+            }
+        }
+
+        match dev.read_timeout(&mut buf, if watching { 8 } else { 15 }) {
+            Ok(n) if n > 0 => {
+                if let Some((cmd, payload)) = split_vendor_in(&buf, n) {
+                    if cmd == CMD_KEY_EVENT {
+                        if let Some(cb) = &on_key {
+                            cb(
+                                payload.first().copied().unwrap_or(0),
+                                payload.get(1).copied().unwrap_or(0),
+                                payload.get(2).copied().unwrap_or(0) != 0,
+                            );
+                        }
+                    } else if let Some(p) = pending.take() {
+                        match p {
+                            Pending::Rpc { cmd: want, tx, .. } if want == cmd => {
+                                let _ = tx.send(Ok(payload.to_vec()));
+                            }
+                            Pending::Leds { .. } if cmd == CMD_GET_LEDS => {
+                                if let Some(frame) = parse_led_frame(payload) {
+                                    if let Some(cb) = &on_leds {
+                                        cb(frame.clone());
+                                    }
+                                    if let Ok(mut g) = last.lock() {
+                                        *g = Some(frame);
+                                    }
+                                }
+                            }
+                            other => pending = Some(other),
+                        }
+                    }
                 }
             }
             _ => {}
         }
 
-        if let Some((_, deadline, _)) = &pending {
-            if Instant::now() >= *deadline {
-                let (_, _, tx) = pending.take().unwrap();
-                let _ = tx.send(Err(PadError::Msg("no reply from pad".into())));
+        let timed_out = match &pending {
+            Some(Pending::Rpc { deadline, .. } | Pending::Leds { deadline }) => {
+                Instant::now() >= *deadline
+            }
+            None => false,
+        };
+        if timed_out {
+            match pending.take() {
+                Some(Pending::Rpc { tx, .. }) => {
+                    let _ = tx.send(Err(PadError::Msg("no reply from pad".into())));
+                }
+                _ => {}
             }
         }
     }
@@ -1249,6 +1399,29 @@ pub struct TextPool {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct LedFrame {
+    pub color: Vec<u8>,
+    pub duty: Vec<u8>,
+    #[serde(default)]
+    pub anim_ms: u16,
+    #[serde(default)]
+    pub idle_ms: u16,
+    #[serde(default)]
+    pub flash_key: u8,
+    #[serde(default)]
+    pub flash_ms: u16,
+    #[serde(default)]
+    pub ripple_key: u8,
+    #[serde(default)]
+    pub ripple_age: u16,
+    #[serde(default)]
+    pub flood: u8,
+    #[serde(default)]
+    pub clocks: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     pub meta: Meta,
     pub profiles: Vec<ProfileHdr>,
@@ -1263,6 +1436,8 @@ pub struct Snapshot {
     pub can_add_profiles: bool,
     #[serde(default)]
     pub can_set_screen: bool,
+    #[serde(default)]
+    pub can_get_leds: bool,
 }
 
 impl Default for TextPool {

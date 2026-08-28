@@ -422,6 +422,24 @@ void led_mux_preview(uint8_t use_dim) {
   idle_ms = use_dim ? 2500 : 0;
 }
 
+void led_mux_snapshot(led_snap_t *snap) {
+  uint8_t k;
+  if (!snap) {
+    return;
+  }
+  for (k = 0; k < LED_PIX; k++) {
+    snap->color[k] = pix_color[k];
+    snap->duty[k] = pix_duty[k];
+  }
+  snap->anim_ms = anim_ms;
+  snap->idle_ms = idle_ms;
+  snap->flash_key = flash_key;
+  snap->flash_ms = flash_ms;
+  snap->ripple_key = ripple_key;
+  snap->ripple_age = ripple_age;
+  snap->flood = flood;
+}
+
 void TIM2_IRQHandler(void) {
   if (__HAL_TIM_GET_FLAG(&htim_led, TIM_FLAG_UPDATE) != RESET) {
     if (__HAL_TIM_GET_IT_SOURCE(&htim_led, TIM_IT_UPDATE) != RESET) {

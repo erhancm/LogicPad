@@ -82,6 +82,7 @@ export type Snapshot = {
   canTitles?: boolean;
   canAddProfiles?: boolean;
   canSetScreen?: boolean;
+  canGetLeds?: boolean;
 };
 
 export type LaunchEntry = {

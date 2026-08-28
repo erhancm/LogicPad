@@ -2014,6 +2014,7 @@ export default function App() {
               keys={keys}
               bound={bound}
               busy={busy}
+              simulated={simulated}
               memHint={`${snap.profiles.length} profile${snap.profiles.length === 1 ? "" : "s"} on the pad${mem?.storeMax ? ` · ${mem.store} / ${mem.storeMax} B used` : ""}.`}
               onActivate={(index) => void activateProfile(index)}
               onAdd={() => void onAddProfile()}

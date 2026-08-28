@@ -191,8 +191,11 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
   if (len < 2 || buf[0] != HID_RID_VENDOR) {
     return;
   }
-  vendor_last_ms = HAL_GetTick();
   uint8_t cmd = buf[1];
+  /* Live LED polls must not keep the OLED USB dot blinking. */
+  if (cmd != CMD_GET_LEDS) {
+    vendor_last_ms = HAL_GetTick();
+  }
   const uint8_t *p = &buf[2];
   uint8_t out[62];
   memset(out, 0, sizeof(out));
@@ -200,7 +203,7 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
   switch (cmd) {
   case CMD_PING:
     out[0] = 0x01;
-    out[1] = 0x06; /* minor: SET_SCREEN contrast/flip/sleep */
+    out[1] = 0x07; /* minor: GET_LEDS live RGB snapshot */
     vendor_reply(CMD_PING, out, 2);
     break;
   case CMD_GET_META:
@@ -422,6 +425,25 @@ void hid_vendor_on_out(const uint8_t *buf, uint16_t len) {
     out[2] = p[2];
     out[3] = st;
     vendor_reply(cmd, out, 4);
+    break;
+  }
+  case CMD_GET_LEDS: {
+    led_snap_t snap;
+    led_mux_snapshot(&snap);
+    memcpy(&out[0], snap.color, 10);
+    memcpy(&out[10], snap.duty, 10);
+    out[20] = (uint8_t)snap.anim_ms;
+    out[21] = (uint8_t)(snap.anim_ms >> 8);
+    out[22] = (uint8_t)snap.idle_ms;
+    out[23] = (uint8_t)(snap.idle_ms >> 8);
+    out[24] = snap.flash_key;
+    out[25] = (uint8_t)snap.flash_ms;
+    out[26] = (uint8_t)(snap.flash_ms >> 8);
+    out[27] = snap.ripple_key;
+    out[28] = (uint8_t)snap.ripple_age;
+    out[29] = (uint8_t)(snap.ripple_age >> 8);
+    out[30] = snap.flood;
+    vendor_reply(cmd, out, 31);
     break;
   }
   case CMD_GET_TEXT: {
