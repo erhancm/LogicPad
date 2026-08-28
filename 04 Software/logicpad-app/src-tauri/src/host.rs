@@ -32,11 +32,12 @@ pub fn is_present() -> bool {
 mod win {
     use super::*;
     use windows::core::w;
-    use windows::Win32::Foundation::{HANDLE, HWND, LPARAM, LRESULT, WPARAM};
+    use windows::Win32::Foundation::{GetLastError, HANDLE, HWND, LPARAM, LRESULT, WPARAM};
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::System::RemoteDesktop::{
         WTSFreeMemory, WTSQuerySessionInformationW, WTSRegisterSessionNotification,
         WTSUnRegisterSessionNotification, WTSConnectState, WTS_CURRENT_SESSION,
+        WTSINFOEXW, WTSSessionInfoEx, WTS_SESSIONSTATE_LOCK,
         NOTIFY_FOR_THIS_SESSION,
     };
     use windows::Win32::System::StationsAndDesktops::{
@@ -44,10 +45,10 @@ mod win {
         DESKTOP_READOBJECTS, UOI_NAME,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, GetWindowLongPtrW,
-        PostQuitMessage, RegisterClassW, SetWindowLongPtrW, TranslateMessage, CREATESTRUCTW,
-        CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWLP_USERDATA, MSG, WINDOW_EX_STYLE, WM_DESTROY,
-        WM_ENDSESSION, WM_NCCREATE, WM_QUERYENDSESSION, WNDCLASSW, WS_OVERLAPPED,
+        CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW,
+        GetWindowLongPtrW, PostQuitMessage, RegisterClassW, SetWindowLongPtrW, TranslateMessage,
+        CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HWND_MESSAGE, MSG, WINDOW_EX_STYLE,
+        WM_DESTROY, WM_ENDSESSION, WM_NCCREATE, WM_QUERYENDSESSION, WNDCLASSW, WS_OVERLAPPED,
         WM_WTSSESSION_CHANGE,
     };
 
@@ -71,6 +72,43 @@ mod win {
     }
 
     fn workstation_locked() -> bool {
+        if let Some(locked) = session_locked_wts() {
+            return locked;
+        }
+        input_desktop_is_winlogon()
+    }
+
+    fn session_locked_wts() -> Option<bool> {
+        unsafe {
+            let mut buf = windows::core::PWSTR::null();
+            let mut bytes = 0u32;
+            WTSQuerySessionInformationW(
+                None,
+                WTS_CURRENT_SESSION,
+                WTSSessionInfoEx,
+                &mut buf,
+                &mut bytes,
+            )
+            .ok()?;
+            if buf.is_null() || bytes < std::mem::size_of::<WTSINFOEXW>() as u32 {
+                if !buf.is_null() {
+                    WTSFreeMemory(buf.0.cast());
+                }
+                return None;
+            }
+            let info = buf.0.cast::<WTSINFOEXW>().read();
+            let locked = if info.Level == 1 {
+                let flags = info.Data.WTSInfoExLevel1.SessionFlags;
+                flags == WTS_SESSIONSTATE_LOCK as i32
+            } else {
+                None?
+            };
+            WTSFreeMemory(buf.0.cast());
+            Some(locked)
+        }
+    }
+
+    fn input_desktop_is_winlogon() -> bool {
         unsafe {
             let Ok(desk) = OpenInputDesktop(DESKTOP_CONTROL_FLAGS(0), false, DESKTOP_READOBJECTS) else {
                 return true;
@@ -87,7 +125,7 @@ mod win {
             .is_ok();
             let _ = CloseDesktop(desk);
             if !ok {
-                return false;
+                return true;
             }
             let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
             let name = String::from_utf16_lossy(&buf[..len]);
@@ -123,6 +161,13 @@ mod win {
         }
     }
 
+    fn push_present(pad: &Mutex<Pad>) {
+        AWAY.store(false, Ordering::SeqCst);
+        if let Ok(g) = pad.try_lock() {
+            let _ = g.set_host(true);
+        }
+    }
+
     pub fn run(pad: Arc<Mutex<Pad>>) {
         let leaked = Box::into_raw(Box::new(pad));
         if !unsafe { message_loop(leaked) } {
@@ -143,18 +188,21 @@ mod win {
             ..Default::default()
         };
         if RegisterClassW(&wc) == 0 {
-            return false;
+            const ERROR_CLASS_ALREADY_EXISTS: u32 = 1410;
+            if GetLastError().0 != ERROR_CLASS_ALREADY_EXISTS {
+                return false;
+            }
         }
         let hwnd = match CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             class,
             w!("LogicPadHost"),
             WS_OVERLAPPED,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
             0,
             0,
-            None,
+            0,
+            0,
+            Some(HWND_MESSAGE),
             None,
             Some(hinst.into()),
             Some(pad.cast()),
@@ -187,13 +235,18 @@ mod win {
             WM_WTSSESSION_CHANGE => {
                 match wp.0 {
                     WTS_SESSION_LOCK | WTS_CONSOLE_DISCONNECT | WTS_SESSION_LOGOFF => {
-                        AWAY.store(true, Ordering::SeqCst);
                         if !pad.is_null() {
                             push_away(&**pad);
+                        } else {
+                            AWAY.store(true, Ordering::SeqCst);
                         }
                     }
                     WTS_SESSION_UNLOCK | WTS_CONSOLE_CONNECT | WTS_SESSION_LOGON => {
-                        AWAY.store(false, Ordering::SeqCst);
+                        if !pad.is_null() {
+                            push_present(&**pad);
+                        } else {
+                            AWAY.store(false, Ordering::SeqCst);
+                        }
                     }
                     _ => {}
                 }
