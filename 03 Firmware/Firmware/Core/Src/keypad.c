@@ -10,6 +10,7 @@
 static const uint16_t col_pin[3] = {Column_0_Pin, Column_1_Pin, Column_2_Pin};
 static const uint16_t row_pin[3] = {Row_0_Pin, Row_1_Pin, Row_2_Pin};
 
+static volatile uint8_t ready;
 static uint8_t raw[9];
 static uint8_t stable[9];
 static uint8_t db_ms[9];
@@ -19,16 +20,17 @@ static uint16_t sel_hold;
 static uint8_t sel_long_fired;
 
 static keypad_event_t q[QN];
-static uint8_t qh, qt, qn;
+static volatile uint8_t qh, qt;
 
 static void push(keypad_evt_t type, uint8_t key) {
-  if (qn >= QN) {
+  uint8_t n = (uint8_t)((qh + 1) % QN);
+  if (n == qt) {
     return;
   }
   q[qh].type = type;
   q[qh].key = key;
-  qh = (uint8_t)((qh + 1) % QN);
-  qn++;
+  __DMB();
+  qh = n;
 }
 
 static void cols_idle(void) {
@@ -41,10 +43,15 @@ static uint8_t scan_row(uint8_t r) {
 
 void keypad_init(void) {
   cols_idle();
+  ready = 1;
 }
 
 void keypad_tick(void) {
   uint8_t mask[9] = {0};
+
+  if (!ready) {
+    return;
+  }
 
   for (uint8_t c = 0; c < 3; c++) {
     cols_idle();
@@ -68,7 +75,7 @@ void keypad_tick(void) {
       raw[i] = mask[i];
       db_ms[i] = 0;
     }
-    if (db_ms[i] == DEBOUNCE_MS) {
+    if (db_ms[i] >= DEBOUNCE_MS) {
       if (raw[i] && !stable[i]) {
         stable[i] = 1;
         hold_ms[i] = 0;
@@ -98,7 +105,7 @@ void keypad_tick(void) {
     sel_raw = s;
     sel_db = 0;
   }
-  if (sel_db == DEBOUNCE_MS) {
+  if (sel_db >= DEBOUNCE_MS) {
     if (sel_raw && !sel_stable) {
       sel_stable = 1;
       sel_hold = 0;
@@ -122,11 +129,11 @@ void keypad_tick(void) {
 }
 
 int keypad_pop(keypad_event_t *out) {
-  if (qn == 0) {
+  uint8_t t = qt;
+  if (t == qh) {
     return 0;
   }
-  *out = q[qt];
-  qt = (uint8_t)((qt + 1) % QN);
-  qn--;
+  *out = q[t];
+  qt = (uint8_t)((t + 1) % QN);
   return 1;
 }

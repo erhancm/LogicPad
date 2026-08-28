@@ -20,6 +20,7 @@ typedef struct {
 } keypad_event_t;
 
 void keypad_init(void);
+/* 1 ms scan. Called from SysTick so OLED I2C cannot drop taps. */
 void keypad_tick(void);
 int keypad_pop(keypad_event_t *out);
 

@@ -960,10 +960,8 @@ static void on_event(keypad_event_t e) {
     return;
   }
   if (scr == SCR_SLEEPING) {
+    /* Sleep is the same idle home; keep this press (SEL opens the menu). */
     ui_wake();
-    if (!(e.type == KP_DOWN && e.key < 9)) {
-      return;
-    }
   }
   if (scr == SCR_SAVE_PROMPT) {
     if (e.type == KP_DOWN && e.key == 4) {
@@ -1388,7 +1386,12 @@ void ui_show_update(void) {
 void ui_draw_if_needed(void) {
   static uint32_t last;
   uint32_t now = HAL_GetTick();
-  if (!need_draw && (now - last) < 100) {
+  /* Skip the ~25 ms I2C refresh when the framebuffer has not changed.
+   * A 10 Hz idle redraw used to deafen the keypad during blocking writes. */
+  if (!need_draw) {
+    return;
+  }
+  if (last != 0 && (now - last) < 100) {
     return;
   }
   last = now;

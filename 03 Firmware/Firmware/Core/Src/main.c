@@ -123,7 +123,6 @@ int main(void)
     uint16_t steps = 0;
     while (last_ms != now) {
       last_ms++;
-      keypad_tick();
       ui_tick();
       if (steps < 1000) {
         steps++;
