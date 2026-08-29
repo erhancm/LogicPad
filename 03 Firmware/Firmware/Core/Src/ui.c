@@ -546,6 +546,30 @@ static void draw_idle_clock(void) {
   draw_clock_band();
 }
 
+/* 3×3 key grid: each cell is (128/3)×(48/3) px.  Label at 1× font centered. */
+#define GRID_COLS 3
+#define GRID_ROWS 3
+#define GRID_CELL_W (128 / GRID_COLS) /* 42 px */
+#define GRID_CELL_H (UI_BLUE_H / GRID_ROWS) /* 16 px */
+
+static void draw_key_grid(const lp_profile_t *p) {
+  for (uint8_t r = 0; r < GRID_ROWS; r++) {
+    for (uint8_t c = 0; c < GRID_COLS; c++) {
+      uint8_t ki = (uint8_t)(r * GRID_COLS + c);
+      const char *lbl = or_dash(storage_key_title(&p->keys[ki]));
+      /* Center 6-char label in cell: 6px per char, grid-cell width 42. */
+      uint8_t n = (uint8_t)strlen(lbl);
+      if (n > 6) {
+        n = 6;
+      }
+      uint8_t x = (uint8_t)(c * GRID_CELL_W + (GRID_CELL_W - n * 6) / 2);
+      uint8_t y = (uint8_t)(r * GRID_CELL_H + (GRID_CELL_H - 8) / 2);
+      ssd1306_SetCursor(x, y);
+      ssd1306_WriteString(lbl, Font_6x8, White);
+    }
+  }
+}
+
 static void draw_idle_home(void) {
   if (idle_shows_clock() || clock_preview_active()) {
     draw_idle_clock();
@@ -554,8 +578,9 @@ static void draw_idle_home(void) {
   {
     lp_profile_t *p = ap();
     const char *name = (p && p->name[0]) ? p->name : "--";
-    text2x_title(name, White);
-    header("HOME");
+    ssd1306_FillRect(0, 0, 128, UI_BLUE_H, Black);
+    draw_key_grid(p);
+    header(name);
   }
 }
 
