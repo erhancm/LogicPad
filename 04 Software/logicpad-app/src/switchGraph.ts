@@ -48,11 +48,17 @@ export function isGate(n: SwitchNode): boolean {
   );
 }
 
+/** Minimum rendered height for a node, used by auto-layout to avoid overlap. */
 export function nodeSize(n: SwitchNode): { w: number; h: number } {
   if (isGate(n)) {
     return { w: n.kind === "not" || n.kind === "if" ? 88 : 96, h: 68 };
   }
-  if (n.kind === "foreground" || n.kind === "running") return { w: 252, h: 154 };
+  if (n.kind === "foreground" || n.kind === "running") {
+    // header(28) + padding(30) + chips(38 per prog + 6 gap) + min-height(48) + button(28)
+    const chipH = Math.max(1, n.programs.length) * 38 + (Math.max(1, n.programs.length) - 1) * 6;
+    const chips = Math.max(48, chipH);
+    return { w: 252, h: 28 + 30 + chips + 28 };
+  }
   if (n.kind === "restore") return { w: 236, h: 124 };
   if (n.kind === "setProfile" && n.lightsOnly) return { w: 248, h: 198 };
   return { w: 228, h: 176 };

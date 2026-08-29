@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as PE } from "r
 import { listen } from "@tauri-apps/api/event";
 import { LEDS, LIGHT_MODES, type PadKey, type ProfileHdr, type SwitchConfig, type SwitchEdge, type SwitchGraph, type SwitchNode } from "./types";
 import { cssLedId } from "./leds";
-import { autoLayoutGraph, CANVAS_H, CANVAS_W, ensureGraph, isGate, newId, nodeSize, nodeZone, snapNodeToZone, snapToGrid, withGraph, ZONE_LAYOUT } from "./switchGraph";
+import { autoLayoutGraph, CANVAS_H, CANVAS_W, ensureGraph, isGate, newId, nodeSize, nodeZone, snapNodeToZone, snapToGrid, withGraph, ZONE_LAYOUT, type SwitchZone } from "./switchGraph";
 import { GateIcon, GateSymbol, logicGateInfo, LOGIC_GATE_INFO, type LogicGateKind } from "./GateSymbol";
 import { RunningPicker, type OpenWindow } from "./RunningPicker";
 import { SwitchRulesList } from "./SwitchRulesList";
@@ -284,6 +284,7 @@ export function SwitchEditor(props: {
   const { open, cfg, profiles, keys, busy, enabled = cfg.enabled, onChange, onStatus, onLights, listWindows, pickProgram } = props;
   const [graph, setGraph] = useState(() => ensureGraph(cfg));
   const [rulesCompact, setRulesCompact] = useState(true);
+  const [layoutTick, setLayoutTick] = useState(0);
   const [ruleHighlight, setRuleHighlight] = useState<string | null>(null);
   const [pan, setPan] = useState({ x: 36, y: 28 });
   const [zoom, setZoom] = useState(1);
@@ -393,6 +394,52 @@ export function SwitchEditor(props: {
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, [open]);
+
+  // Post-render overlap fix: measure actual DOM heights after auto-layout and re-stack.
+  useEffect(() => {
+    if (layoutTick === 0) return;
+    requestAnimationFrame(() => {
+      const el = canvasRef.current;
+      if (!el) return;
+      const nodeEls = el.querySelectorAll<HTMLElement>(".sw-node");
+      if (!nodeEls.length) return;
+
+      const GAP = 48;
+      const MARGIN_Y = 56;
+      const zones: SwitchZone[] = ["conditions", "logic", "actions"];
+      const measured = new Map<string, number>();
+
+      for (const nodeEl of nodeEls) {
+        const id = nodeEl.dataset.nodeId;
+        if (id) measured.set(id, nodeEl.offsetHeight);
+      }
+
+      let changed = false;
+      const nextNodes = graphRef.current.nodes.map((n) => ({ ...n }));
+      const nextById = new Map(nextNodes.map((n) => [n.id, n]));
+
+      for (const zone of zones) {
+        const inZone = nextNodes
+          .filter((n) => nodeZone(n) === zone)
+          .slice()
+          .sort((a, b) => a.y - b.y || a.id.localeCompare(b.id));
+        let y = MARGIN_Y;
+        for (const src of inZone) {
+          const n = nextById.get(src.id);
+          if (!n) continue;
+          const h = measured.get(n.id) ?? nodeSize(n).h;
+          const snapped = snapToGrid(y);
+          if (n.y !== snapped) {
+            n.y = snapped;
+            changed = true;
+          }
+          y += h + GAP;
+        }
+      }
+
+      if (changed) commit({ ...graphRef.current, nodes: nextNodes });
+    });
+  }, [layoutTick]);
 
   useEffect(() => {
     if (!open) return;
@@ -780,7 +827,7 @@ export function SwitchEditor(props: {
           type="button"
           className="sw-tool"
           title="Arrange nodes into condition / logic / action columns"
-          onClick={() => commit(autoLayoutGraph(graph))}
+          onClick={() => { commit(autoLayoutGraph(graph)); setLayoutTick((t) => t + 1); }}
         >
           Auto layout
         </button>
@@ -845,6 +892,7 @@ export function SwitchEditor(props: {
               <div
                 key={n.id}
                 className={`sw-node sw-${n.kind}${isLights(n) ? " sw-lights-node" : ""}${isOp(n) ? " sw-gate sw-logic" : ""}${n.kind === "foreground" || n.kind === "running" ? " sw-cond" : ""}${n.kind === "setProfile" || n.kind === "restore" ? " sw-action" : ""}${sel === n.id ? " on" : ""}`}
+                data-node-id={n.id}
                 style={{ left: n.x, top: n.y, width: nodeSize(n).w, height: isOp(n) ? nodeSize(n).h : undefined }}
                 onPointerDown={(e) => onNodeDown(e, n.id)}
               >
