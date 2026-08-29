@@ -388,7 +388,7 @@ export function SwitchEditor(props: {
     return () => el.removeEventListener("wheel", onWheel);
   }, [open]);
 
-  // Post-render overlap fix: measure actual DOM heights after auto-layout and re-stack.
+  // Post-render overlap fix: measure actual DOM heights and only push nodes apart where they overlap.
   useEffect(() => {
     if (layoutTick === 0) return;
     requestAnimationFrame(() => {
@@ -398,8 +398,6 @@ export function SwitchEditor(props: {
       if (!nodeEls.length) return;
 
       const GAP = 48;
-      const MARGIN_Y = 56;
-      const zones: SwitchZone[] = ["conditions", "logic", "actions"];
       const measured = new Map<string, number>();
 
       for (const nodeEl of nodeEls) {
@@ -409,24 +407,21 @@ export function SwitchEditor(props: {
 
       let changed = false;
       const nextNodes = graphRef.current.nodes.map((n) => ({ ...n }));
-      const nextById = new Map(nextNodes.map((n) => [n.id, n]));
 
-      for (const zone of zones) {
+      for (const zone of ["conditions", "logic", "actions"] as SwitchZone[]) {
         const inZone = nextNodes
           .filter((n) => nodeZone(n) === zone)
           .slice()
           .sort((a, b) => a.y - b.y || a.id.localeCompare(b.id));
-        let y = MARGIN_Y;
-        for (const src of inZone) {
-          const n = nextById.get(src.id);
-          if (!n) continue;
-          const h = measured.get(n.id) ?? nodeSize(n).h;
-          const snapped = snapToGrid(y);
-          if (n.y !== snapped) {
-            n.y = snapped;
+        for (let i = 1; i < inZone.length; i++) {
+          const prev = inZone[i - 1];
+          const cur = inZone[i];
+          const prevH = measured.get(prev.id) ?? nodeSize(prev).h;
+          const minY = prev.y + prevH + GAP;
+          if (cur.y < minY) {
+            cur.y = snapToGrid(minY);
             changed = true;
           }
-          y += h + GAP;
         }
       }
 

@@ -68,15 +68,25 @@ export function snapToGrid(v: number, grid = SWITCH_GRID): number {
   return Math.round(v / grid) * grid;
 }
 
-/** Stack nodes into fixed condition / logic / action columns. */
+/** Stack nodes into fixed condition / logic / action columns.
+ *  Logic gates are placed at the average Y of their wired neighbors. */
 export function autoLayoutGraph(graph: SwitchGraph): SwitchGraph {
-  const V_GAP = 40;
+  const V_GAP = 48;
   const MARGIN_Y = 56;
-  const zones: SwitchZone[] = ["conditions", "logic", "actions"];
   const nodes = graph.nodes.map((n) => ({ ...n }));
   const byId = new Map(nodes.map((n) => [n.id, n]));
 
-  for (const zone of zones) {
+  // Build neighbor lookups.
+  const incoming = new Map<string, string[]>();
+  const outgoing = new Map<string, string[]>();
+  for (const e of graph.edges) {
+    (incoming.get(e.to) ?? (incoming.set(e.to, []), incoming.get(e.to)!)).push(e.from);
+    (outgoing.get(e.from) ?? (outgoing.set(e.from, []), outgoing.get(e.from)!)).push(e.to);
+  }
+
+  // Pass 1: lay out conditions and actions sequentially.
+  const nonGate: SwitchZone[] = ["conditions", "actions"];
+  for (const zone of nonGate) {
     const inZone = nodes
       .filter((n) => nodeZone(n) === zone)
       .slice()
@@ -88,6 +98,38 @@ export function autoLayoutGraph(graph: SwitchGraph): SwitchGraph {
       n.x = zoneX(zone);
       n.y = snapToGrid(y);
       y += nodeSize(n).h + V_GAP;
+    }
+  }
+
+  // Pass 2: place logic gates at the centroid of their wired neighbors.
+  const gates = nodes.filter((n) => nodeZone(n) === "logic");
+  for (const g of gates) {
+    g.x = zoneX("logic");
+    const nbrs = [...(incoming.get(g.id) ?? []), ...(outgoing.get(g.id) ?? [])];
+    if (nbrs.length) {
+      let sum = 0;
+      let cnt = 0;
+      for (const id of nbrs) {
+        const nb = byId.get(id);
+        if (!nb) continue;
+        sum += nb.y + nodeSize(nb).h / 2;
+        cnt++;
+      }
+      if (cnt) g.y = snapToGrid(sum / cnt - nodeSize(g).h / 2);
+    }
+  }
+
+  // Pass 3: resolve overlaps within each zone.
+  for (const zone of ["conditions", "logic", "actions"] as SwitchZone[]) {
+    const inZone = nodes
+      .filter((n) => nodeZone(n) === zone)
+      .slice()
+      .sort((a, b) => a.y - b.y || a.id.localeCompare(b.id));
+    for (let i = 1; i < inZone.length; i++) {
+      const prev = inZone[i - 1];
+      const cur = inZone[i];
+      const minY = prev.y + nodeSize(prev).h + V_GAP;
+      if (cur.y < minY) cur.y = snapToGrid(minY);
     }
   }
 
