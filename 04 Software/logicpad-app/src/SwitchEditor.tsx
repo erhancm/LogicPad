@@ -26,7 +26,7 @@ function isLights(n: SwitchNode): boolean {
 }
 
 function hasOut(n: SwitchNode): boolean {
-  return n.kind !== "restore" && !isLights(n);
+  return n.kind !== "restore" && !isLights(n) && n.kind !== "setProfile";
 }
 
 function hasIn(n: SwitchNode): boolean {
@@ -40,10 +40,6 @@ function hasIn(n: SwitchNode): boolean {
 
 function isOp(n: SwitchNode): boolean {
   return isGate(n);
-}
-
-function isUnaryOp(n: SwitchNode): boolean {
-  return n.kind === "not";
 }
 
 const LOGIC_KINDS = Object.keys(LOGIC_GATE_INFO) as LogicGateKind[];
@@ -185,9 +181,9 @@ function portCount(node: SwitchNode, graph: SwitchGraph, side: "in" | "out"): nu
     side === "in"
       ? graph.edges.filter((e) => e.to === node.id).length
       : graph.edges.filter((e) => e.from === node.id).length;
-  if (isOp(node)) return isUnaryOp(node) ? Math.max(1, n) : Math.max(2, n);
+  if (isOp(node)) return Math.max(1, n);
   if (side === "out" && (node.kind === "foreground" || node.kind === "running")) {
-    return Math.max(node.programs.length >= 2 ? 2 : 1, n);
+    return Math.max(1, n);
   }
   return Math.max(1, n);
 }
@@ -227,7 +223,7 @@ type LightsCb = (hdr: ProfileHdr, leds: number[] | undefined) => void;
 type AddItem = { kind: SwitchNode["kind"]; label: string; hint?: string; lightsOnly?: boolean };
 type AddSection = { title: string; items: AddItem[] };
 
-const ALL_GATES: LogicGateKind[] = ["and", "or", "not", "xor", "else", "true", "false", "if"];
+const ALL_GATES: LogicGateKind[] = ["and", "or", "not", "xor", "else", "true", "false"];
 
 const ADD_SECTIONS: AddSection[] = [
   {
