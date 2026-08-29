@@ -809,7 +809,7 @@ export function SwitchEditor(props: {
             ) : null}
           </div>
         ))}
-        {linkFrom ? <span className="hint">Drop on a yellow input</span> : null}
+
         <span className="sw-tools-gap" />
         <div className="sw-zoom">
           <button type="button" className="sw-tool sw-zoom-btn" title="Zoom out" onClick={() => zoomBy(1 / 1.2)}>
