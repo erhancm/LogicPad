@@ -283,7 +283,7 @@ export function SwitchEditor(props: {
 }) {
   const { open, cfg, profiles, keys, busy, enabled = cfg.enabled, onChange, onStatus, onLights, listWindows, pickProgram } = props;
   const [graph, setGraph] = useState(() => ensureGraph(cfg));
-  const [rulesCompact, setRulesCompact] = useState(false);
+  const [rulesCompact, setRulesCompact] = useState(true);
   const [ruleHighlight, setRuleHighlight] = useState<string | null>(null);
   const [pan, setPan] = useState({ x: 36, y: 28 });
   const [zoom, setZoom] = useState(1);
