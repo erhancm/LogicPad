@@ -1,14 +1,15 @@
 import { useMemo, useState } from "react";
-import type { ProfileHdr, SwitchCard, SwitchConfig, SwitchGraph } from "./types";
+import type { ProfileHdr, RuleWhen, SwitchCard, SwitchConfig, SwitchGraph } from "./types";
 import {
-  addSimpleRule,
-  graphHasCustomLogic,
+  RULE_WHEN_LABELS,
+  addRuleCard,
+  cardWhen,
   graphIsEmpty,
   listRuleCards,
   removeRuleCard,
   reorderRuleCards,
-  ruleCardKind,
   ruleCardLabel,
+  ruleCardSummary,
   stemName,
   updateRuleCard,
   withGraph,
@@ -16,22 +17,13 @@ import {
 import { RunningPicker, type OpenWindow } from "./RunningPicker";
 import "./SwitchRulesList.css";
 
-type ChipLook = { title: string; img?: string };
+type PickTarget = { ruleId: string; field: "programs" | "andRunning" } | "draft";
 
 function exeKey(exe: string): string {
   return exe.replace(/^.*[\\/]/, "").toLowerCase();
 }
 
-function bmpSrc(b64?: string): string | undefined {
-  return b64 ? `data:image/bmp;base64,${b64}` : undefined;
-}
-
-function lookFromWindow(w: OpenWindow): ChipLook {
-  return {
-    title: w.title || stemName(w.exe || w.path),
-    img: bmpSrc(w.iconBmp),
-  };
-}
+const WHEN_OPTIONS: RuleWhen[] = ["focused", "not-focused", "running", "focused-and-running"];
 
 export function SwitchRulesList(props: {
   cfg: SwitchConfig;
@@ -40,8 +32,8 @@ export function SwitchRulesList(props: {
   busy?: boolean;
   enabled: boolean;
   highlightId: string | null;
-  advancedOpen: boolean;
-  onAdvancedOpen: (open: boolean) => void;
+  rulesCompact: boolean;
+  onRulesCompact: (compact: boolean) => void;
   onChange: (cfg: SwitchConfig) => void;
   onHighlight: (setProfileId: string | null) => void;
   onStatus?: (msg: string) => void;
@@ -55,8 +47,8 @@ export function SwitchRulesList(props: {
     busy,
     enabled,
     highlightId,
-    advancedOpen,
-    onAdvancedOpen,
+    rulesCompact,
+    onRulesCompact,
     onChange,
     onHighlight,
     onStatus,
@@ -66,15 +58,20 @@ export function SwitchRulesList(props: {
 
   const cards = useMemo(() => listRuleCards(graph), [graph]);
   const empty = graphIsEmpty(graph);
-  const hasCustom = graphHasCustomLogic(graph);
 
-  const [pickOpen, setPickOpen] = useState(false);
-  const [draftExe, setDraftExe] = useState<string | null>(null);
-  const [draftLook, setDraftLook] = useState<ChipLook | null>(null);
+  const [pickTarget, setPickTarget] = useState<PickTarget | null>(null);
+  const [draftWhen, setDraftWhen] = useState<RuleWhen>("focused");
   const [draftProfile, setDraftProfile] = useState(profiles[0]?.index ?? 0);
+  const [draftOtherwise, setDraftOtherwise] = useState<"next" | "restore" | number>("next");
+  const [draftPrograms, setDraftPrograms] = useState<string[]>([]);
+  const [draftRunning, setDraftRunning] = useState<string[]>([]);
   const [windows, setWindows] = useState<OpenWindow[]>([]);
   const [winLoad, setWinLoad] = useState(false);
   const [winErr, setWinErr] = useState("");
+
+  function profileName(index: number): string {
+    return profiles.find((p) => p.index === index)?.name || `P${index + 1}`;
+  }
 
   function commit(nextGraph: SwitchGraph, autoEnable = false) {
     const wasEmpty = graphIsEmpty(graph);
@@ -98,57 +95,52 @@ export function SwitchRulesList(props: {
     }
   }
 
-  async function openPicker() {
-    setPickOpen(true);
+  async function openPicker(target: PickTarget) {
+    setPickTarget(target);
     await refreshWindows();
   }
 
-  function addRule() {
-    if (!draftExe) return;
-    commit(addSimpleRule(graph, draftExe, draftProfile), true);
-    setDraftExe(null);
-    setDraftLook(null);
+  function addExeToList(list: string[], exe: string): string[] {
+    const base = exe.replace(/^.*[\\/]/, "").trim();
+    if (!base) return list;
+    return list.some((p) => exeKey(p) === exeKey(base)) ? list : [...list, base];
   }
 
-  function removeRule(cardId: string) {
-    commit(removeRuleCard(graph, cardId));
-    if (highlightId === cardId) onHighlight(null);
+  function addDraftRule() {
+    if (!draftPrograms.length) return;
+    commit(
+      addRuleCard(graph, {
+        when: draftWhen,
+        programs: draftPrograms,
+        andRunning: draftWhen === "focused-and-running" ? draftRunning : undefined,
+        profile: draftProfile,
+        otherwise: draftOtherwise,
+      }),
+      true,
+    );
+    setDraftPrograms([]);
+    setDraftRunning([]);
+    setDraftOtherwise("next");
   }
 
-  function moveRule(index: number, dir: -1 | 1) {
-    commit(reorderRuleCards(graph, index, index + dir));
-  }
-
-  function profileName(index: number): string {
-    return profiles.find((p) => p.index === index)?.name || `P${index + 1}`;
-  }
-
-  function conditionLabel(card: SwitchCard): string {
-    if (ruleCardKind(card) === "advanced") return "Custom logic";
-    if (card.match === "running") return "When running";
-    return "When focused";
-  }
-
-  function iconFor(card: SwitchCard): ChipLook | undefined {
-    const exe = card.programs[0];
-    if (!exe) return undefined;
-    const w = windows.find((x) => exeKey(x.exe || x.path) === exeKey(exe));
-    if (w) return lookFromWindow(w);
-    return { title: stemName(exe) };
+  function addRuleProgram(cardId: string, field: "programs" | "andRunning", exe: string) {
+    const card = cards.find((c) => c.id === cardId);
+    if (!card) return;
+    const list = field === "programs" ? card.programs : card.andRunning ?? [];
+    commit(updateRuleCard(graph, cardId, { [field]: addExeToList(list, exe) }));
   }
 
   return (
-    <section className="sw-rules">
+    <section className={`sw-rules${rulesCompact ? " compact" : ""}`}>
       <div className="sw-rules-head">
-        <h3>Rules</h3>
+        <h3>If / Then rules</h3>
         <button
           type="button"
-          className={`sw-rules-advanced${advancedOpen ? " on" : ""}`}
-          onClick={() => onAdvancedOpen(!advancedOpen)}
-          title="Show the node graph for complex logic"
+          className={`sw-rules-advanced${rulesCompact ? " on" : ""}`}
+          onClick={() => onRulesCompact(!rulesCompact)}
+          title="Collapse the rule list to give the logic graph more space"
         >
-          {advancedOpen ? "Hide graph" : "Advanced graph"}
-          {hasCustom ? " •" : ""}
+          {rulesCompact ? "Show rules" : "Compact rules"}
         </button>
       </div>
 
@@ -158,174 +150,242 @@ export function SwitchRulesList(props: {
         </p>
       ) : null}
 
-      {empty ? (
-        <div className="sw-empty">
-          <p className="sw-empty-lead">Switch profiles when you focus an app</p>
-          <p>Pick a program, choose a profile, and LogicPad switches automatically.</p>
-          <div className="sw-empty-steps">
-            <div className="sw-empty-step">
-              <span>1</span>
-              Pick app
-            </div>
-            <div className="sw-empty-step">
-              <span>2</span>
-              Choose profile
-            </div>
-            <div className="sw-empty-step">
-              <span>3</span>
-              Leave app → restore
-            </div>
+      <div className="sw-rules-body">
+        {empty ? (
+          <div className="sw-empty">
+            <p className="sw-empty-lead">If a program matches, switch profile</p>
+            <p>Rules run top to bottom. First match wins. The logic graph below shows how rules compile.</p>
           </div>
-        </div>
-      ) : null}
+        ) : null}
 
-      <div className="sw-quick">
-        <button
-          type="button"
-          className={`sw-quick-pick${draftExe ? " has-app" : ""}`}
-          disabled={busy}
-          onClick={() => void openPicker()}
-        >
-          {draftExe ? (
-            <>
-              <span className="sw-quick-thumb">
-                {draftLook?.img ? <img src={draftLook.img} alt="" /> : stemName(draftExe).slice(0, 2).toUpperCase()}
-              </span>
-              <span className="sw-quick-meta">
-                <strong>{draftLook?.title || stemName(draftExe)}</strong>
-                <em>{draftExe}</em>
-              </span>
-            </>
-          ) : (
-            <span>Pick app…</span>
-          )}
-        </button>
-        <select
-          value={draftProfile}
-          disabled={busy}
-          onChange={(e) => setDraftProfile(Number(e.target.value))}
-          aria-label="Profile"
-        >
-          {(profiles.length ? profiles : [{ index: 0, name: "P1", lightMode: 0, bright: 6, dim: 2 }]).map((p) => (
-            <option key={p.index} value={p.index}>
-              {p.name || `P${p.index + 1}`}
-            </option>
-          ))}
-        </select>
-        <button type="button" className="sw-quick-add" disabled={busy || !draftExe} onClick={addRule}>
-          Add rule
-        </button>
-      </div>
-
-      {cards.length > 0 ? (
-        <ol className="sw-rule-list">
-          {cards.map((card, i) => {
-            const look = iconFor(card);
-            const advanced = ruleCardKind(card) === "advanced";
-            return (
-              <li
+        {cards.length > 0 ? (
+          <ol className="sw-rule-list">
+            {cards.map((card, i) => (
+              <RuleRow
                 key={card.id}
-                className={`sw-rule${highlightId === card.id ? " on" : ""}`}
-                onClick={() => onHighlight(card.id)}
-              >
-                <div className="sw-rule-order">
-                  <button
-                    type="button"
-                    disabled={busy || i === 0}
-                    aria-label="Move up"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      moveRule(i, -1);
-                    }}
-                  >
-                    ▲
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy || i === cards.length - 1}
-                    aria-label="Move down"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      moveRule(i, 1);
-                    }}
-                  >
-                    ▼
-                  </button>
-                </div>
-                <span className="sw-rule-icon">
-                  {look?.img ? (
-                    <img src={look.img} alt="" />
-                  ) : (
-                    stemName(card.programs[0] || "?").slice(0, 2).toUpperCase()
-                  )}
-                </span>
-                <div className="sw-rule-body">
-                  <strong>{ruleCardLabel(card)}</strong>
-                  <em>
-                    {conditionLabel(card)} → {profileName(card.profile)}
-                  </em>
-                </div>
-                {advanced ? <span className="sw-rule-badge">Advanced</span> : null}
-                {!advanced ? (
-                  <label className="sw-rule-profile" onClick={(e) => e.stopPropagation()}>
-                    <select
-                      value={card.profile}
-                      disabled={busy}
-                      onChange={(e) =>
-                        commit(updateRuleCard(graph, card.id, { profile: Number(e.target.value) }))
-                      }
-                    >
-                      {profiles.map((p) => (
-                        <option key={p.index} value={p.index}>
-                          {p.name || `P${p.index + 1}`}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-                <button
-                  type="button"
-                  className="sw-rule-del"
-                  aria-label={`Remove ${ruleCardLabel(card)}`}
-                  disabled={busy}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeRule(card.id);
-                  }}
-                >
+                card={card}
+                index={i}
+                total={cards.length}
+                profiles={profiles}
+                busy={busy}
+                highlighted={highlightId === card.id}
+                profileName={profileName}
+                onHighlight={() => onHighlight(card.id)}
+                onRemove={() => {
+                  commit(removeRuleCard(graph, card.id));
+                  if (highlightId === card.id) onHighlight(null);
+                }}
+                onMove={(dir) => commit(reorderRuleCards(graph, i, i + dir))}
+                onPatch={(patch) => commit(updateRuleCard(graph, card.id, patch))}
+                onPick={(field) => void openPicker({ ruleId: card.id, field })}
+              />
+            ))}
+          </ol>
+        ) : null}
+
+        <div className="sw-rule-builder">
+        <p className="sw-rule-builder-title">Add rule</p>
+        <div className="sw-rule-builder-row">
+          <label>
+            If
+            <select value={draftWhen} disabled={busy} onChange={(e) => setDraftWhen(e.target.value as RuleWhen)}>
+              {WHEN_OPTIONS.map((w) => (
+                <option key={w} value={w}>
+                  {RULE_WHEN_LABELS[w]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="sw-rule-chips">
+            {draftPrograms.map((p) => (
+              <span key={p} className="sw-chip mini">
+                {stemName(p)}
+                <button type="button" onClick={() => setDraftPrograms((list) => list.filter((x) => x !== p))}>
                   ×
                 </button>
-              </li>
-            );
-          })}
-        </ol>
-      ) : null}
+              </span>
+            ))}
+            <button type="button" className="sw-add-win" disabled={busy} onClick={() => void openPicker("draft")}>
+              + App
+            </button>
+          </div>
+        </div>
+        {draftWhen === "focused-and-running" ? (
+          <div className="sw-rule-builder-row">
+            <label>
+              And running
+              <div className="sw-rule-chips">
+                {draftRunning.map((p) => (
+                  <span key={p} className="sw-chip mini">
+                    {stemName(p)}
+                    <button type="button" onClick={() => setDraftRunning((list) => list.filter((x) => x !== p))}>
+                      ×
+                    </button>
+                  </span>
+                ))}
+                <button
+                  type="button"
+                  className="sw-add-win"
+                  disabled={busy}
+                  onClick={() => void openPicker({ ruleId: "__draft", field: "andRunning" })}
+                >
+                  + Process
+                </button>
+              </div>
+            </label>
+          </div>
+        ) : null}
+        <div className="sw-rule-builder-row">
+          <label>
+            Then profile
+            <select value={draftProfile} disabled={busy} onChange={(e) => setDraftProfile(Number(e.target.value))}>
+              {profiles.map((p) => (
+                <option key={p.index} value={p.index}>
+                  {p.name || `P${p.index + 1}`}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Else
+            <select
+              value={String(draftOtherwise)}
+              disabled={busy}
+              onChange={(e) => {
+                const v = e.target.value;
+                setDraftOtherwise(v === "next" || v === "restore" ? v : Number(v));
+              }}
+            >
+              <option value="next">Next rule / restore</option>
+              <option value="restore">Restore previous</option>
+              {profiles.map((p) => (
+                <option key={`else-${p.index}`} value={p.index}>
+                  Set {p.name || `P${p.index + 1}`}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="sw-quick-add"
+            disabled={busy || !draftPrograms.length}
+            onClick={addDraftRule}
+          >
+            Add rule
+          </button>
+        </div>
+        </div>
+      </div>
 
       <RunningPicker
         dock={false}
-        open={pickOpen}
+        open={pickTarget != null}
         windows={windows}
         loading={winLoad}
         error={winErr || undefined}
-        onClose={() => setPickOpen(false)}
+        onClose={() => setPickTarget(null)}
         onPick={(w) => {
           const exe = (w.exe || w.path).replace(/^.*[\\/]/, "");
-          setDraftExe(exe);
-          setDraftLook(lookFromWindow(w));
-          setPickOpen(false);
+          if (pickTarget === "draft") {
+            setDraftPrograms((list) => addExeToList(list, exe));
+          } else if (pickTarget?.ruleId === "__draft") {
+            setDraftRunning((list) => addExeToList(list, exe));
+          } else if (pickTarget) {
+            addRuleProgram(pickTarget.ruleId, pickTarget.field, exe);
+          }
+          setPickTarget(null);
         }}
         onRefresh={() => void refreshWindows()}
         onBrowse={() =>
           void pickProgram().then((path) => {
-            if (path) {
-              const exe = path.replace(/^.*[\\/]/, "");
-              setDraftExe(exe);
-              setDraftLook({ title: stemName(exe) });
-            }
-            setPickOpen(false);
+            if (!path || !pickTarget) return;
+            const exe = path.replace(/^.*[\\/]/, "");
+            if (pickTarget === "draft") setDraftPrograms((list) => addExeToList(list, exe));
+            else if (pickTarget.ruleId === "__draft") setDraftRunning((list) => addExeToList(list, exe));
+            else addRuleProgram(pickTarget.ruleId, pickTarget.field, exe);
+            setPickTarget(null);
           })
         }
       />
     </section>
+  );
+}
+
+function RuleRow(props: {
+  card: SwitchCard;
+  index: number;
+  total: number;
+  profiles: ProfileHdr[];
+  busy?: boolean;
+  highlighted: boolean;
+  profileName: (i: number) => string;
+  onHighlight: () => void;
+  onRemove: () => void;
+  onMove: (dir: -1 | 1) => void;
+  onPatch: (patch: Partial<SwitchCard>) => void;
+  onPick: (field: "programs" | "andRunning") => void;
+}) {
+  const { card, index, total, profiles, busy, highlighted, profileName, onHighlight, onRemove, onMove, onPatch, onPick } =
+    props;
+  const when = cardWhen(card);
+
+  return (
+    <li className={`sw-rule${highlighted ? " on" : ""}`} onClick={onHighlight}>
+      <div className="sw-rule-order">
+        <button type="button" disabled={busy || index === 0} aria-label="Move up" onClick={(e) => { e.stopPropagation(); onMove(-1); }}>
+          ▲
+        </button>
+        <button type="button" disabled={busy || index === total - 1} aria-label="Move down" onClick={(e) => { e.stopPropagation(); onMove(1); }}>
+          ▼
+        </button>
+      </div>
+      <div className="sw-rule-body wide">
+        <strong>{ruleCardSummary(card, profileName)}</strong>
+        <em>{ruleCardLabel(card)}</em>
+        <div className="sw-rule-inline" onClick={(e) => e.stopPropagation()}>
+          <select value={when} disabled={busy} onChange={(e) => onPatch({ when: e.target.value as RuleWhen })}>
+            {WHEN_OPTIONS.map((w) => (
+              <option key={w} value={w}>
+                {RULE_WHEN_LABELS[w]}
+              </option>
+            ))}
+          </select>
+          <select value={card.profile} disabled={busy} onChange={(e) => onPatch({ profile: Number(e.target.value) })}>
+            {profiles.map((p) => (
+              <option key={p.index} value={p.index}>
+                {p.name || `P${p.index + 1}`}
+              </option>
+            ))}
+          </select>
+          <select
+            value={String(card.otherwise ?? "next")}
+            disabled={busy}
+            onChange={(e) => {
+              const v = e.target.value;
+              onPatch({ otherwise: v === "next" || v === "restore" ? v : Number(v) });
+            }}
+          >
+            <option value="next">Else: next rule</option>
+            <option value="restore">Else: restore</option>
+            {profiles.map((p) => (
+              <option key={`r-${p.index}`} value={p.index}>
+                Else: {p.name || `P${p.index + 1}`}
+              </option>
+            ))}
+          </select>
+          <button type="button" className="sw-add-win" disabled={busy} onClick={() => onPick("programs")}>
+            + App
+          </button>
+          {when === "focused-and-running" ? (
+            <button type="button" className="sw-add-win" disabled={busy} onClick={() => onPick("andRunning")}>
+              + Running
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <button type="button" className="sw-rule-del" aria-label="Remove rule" disabled={busy} onClick={(e) => { e.stopPropagation(); onRemove(); }}>
+        ×
+      </button>
+    </li>
   );
 }

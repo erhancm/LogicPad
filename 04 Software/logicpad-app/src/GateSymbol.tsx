@@ -22,8 +22,8 @@ export const LOGIC_GATE_INFO: Record<LogicGateKind, LogicGateInfo> = {
   },
   not: {
     title: "NOT",
-    menuLabel: "NOT",
-    hint: "Matches when the input condition fails",
+    menuLabel: "Invert (NOT)",
+    hint: "Matches when the input condition is false",
   },
   xor: {
     title: "XOR",
@@ -31,9 +31,9 @@ export const LOGIC_GATE_INFO: Record<LogicGateKind, LogicGateInfo> = {
     hint: "Exactly one linked condition matches",
   },
   if: {
-    title: "BUF",
-    menuLabel: "Buffer",
-    hint: "Passes the condition through unchanged",
+    title: "—",
+    menuLabel: "Pass-through (legacy)",
+    hint: "Deprecated — use Invert (NOT) or wire directly",
   },
   else: {
     title: "NOR",

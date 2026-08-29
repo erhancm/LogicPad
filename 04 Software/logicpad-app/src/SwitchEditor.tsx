@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as PE } from "r
 import { listen } from "@tauri-apps/api/event";
 import { LEDS, LIGHT_MODES, type PadKey, type ProfileHdr, type SwitchConfig, type SwitchEdge, type SwitchGraph, type SwitchNode } from "./types";
 import { cssLedId } from "./leds";
-import { autoLayoutGraph, CANVAS_H, CANVAS_W, ensureGraph, graphHasCustomLogic, isGate, newId, nodeSize, nodeZone, snapNodeToZone, snapToGrid, withGraph, ZONE_LAYOUT } from "./switchGraph";
+import { autoLayoutGraph, CANVAS_H, CANVAS_W, ensureGraph, isGate, newId, nodeSize, nodeZone, snapNodeToZone, snapToGrid, withGraph, ZONE_LAYOUT } from "./switchGraph";
 import { GateIcon, GateSymbol, logicGateInfo, LOGIC_GATE_INFO, type LogicGateKind } from "./GateSymbol";
 import { RunningPicker, type OpenWindow } from "./RunningPicker";
 import { SwitchRulesList } from "./SwitchRulesList";
@@ -227,17 +227,27 @@ type LightsCb = (hdr: ProfileHdr, leds: number[] | undefined) => void;
 type AddItem = { kind: SwitchNode["kind"]; label: string; hint?: string; lightsOnly?: boolean };
 type AddSection = { title: string; items: AddItem[] };
 
+const PRIMARY_GATES: LogicGateKind[] = ["and", "or", "not"];
+const EXTRA_GATES: LogicGateKind[] = ["xor", "else", "true", "false", "if"];
+
 const ADD_SECTIONS: AddSection[] = [
   {
     title: "Conditions",
     items: [
-      { kind: "foreground", label: "Foreground is", hint: "Active window" },
+      { kind: "foreground", label: "Foreground is", hint: "Active window matches" },
       { kind: "running", label: "Running is", hint: "Process open anywhere" },
     ],
   },
   {
     title: "Logic gates",
-    items: (Object.keys(LOGIC_GATE_INFO) as LogicGateKind[]).map((kind) => {
+    items: PRIMARY_GATES.map((kind) => {
+      const info = LOGIC_GATE_INFO[kind];
+      return { kind, label: info.menuLabel, hint: info.hint };
+    }),
+  },
+  {
+    title: "More logic",
+    items: EXTRA_GATES.map((kind) => {
       const info = LOGIC_GATE_INFO[kind];
       return { kind, label: info.menuLabel, hint: info.hint };
     }),
@@ -273,7 +283,7 @@ export function SwitchEditor(props: {
 }) {
   const { open, cfg, profiles, keys, busy, enabled = cfg.enabled, onChange, onStatus, onLights, listWindows, pickProgram } = props;
   const [graph, setGraph] = useState(() => ensureGraph(cfg));
-  const [advancedOpen, setAdvancedOpen] = useState(() => graphHasCustomLogic(ensureGraph(cfg)));
+  const [rulesCompact, setRulesCompact] = useState(false);
   const [ruleHighlight, setRuleHighlight] = useState<string | null>(null);
   const [pan, setPan] = useState({ x: 36, y: 28 });
   const [zoom, setZoom] = useState(1);
@@ -308,7 +318,6 @@ export function SwitchEditor(props: {
     const next = { ...g, nodes: g.nodes.map((n) => snapNodeToZone(n)) };
     setGraph(next);
     graphRef.current = next;
-    if (graphHasCustomLogic(g)) setAdvancedOpen(true);
   }, [cfg, open]);
 
   useEffect(() => {
@@ -663,9 +672,11 @@ export function SwitchEditor(props: {
   const toolbarSections = ADD_SECTIONS.map((s) => ({
     id: s.title.toLowerCase().includes("condition")
       ? ("conditions" as const)
-      : s.title.toLowerCase().includes("logic")
+      : s.title.toLowerCase().includes("more")
         ? ("logic" as const)
-        : ("actions" as const),
+        : s.title.toLowerCase().includes("logic")
+          ? ("logic" as const)
+          : ("actions" as const),
     ...s,
   }));
 
@@ -686,7 +697,6 @@ export function SwitchEditor(props: {
     const node = graph.nodes.find((n) => n.id === setProfileId);
     if (!node) return;
     setSel(setProfileId);
-    setAdvancedOpen(true);
     const el = canvasRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
@@ -712,15 +722,15 @@ export function SwitchEditor(props: {
         busy={busy}
         enabled={enabled}
         highlightId={ruleHighlight}
-        advancedOpen={advancedOpen}
-        onAdvancedOpen={setAdvancedOpen}
+        rulesCompact={rulesCompact}
+        onRulesCompact={setRulesCompact}
         onChange={onRulesChange}
         onHighlight={highlightRule}
         onStatus={onStatus}
         listWindows={listWindows}
         pickProgram={pickProgram}
       />
-      <div className={`sw-advanced-wrap${advancedOpen ? "" : " collapsed"}`}>
+      <div className="sw-graph-wrap">
       <div className="sw-tools">
         {toolbarSections.map((section) => (
           <div key={section.id} className={`sw-add sw-add-${section.id} ${addOpen === section.id ? "open" : ""}`}>

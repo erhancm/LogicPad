@@ -19,7 +19,7 @@ export async function applyShowcaseToPad(
   let cur = snap;
   let curLaunches = [...launches];
 
-  while ((cur.profiles.length ?? 0) < 5 && cur.canAddProfiles !== false) {
+  while ((cur.profiles.length ?? 0) < 8 && cur.canAddProfiles !== false) {
     cur = await api.addProfile();
   }
 

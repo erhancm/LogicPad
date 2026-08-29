@@ -7,6 +7,14 @@
   overflow: hidden;
 }
 
+.sw-graph-wrap {
+  flex: 1;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .sw-tools {
   display: flex;
   align-items: center;

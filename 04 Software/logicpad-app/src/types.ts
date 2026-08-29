@@ -149,12 +149,18 @@ export type SwitchGraph = {
 };
 
 /** One If / Else-if row in the auto-switch editor. Compiles to a graph. */
+export type RuleWhen = "focused" | "not-focused" | "running" | "focused-and-running";
+
 export type SwitchCard = {
   id: string;
-  match: "foreground" | "running";
+  /** @deprecated use `when` — kept for YAML/import compat */
+  match?: "foreground" | "running";
+  when: RuleWhen;
   programs: string[];
   andRunning?: string[];
   profile: number;
+  /** When this rule fails: restore, fall through, or switch to another profile. */
+  otherwise?: "restore" | "next" | number;
   lightMode?: number;
   bright?: number;
   dim?: number;

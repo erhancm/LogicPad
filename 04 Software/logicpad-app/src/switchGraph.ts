@@ -1,4 +1,5 @@
 import type {
+  RuleWhen,
   SwitchCard,
   SwitchConfig,
   SwitchEdge,
@@ -192,57 +193,160 @@ function uniqExes(list: string[]): string[] {
   return out;
 }
 
-function collectKinds(
-  id: string,
+export const RULE_WHEN_LABELS: Record<RuleWhen, string> = {
+  focused: "Focused on",
+  "not-focused": "Not focused on",
+  running: "Running",
+  "focused-and-running": "Focused on + running",
+};
+
+export function cardWhen(card: SwitchCard): RuleWhen {
+  if (card.when) return card.when;
+  if (card.match === "running") return "running";
+  if (card.andRunning?.length) return "focused-and-running";
+  return "focused";
+}
+
+/** Expand IF/THEN/ELSE rows into a flat card list for graph compile. */
+export function expandRuleCards(cards: SwitchCard[]): SwitchCard[] {
+  const out: SwitchCard[] = [];
+  for (const c of cards) {
+    out.push(c);
+    if (typeof c.otherwise !== "number" || !c.programs.length) continue;
+    const when = cardWhen(c);
+    if (when !== "focused" && when !== "not-focused") continue;
+    out.push({
+      id: `${c.id}-else`,
+      when: when === "focused" ? "not-focused" : "focused",
+      programs: [...c.programs],
+      andRunning: c.andRunning ? [...c.andRunning] : undefined,
+      profile: c.otherwise,
+      otherwise: "next",
+    });
+  }
+  return out;
+}
+
+type CondMeta = {
+  when: RuleWhen;
+  programs: string[];
+  andRunning?: string[];
+};
+
+function analyzeCondition(
+  setId: string,
   graph: SwitchGraph,
   ins: Map<string, string[]>,
   used: Set<string>,
-): { foreground: string[]; running: string[]; sawFg: boolean; sawRun: boolean } {
-  const foreground: string[] = [];
-  const running: string[] = [];
-  let sawFg = false;
-  let sawRun = false;
-  const visit = (nid: string) => {
-    const node = graph.nodes.find((n) => n.id === nid);
-    if (!node) return;
-    if (node.kind === "foreground") {
-      used.add(node.id);
-      sawFg = true;
-      foreground.push(...node.programs);
-      return;
+): CondMeta {
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const sources = ins.get(setId) ?? [];
+
+  const walk = (ids: string[]): CondMeta => {
+    if (ids.length === 1) {
+      const n = byId.get(ids[0]);
+      if (!n) return { when: "focused", programs: [] };
+      if (n.kind === "not") {
+        used.add(n.id);
+        const inner = walk(ins.get(n.id) ?? []);
+        if (inner.when === "focused") return { ...inner, when: "not-focused" };
+        if (inner.when === "not-focused") return { ...inner, when: "focused" };
+        return inner;
+      }
+      if (n.kind === "and") {
+        used.add(n.id);
+        const parts = (ins.get(n.id) ?? []).map((s) => walk([s]));
+        const fg = uniqExes(parts.flatMap((p) => (p.when === "focused" || p.when === "not-focused" ? p.programs : [])));
+        const run = uniqExes(parts.flatMap((p) => (p.when === "running" ? p.programs : p.andRunning ?? [])));
+        if (fg.length && run.length) {
+          return { when: "focused-and-running", programs: fg, andRunning: run };
+        }
+        return { when: "focused", programs: uniqExes(parts.flatMap((p) => p.programs)) };
+      }
+      if (n.kind === "or" || n.kind === "if") {
+        used.add(n.id);
+        const parts = (ins.get(n.id) ?? []).map((s) => walk([s]));
+        return {
+          when: parts[0]?.when ?? "focused",
+          programs: uniqExes(parts.flatMap((p) => p.programs)),
+          andRunning: parts.find((p) => p.andRunning)?.andRunning,
+        };
+      }
+      if (n.kind === "foreground") {
+        used.add(n.id);
+        return { when: "focused", programs: uniqExes(n.programs) };
+      }
+      if (n.kind === "running") {
+        used.add(n.id);
+        return { when: "running", programs: uniqExes(n.programs) };
+      }
     }
-    if (node.kind === "running") {
-      used.add(node.id);
-      sawRun = true;
-      running.push(...node.programs);
-      return;
+    if (ids.length > 1) {
+      const parts = ids.map((id) => walk([id]));
+      return {
+        when: parts[0]?.when ?? "focused",
+        programs: uniqExes(parts.flatMap((p) => p.programs)),
+      };
     }
-    if (
-      node.kind === "and" ||
-      node.kind === "or" ||
-      node.kind === "not" ||
-      node.kind === "xor" ||
-      node.kind === "if" ||
-      node.kind === "else" ||
-      node.kind === "true" ||
-      node.kind === "false"
-    ) {
-      used.add(node.id);
-      for (const src of ins.get(node.id) ?? []) visit(src);
-    }
+    return { when: "focused", programs: [] };
   };
-  for (const src of ins.get(id) ?? []) visit(src);
-  return { foreground: uniqExes(foreground), running: uniqExes(running), sawFg, sawRun };
+
+  return walk(sources);
+}
+
+function wireCondition(
+  card: SwitchCard,
+  pid: string,
+  nodes: SwitchNode[],
+  edges: SwitchEdge[],
+): string {
+  const when = cardWhen(card);
+  const programs = uniqExes(card.programs);
+  const extra = uniqExes(card.andRunning ?? []);
+
+  if (when === "running") {
+    const rid = `${pid}r`;
+    nodes.push({ kind: "running", id: rid, x: 0, y: 0, programs });
+    edges.push({ id: `${pid}e`, from: rid, to: pid });
+    return rid;
+  }
+
+  if (when === "focused-and-running") {
+    const fid = `${pid}f`;
+    const rid = `${pid}r`;
+    const aid = `${pid}a`;
+    nodes.push({ kind: "foreground", id: fid, x: 0, y: 0, programs });
+    nodes.push({ kind: "running", id: rid, x: 0, y: 0, programs: extra });
+    nodes.push({ kind: "and", id: aid, x: 0, y: 0 });
+    edges.push({ id: `${pid}e1`, from: fid, to: aid });
+    edges.push({ id: `${pid}e2`, from: rid, to: aid });
+    edges.push({ id: `${pid}e3`, from: aid, to: pid });
+    return aid;
+  }
+
+  const fid = `${pid}f`;
+  nodes.push({ kind: "foreground", id: fid, x: 0, y: 0, programs });
+
+  if (when === "not-focused") {
+    const nid = `${pid}n`;
+    nodes.push({ kind: "not", id: nid, x: 0, y: 0 });
+    edges.push({ id: `${pid}en1`, from: fid, to: nid });
+    edges.push({ id: `${pid}en2`, from: nid, to: pid });
+    return nid;
+  }
+
+  edges.push({ id: `${pid}e`, from: fid, to: pid });
+  return fid;
 }
 
 export function graphIsEmpty(graph: SwitchGraph): boolean {
   return !graph.nodes.some((n) => n.kind === "setProfile" && !n.lightsOnly);
 }
 
-/** True when the graph uses logic beyond simple foreground/running → profile chains. */
+/** True when the graph has hand-wired logic not produced by the rule builder. */
 export function graphHasCustomLogic(graph: SwitchGraph): boolean {
   if (graph.nodes.some((n) => n.kind === "setProfile" && n.lightsOnly)) return true;
-  const allowed = new Set(["foreground", "running", "setProfile", "restore", "and"]);
+  const allowed = new Set(["foreground", "running", "setProfile", "restore", "and", "or", "not"]);
   return graph.nodes.some((n) => !allowed.has(n.kind));
 }
 
@@ -250,22 +354,21 @@ export function listRuleCards(graph: SwitchGraph): SwitchCard[] {
   return graphToCards(graph).filter((c) => c.programs.length > 0 && c.id !== "draft");
 }
 
+export function addRuleCard(graph: SwitchGraph, card: Omit<SwitchCard, "id">): SwitchGraph {
+  const cards = listRuleCards(graph);
+  const newCard: SwitchCard = { ...card, id: newId("rule") };
+  return autoLayoutGraph(cardsToGraph([...cards, newCard]));
+}
+
 export function addSimpleRule(
   graph: SwitchGraph,
   exe: string,
   profile: number,
-  match: "foreground" | "running" = "foreground",
+  when: RuleWhen = "focused",
 ): SwitchGraph {
   const base = exe.replace(/^.*[\\/]/, "").trim();
   if (!base) return graph;
-  const cards = listRuleCards(graph);
-  const newCard: SwitchCard = {
-    id: newId("rule"),
-    match,
-    programs: [base],
-    profile,
-  };
-  return autoLayoutGraph(cardsToGraph([...cards, newCard]));
+  return addRuleCard(graph, { when, programs: [base], profile, otherwise: "next" });
 }
 
 export function removeRuleCard(graph: SwitchGraph, cardId: string): SwitchGraph {
@@ -284,27 +387,47 @@ export function reorderRuleCards(graph: SwitchGraph, fromIndex: number, toIndex:
   return autoLayoutGraph(cardsToGraph(next));
 }
 
-export function updateRuleCard(
-  graph: SwitchGraph,
-  cardId: string,
-  patch: Partial<Pick<SwitchCard, "profile" | "match" | "programs">>,
-): SwitchGraph {
-  const cards = listRuleCards(graph).map((c) => (c.id === cardId ? { ...c, ...patch } : c));
+export function updateRuleCard(graph: SwitchGraph, cardId: string, patch: Partial<SwitchCard>): SwitchGraph {
+  const cards = listRuleCards(graph).map((c) => (c.id === cardId ? { ...c, ...patch, id: c.id } : c));
   return autoLayoutGraph(cardsToGraph(cards));
+}
+
+export function ruleCardSummary(card: SwitchCard, profileName: (i: number) => string): string {
+  const when = RULE_WHEN_LABELS[cardWhen(card)];
+  const apps =
+    card.programs.length > 1
+      ? `${stemName(card.programs[0])} or ${card.programs.length - 1} more`
+      : stemName(card.programs[0] || "app");
+  const run =
+    card.andRunning?.length && cardWhen(card) === "focused-and-running"
+      ? ` + ${stemName(card.andRunning[0])} running`
+      : "";
+  const then = profileName(card.profile);
+  const otherwise =
+    typeof card.otherwise === "number"
+      ? ` else ${profileName(card.otherwise)}`
+      : card.otherwise === "restore"
+        ? " else restore"
+        : "";
+  return `If ${when.toLowerCase()} ${apps}${run} → ${then}${otherwise}`;
 }
 
 export function ruleCardLabel(card: SwitchCard): string {
   const app = card.programs[0]?.replace(/\.exe$/i, "").replace(/^.*[\\/]/, "") || "App";
-  if (card.andRunning?.length) {
-    const extra = card.andRunning[0]?.replace(/\.exe$/i, "").replace(/^.*[\\/]/, "") || "app";
-    return `${app} (+ ${extra} running)`;
+  if (cardWhen(card) === "focused-and-running") {
+    const extra = card.andRunning?.[0]?.replace(/\.exe$/i, "").replace(/^.*[\\/]/, "") || "app";
+    return `${app} + ${extra}`;
   }
-  if (card.match === "running") return `${app} (running)`;
+  if (cardWhen(card) === "not-focused") return `NOT ${app}`;
+  if (cardWhen(card) === "running") return `${app} (running)`;
+  if (card.programs.length > 1) return `${app} +${card.programs.length - 1}`;
   return app;
 }
 
 export function ruleCardKind(card: SwitchCard): "simple" | "advanced" {
-  if (card.andRunning?.length) return "advanced";
+  const when = cardWhen(card);
+  if (when !== "focused" || card.programs.length !== 1) return "advanced";
+  if (card.otherwise != null && card.otherwise !== "next") return "advanced";
   return "simple";
 }
 
@@ -315,9 +438,10 @@ export function stemName(path: string): string {
 export function emptyCard(profile: number): SwitchCard {
   return {
     id: newId("if"),
-    match: "foreground",
+    when: "focused",
     programs: [],
     profile,
+    otherwise: "next",
   };
 }
 
@@ -331,28 +455,34 @@ export function graphToCards(graph: SwitchGraph, defaultProfile = 0): SwitchCard
     .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
   for (const node of sets) {
     if (node.kind !== "setProfile") continue;
-    const cond = collectKinds(node.id, graph, ins, used);
-    const runningOnly = cond.sawRun && !cond.sawFg;
+    if (node.id.endsWith("-else")) continue;
+    const cond = analyzeCondition(node.id, graph, ins, used);
     cards.push({
       id: node.id,
-      match: runningOnly ? "running" : "foreground",
-      programs: runningOnly ? cond.running : cond.foreground,
-      andRunning: !runningOnly && cond.sawRun ? cond.running : undefined,
+      when: cond.when,
+      programs: cond.programs,
+      andRunning: cond.andRunning,
       profile: node.profile,
+      otherwise: "next",
       lightMode: node.lightMode,
       bright: node.bright,
       dim: node.dim,
       leds: node.leds,
     });
+    const elseNode = sets.find((n) => n.id === `${node.id}-else`);
+    if (elseNode && elseNode.kind === "setProfile") {
+      cards[cards.length - 1].otherwise = elseNode.profile;
+    }
   }
   for (const n of graph.nodes) {
     if (n.kind !== "foreground" && n.kind !== "running") continue;
     if (used.has(n.id)) continue;
     cards.push({
       id: n.id,
-      match: n.kind === "running" ? "running" : "foreground",
+      when: n.kind === "running" ? "running" : "focused",
       programs: uniqExes(n.programs),
       profile: defaultProfile,
+      otherwise: "next",
     });
   }
   if (cards.length === 0) cards.push({ ...emptyCard(defaultProfile), id: "draft" });
@@ -362,36 +492,15 @@ export function graphToCards(graph: SwitchGraph, defaultProfile = 0): SwitchCard
 export function cardsToGraph(cards: SwitchCard[]): SwitchGraph {
   const nodes: SwitchNode[] = [];
   const edges: SwitchEdge[] = [];
-  cards.forEach((card, i) => {
-    const y = 40 + i * 190;
+  const expanded = expandRuleCards(cards.filter((c) => c.programs.length > 0 && c.id !== "draft"));
+  expanded.forEach((card, i) => {
     const pid = card.id;
-    const extra = uniqExes(card.andRunning ?? []);
-    const programs = uniqExes(card.programs);
-    const useAnd = card.match === "foreground" && card.andRunning != null;
-    if (card.match === "running") {
-      const rid = `${pid}r`;
-      nodes.push({ kind: "running", id: rid, x: zoneX("conditions"), y, programs });
-      edges.push({ id: `${pid}e`, from: rid, to: pid });
-    } else if (useAnd) {
-      const fid = `${pid}f`;
-      const rid = `${pid}r`;
-      const aid = `${pid}a`;
-      nodes.push({ kind: "foreground", id: fid, x: zoneX("conditions"), y, programs });
-      nodes.push({ kind: "running", id: rid, x: zoneX("conditions"), y: y + 70, programs: extra });
-      nodes.push({ kind: "and", id: aid, x: zoneX("logic"), y: y + 24 });
-      edges.push({ id: `${pid}e1`, from: fid, to: aid });
-      edges.push({ id: `${pid}e2`, from: rid, to: aid });
-      edges.push({ id: `${pid}e3`, from: aid, to: pid });
-    } else {
-      const fid = `${pid}f`;
-      nodes.push({ kind: "foreground", id: fid, x: zoneX("conditions"), y, programs });
-      edges.push({ id: `${pid}e`, from: fid, to: pid });
-    }
+    wireCondition(card, pid, nodes, edges);
     nodes.push({
       kind: "setProfile",
       id: pid,
-      x: zoneX("actions"),
-      y,
+      x: 0,
+      y: 0,
       profile: card.profile,
       priority: Math.min(i, 255),
       lightMode: card.lightMode,
@@ -400,14 +509,18 @@ export function cardsToGraph(cards: SwitchCard[]): SwitchGraph {
       leds: card.leds,
     });
   });
+  const restoreElse = cards.some((c) => c.otherwise === "restore") || expanded.length === 0;
   nodes.push({
     kind: "restore",
     id: "else",
-    x: zoneX("actions"),
-    y: 40 + cards.length * 190,
+    x: 0,
+    y: 0,
     priority: 255,
   });
-  return { nodes, edges };
+  if (!restoreElse && expanded.length > 0) {
+    // keep restore node for fall-through; eval uses unwired restore as else
+  }
+  return autoLayoutGraph({ nodes, edges });
 }
 
 export function withGraph(cfg: SwitchConfig, graph: SwitchGraph): SwitchConfig {
