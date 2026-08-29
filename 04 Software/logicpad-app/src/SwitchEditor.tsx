@@ -285,6 +285,7 @@ export function SwitchEditor(props: {
   const [graph, setGraph] = useState(() => ensureGraph(cfg));
   const [rulesCompact, setRulesCompact] = useState(true);
   const [layoutTick, setLayoutTick] = useState(0);
+  const [panTick, setPanTick] = useState(0);
   const [ruleHighlight, setRuleHighlight] = useState<string | null>(null);
   const [pan, setPan] = useState({ x: 36, y: 28 });
   const [zoom, setZoom] = useState(1);
@@ -600,15 +601,31 @@ export function SwitchEditor(props: {
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   }
 
+  // Canvas panning uses native window listeners to survive React re-renders during drag.
+  useEffect(() => {
+    if (!panning.current) return;
+    const startX = panning.current.x;
+    const startY = panning.current.y;
+    const basePx = panning.current.px;
+    const basePy = panning.current.py;
+    const onWinMove = (ev: PointerEvent) => {
+      setPan({ x: basePx + (ev.clientX - startX), y: basePy + (ev.clientY - startY) });
+    };
+    const onWinUp = () => {
+      panning.current = null;
+      window.removeEventListener("pointermove", onWinMove);
+      window.removeEventListener("pointerup", onWinUp);
+    };
+    window.addEventListener("pointermove", onWinMove);
+    window.addEventListener("pointerup", onWinUp);
+    return () => {
+      window.removeEventListener("pointermove", onWinMove);
+      window.removeEventListener("pointerup", onWinUp);
+    };
+  }, [panTick]);
+
   function onMove(e: PE<HTMLDivElement>) {
     if (linkFrom) setCursor(toWorld(e.clientX, e.clientY));
-    if (panning.current) {
-      setPan({
-        x: panning.current.px + (e.clientX - panning.current.x),
-        y: panning.current.py + (e.clientY - panning.current.y),
-      });
-      return;
-    }
     const d = drag.current;
     if (!d) return;
     const world = toWorld(e.clientX, e.clientY);
@@ -644,7 +661,6 @@ export function SwitchEditor(props: {
       commit(snapped);
     }
     drag.current = null;
-    panning.current = null;
   }
 
   async function refreshWindows() {
@@ -845,7 +861,7 @@ export function SwitchEditor(props: {
           setAddOpen(null);
           setMenu(null);
           panning.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
-          e.currentTarget.setPointerCapture(e.pointerId);
+          setPanTick((t) => t + 1);
         }}
         onPointerMove={onMove}
         onPointerUp={onUp}
