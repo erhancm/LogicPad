@@ -64,7 +64,6 @@ export function snapToGrid(v: number, grid = SWITCH_GRID): number {
 
 /** Stack nodes into fixed condition / logic / action columns. */
 export function autoLayoutGraph(graph: SwitchGraph): SwitchGraph {
-  const V_GAP = 40;
   const MARGIN_Y = 56;
   const zones: SwitchZone[] = ["conditions", "logic", "actions"];
   const nodes = graph.nodes.map((n) => ({ ...n }));
@@ -79,9 +78,10 @@ export function autoLayoutGraph(graph: SwitchGraph): SwitchGraph {
     for (const src of inZone) {
       const n = byId.get(src.id);
       if (!n) continue;
+      const gap = isGate(n) ? 24 : 48;
       n.x = zoneX(zone);
       n.y = snapToGrid(y);
-      y += nodeSize(n).h + V_GAP;
+      y += nodeSize(n).h + gap;
     }
   }
 
