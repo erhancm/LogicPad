@@ -227,8 +227,7 @@ type LightsCb = (hdr: ProfileHdr, leds: number[] | undefined) => void;
 type AddItem = { kind: SwitchNode["kind"]; label: string; hint?: string; lightsOnly?: boolean };
 type AddSection = { title: string; items: AddItem[] };
 
-const PRIMARY_GATES: LogicGateKind[] = ["and", "or", "not"];
-const EXTRA_GATES: LogicGateKind[] = ["xor", "else", "true", "false", "if"];
+const ALL_GATES: LogicGateKind[] = ["and", "or", "not", "xor", "else", "true", "false", "if"];
 
 const ADD_SECTIONS: AddSection[] = [
   {
@@ -240,14 +239,7 @@ const ADD_SECTIONS: AddSection[] = [
   },
   {
     title: "Logic gates",
-    items: PRIMARY_GATES.map((kind) => {
-      const info = LOGIC_GATE_INFO[kind];
-      return { kind, label: info.menuLabel, hint: info.hint };
-    }),
-  },
-  {
-    title: "More logic",
-    items: EXTRA_GATES.map((kind) => {
+    items: ALL_GATES.map((kind) => {
       const info = LOGIC_GATE_INFO[kind];
       return { kind, label: info.menuLabel, hint: info.hint };
     }),
