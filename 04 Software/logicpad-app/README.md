@@ -1,8 +1,10 @@
 # LogicPad configurator
 
-Optional Tauri 2 app. The pad already works as a USB HID keyboard without it.
+Optional Tauri 2 desktop app. The pad works as a USB HID keyboard without it.
 
-Talks **vendor HID report 4** only (usage page `0xFF00`), so Windows/macOS/Linux keep using reports 1–3 for typing. ST test VID/PID `1155` / `22352` until we own IDs.
+Talks **vendor HID report 4** only (usage page `0xFF00`), so the host keeps reports 1–3 for typing. USB IDs: ST test VID/PID `1155` / `22352` (application) and `22353` (`0x5751`, bootloader) until custom IDs are assigned.
+
+Licensed under [Apache 2.0](../LICENSE).
 
 ## Daily use (Windows)
 
@@ -38,7 +40,7 @@ Drop an `.exe` or shortcut onto a key to launch it from this PC (stored locally,
 
 **Launch program** on a key is stored on this PC (not on the pad). Pressing that key opens the file while this app is running. Flash firmware that includes `KEY_EVENT` (`0x0D`).
 
-**Auto-switch** on the **Auto-switch** tab switches pad profiles when you focus an app. Add rules with **Pick app → profile → Add rule**; leaving the app restores your previous profile. **Advanced graph** opens the node editor for AND/OR, running checks, and other logic. The tray app must stay running; **Enable** turns rules on. Start with Windows turns on when at least one rule exists. Rules are local (`profile-rules.json`), not flash. Firmware that does not dirty on `SET_ACTIVE` avoids an OLED save prompt on every Alt-Tab.
+**Auto-switch** on the **Auto-switch** tab switches pad profiles when you focus an app. Use the compact rules list or open the **graph** editor for AND/OR, running checks, foreground/not-focused logic, and a default fallback (for example a Media profile when no rule matches). Rules are stored locally (`profile-rules.json`), not on the pad. Enable auto-switch in the app; it can start with Windows when launch mappings or rules exist. Firmware that does not mark the store dirty on `SET_ACTIVE` avoids an OLED save prompt on every Alt-Tab.
 
 Home/sleep on the pad shows the **active profile** while you are using Windows. The clock comes back if USB drops, the session is locked, or you log off. That lock/logoff switch needs this tray app (and firmware with `SET_HOST` `0x15`).
 

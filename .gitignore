@@ -1,33 +1,49 @@
 *.sldprt
 *.sldasm
+*.SLDPRT
 *.SLDASM
 *.step
+~$*
 
-# KiCad temporary files
+# KiCad temporary / cache files
 **/*-cache.lib
 **/*.pro
 **/*.log
 **/*-bak
 **/*.kicad_prl
 **/*-backups/
+**/_autosave*
 fp-info-cache
 
-# Local coding-agent project files
+# Local IDE and agent workflow (Gitea working copy only — not for public GitHub)
+.cursor/
+.vscode/
+.clangd
 .serena/
+.mimocode/
+AGENTS.md
 
-# Firmware build artifacts and IDE project files
+# CubeMX / STM32CubeIDE project noise (keep source; ignore regeneratable IDE files)
+**/.mxproject
+**/.cproject
+**/.project
+**/.settings/
+**/*.launch
+
+# Superseded firmware experiments and build output
+03 Firmware/Outdated testing dev fw/
 03 Firmware/Firmware/3x3/Debug/
 03 Firmware/Firmware/3x3/.cproject
 03 Firmware/Firmware/3x3/.mxproject
 03 Firmware/Firmware/3x3/.project
 03 Firmware/Firmware/3x3/*.launch
 
+# Firmware CMake output
+03 Firmware/Firmware/build/
+03 Firmware/bootloader/build/
+
 # Tauri app
 04 Software/logicpad-app/node_modules/
 04 Software/logicpad-app/dist/
 04 Software/logicpad-app/src-tauri/target/
 04 Software/logicpad-app/src-tauri/gen/
-
-# Firmware CMake output
-03 Firmware/Firmware/build/
-03 Firmware/bootloader/build/

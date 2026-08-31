@@ -2,7 +2,7 @@
 
 C4 diagrams of the firmware, optional desktop app, and USB HID path. There is **no custom kernel driver**: reports 1–3 use inbox OS HID; report 4 is opened in userspace by hidapi.
 
-Sources: `AGENTS.md`, `HID_PROTOCOL.md`, `Pinout.md`, `OLED_UI.md`, `03 Firmware/`, `04 Software/logicpad-app/`.
+Sources: `README.md`, `HID_PROTOCOL.md`, `Pinout.md`, `OLED_UI.md`, `03 Firmware/`, `04 Software/logicpad-app/`.
 
 How to read:
 

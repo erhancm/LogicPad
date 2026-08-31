@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "windows-mcp": {
-      "command": "${env:USERPROFILE}\\.local\\bin\\uvx.exe",
-      "args": ["windows-mcp", "serve"]
-    }
-  }
-}
