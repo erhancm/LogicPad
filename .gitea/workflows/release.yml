@@ -1,0 +1,60 @@
+# Build the Windows installer and attach it to a Gitea Release when you push a v* tag.
+# Requires a Gitea Actions runner with the windows label (self-hosted or hosted).
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: 04 Software/logicpad-app/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build LogicPad installer
+        working-directory: 04 Software/logicpad-app
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/04 Software/logicpad-app/src-tauri/target
+        run: |
+          npm ci
+          npm run build:app
+
+      - name: Collect release assets
+        run: |
+          mkdir -p release-assets
+          cp "04 Software/logicpad-app/src-tauri/target/release/bundle/nsis/"LogicPad_*_x64-setup.exe release-assets/
+          cp "04 Software/logicpad-app/src-tauri/target/release/LogicPad.exe" release-assets/
+          cp "04 Software/logicpad-app/productivity/LogicPad-Productivity.yaml" release-assets/
+
+      - name: Publish Gitea release
+        uses: https://gitea.com/actions/gitea-release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref_name }}
+          name: LogicPad ${{ github.ref_name }}
+          body_path: CHANGELOG.md
+          files: |
+            release-assets/LogicPad_*_x64-setup.exe
+            release-assets/LogicPad.exe
+            release-assets/LogicPad-Productivity.yaml

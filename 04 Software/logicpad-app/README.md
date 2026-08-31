@@ -8,7 +8,9 @@ Licensed under [Apache 2.0](../LICENSE).
 
 ## Daily use (Windows)
 
-Build once, then start **LogicPad** from the Start menu or the desktop shortcut. No terminal after that.
+**Install from a [Gitea Release](https://git.erhancm.com/erhan/LogicPad/releases)** — download `LogicPad_*_x64-setup.exe`, run it, then start **LogicPad** from the Start menu or desktop shortcut.
+
+Or build locally:
 
 ```
 cd "04 Software/logicpad-app"
@@ -59,3 +61,7 @@ Then `sudo udevadm control --reload-rules && sudo udevadm trigger`.
 ## Protocol
 
 See [`01 Documentation/HID_PROTOCOL.md`](../../01%20Documentation/HID_PROTOCOL.md). Key payloads are the first 60 bytes of `lp_key_t` (up to 12 actions).
+
+## Releases
+
+Publish with [`scripts/Publish-Gitea-Release.ps1`](../../scripts/Publish-Gitea-Release.ps1) or push a **`v*`** tag to trigger [`.gitea/workflows/release.yml`](../../.gitea/workflows/release.yml).

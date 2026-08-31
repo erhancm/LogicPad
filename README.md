@@ -43,13 +43,25 @@ Details: [`03 Firmware/bootloader/README.md`](03%20Firmware/bootloader/README.md
 
 See [`04 Software/logicpad-app/README.md`](04%20Software/logicpad-app/README.md).
 
+### Install (Windows)
+
+Download the latest release from **[Releases](https://git.erhancm.com/erhan/LogicPad/releases)** on Gitea:
+
+| Asset | Use |
+|-------|-----|
+| **LogicPad_*_x64-setup.exe** | Recommended installer — per-user, no admin |
+| **LogicPad.exe** | Portable copy of the same app |
+| **LogicPad-Productivity.yaml** | Example profile pack (Import in the app) |
+
+Run the installer, then start **LogicPad** from the Start menu. The pad itself needs no app for daily typing; the companion app adds editing, auto-switch, backups, and firmware updates.
+
+Build from source:
+
 ```bash
 cd "04 Software/logicpad-app"
 npm install
 npm run build:app
 ```
-
-On Windows the installer writes to `%LOCALAPPDATA%\LogicPad\`. Linux needs a udev rule (documented in the app README).
 
 ### Profile packs and auto-switch
 
