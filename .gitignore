@@ -40,7 +40,11 @@ AGENTS.md
 
 # Firmware CMake output
 03 Firmware/Firmware/build/
+03 Firmware/Firmware/CMakeCache.txt
+03 Firmware/Firmware/CMakeFiles/
 03 Firmware/bootloader/build/
+03 Firmware/bootloader/CMakeCache.txt
+03 Firmware/bootloader/CMakeFiles/
 
 # Tauri app
 04 Software/logicpad-app/node_modules/
