@@ -105,6 +105,8 @@ static const sys_key_t SYS_KEYS[] = {
 #define UI_BLUE_H 48
 #define UI_YELLOW_Y 48
 #define UI_YELLOW_H 16
+#define UI_CLOCK_PAGE_FIRST (UI_YELLOW_Y / 8u)
+#define UI_CLOCK_PAGE_LAST 7u
 #define UI_ROW_H 16
 
 #define CLK_ANIM_BOUNCE 0
@@ -149,6 +151,29 @@ static uint8_t clk_pack(uint8_t anim, uint8_t speed, uint8_t bar) {
 static int clock_preview_active(void);
 static int showing_clock(void);
 static int clock_needs_fast_draw(void);
+
+static int clock_band_only_draw(void) {
+  static uint8_t last_h;
+  static uint8_t last_m;
+  static uint8_t last_s;
+  static uint8_t armed;
+
+  if (scr != SCR_HOME || !showing_clock()) {
+    last_h = 0xFF;
+    last_m = 0xFF;
+    last_s = 0xFF;
+    armed = 0;
+    return 0;
+  }
+  if (!armed || clk_hour != last_h || clk_min != last_m || clk_sec != last_s) {
+    last_h = clk_hour;
+    last_m = clk_min;
+    last_s = clk_sec;
+    armed = 1;
+    return 0;
+  }
+  return clock_needs_fast_draw();
+}
 
 static int16_t clampi(int16_t v, int16_t lo, int16_t hi) {
   if (v < lo) {
@@ -1699,6 +1724,11 @@ void ui_draw_if_needed(void) {
   }
   last = now;
   need_draw = 0;
-  draw();
-  ssd1306_UpdateScreen();
+  if (clock_band_only_draw()) {
+    draw_clock_band();
+    (void)ssd1306_UpdatePages(UI_CLOCK_PAGE_FIRST, UI_CLOCK_PAGE_LAST);
+  } else {
+    draw();
+    (void)ssd1306_UpdateScreen();
+  }
 }

@@ -1,7 +1,10 @@
 #include "ssd1306.h"
 #include "i2c.h"
+#include <string.h>
 
 static uint8_t SSD1306_Buffer[SSD1306_WIDTH * SSD1306_HEIGHT / 8];
+static uint8_t SSD1306_Sent[SSD1306_WIDTH * SSD1306_HEIGHT / 8];
+static uint8_t sent_valid;
 static uint8_t s_x, s_y;
 
 void ssd1306_WriteCommand(uint8_t byte) {
@@ -55,13 +58,49 @@ void ssd1306_Fill(SSD1306_COLOR color) {
   }
 }
 
-void ssd1306_UpdateScreen(void) {
-  for (uint8_t i = 0; i < 8; i++) {
-    ssd1306_WriteCommand(0xB0 + i);
-    ssd1306_WriteCommand(0x00);
-    ssd1306_WriteCommand(0x10);
-    ssd1306_WriteData(&SSD1306_Buffer[SSD1306_WIDTH * i], SSD1306_WIDTH);
+void ssd1306_InvalidateSent(void) {
+  sent_valid = 0;
+}
+
+static void ssd1306_PushPage(uint8_t page) {
+  ssd1306_WriteCommand((uint8_t)(0xB0 + page));
+  ssd1306_WriteCommand(0x00);
+  ssd1306_WriteCommand(0x10);
+  ssd1306_WriteData(&SSD1306_Buffer[SSD1306_WIDTH * page], SSD1306_WIDTH);
+  memcpy(&SSD1306_Sent[SSD1306_WIDTH * page], &SSD1306_Buffer[SSD1306_WIDTH * page], SSD1306_WIDTH);
+}
+
+static uint8_t ssd1306_PushPages(uint8_t first, uint8_t last) {
+  uint8_t any = 0;
+
+  if (first > last || last >= SSD1306_PAGE_COUNT) {
+    return 0;
   }
+  if (!sent_valid) {
+    for (uint8_t i = 0; i < SSD1306_PAGE_COUNT; i++) {
+      ssd1306_PushPage(i);
+      any = 1;
+    }
+    sent_valid = 1;
+    return any;
+  }
+  for (uint8_t i = first; i <= last; i++) {
+    uint8_t *page = &SSD1306_Buffer[SSD1306_WIDTH * i];
+    uint8_t *sent = &SSD1306_Sent[SSD1306_WIDTH * i];
+    if (memcmp(page, sent, SSD1306_WIDTH) != 0) {
+      ssd1306_PushPage(i);
+      any = 1;
+    }
+  }
+  return any;
+}
+
+uint8_t ssd1306_UpdateScreen(void) {
+  return ssd1306_PushPages(0, (uint8_t)(SSD1306_PAGE_COUNT - 1u));
+}
+
+uint8_t ssd1306_UpdatePages(uint8_t first, uint8_t last) {
+  return ssd1306_PushPages(first, last);
 }
 
 void ssd1306_DrawPixel(uint8_t x, uint8_t y, SSD1306_COLOR color) {
@@ -156,8 +195,12 @@ void ssd1306_SetFlip(uint8_t flip180) {
     ssd1306_WriteCommand(0xA0);
     ssd1306_WriteCommand(0xC0);
   }
+  ssd1306_InvalidateSent();
 }
 
 void ssd1306_DisplayOn(uint8_t on) {
   ssd1306_WriteCommand(on ? 0xAF : 0xAE);
+  if (on) {
+    ssd1306_InvalidateSent();
+  }
 }
