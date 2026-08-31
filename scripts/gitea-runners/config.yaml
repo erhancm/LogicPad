@@ -1,0 +1,18 @@
+# Gitea Actions runners for LogicPad releases (install on the Gitea server, not dev PCs).
+
+# Internal URL the runner uses to reach Gitea (same host / docker network).
+# Examples: http://127.0.0.1:3000  http://gitea:3000  http://localhost:3010
+gitea_internal_url: http://127.0.0.1:3000
+
+# Public ROOT_URL (for docs only; runner should use gitea_internal_url).
+gitea_public_url: https://git.erhancm.com
+
+runner_root: /opt/gitea-runners/logicpad
+act_runner_version: "0.2.12"
+
+# Match .gitea/workflows/release.yml runs-on labels.
+# On a Linux Gitea host you can register ubuntu jobs natively.
+# windows-latest and macos-latest need runners on Windows / macOS hosts (VMs on the server infra).
+linux_labels:
+  - ubuntu-22.04:host
+  - ubuntu-latest:host

@@ -1,6 +1,5 @@
-# Cross-platform LogicPad companion app release.
-# Push a v* tag to build Windows, macOS, and Linux installers and attach them to one Gitea Release.
-# Requires Actions runners: windows-latest, macos-latest, ubuntu-22.04 (or equivalent labels).
+# LogicPad release — Linux via Unraid act_runner; Windows via Publish-Gitea-Release.ps1 until a Windows runner exists.
+# Push a v* tag to build Linux AppImage + deb and attach to a Gitea Release.
 
 name: Release
 
@@ -13,22 +12,8 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            bundles: nsis
-            artifact: windows
-          - os: macos-latest
-            bundles: dmg
-            artifact: macos
-          - os: ubuntu-22.04
-            bundles: appimage,deb
-            artifact: linux
-
-    runs-on: ${{ matrix.os }}
+  build-linux:
+    runs-on: ubuntu-22.04
     defaults:
       run:
         shell: bash
@@ -48,7 +33,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install Linux build dependencies
-        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -58,13 +42,13 @@ jobs:
             patchelf \
             libssl-dev
 
-      - name: Build LogicPad (${{ matrix.os }})
+      - name: Build LogicPad (Linux)
         working-directory: 04 Software/logicpad-app
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/04 Software/logicpad-app/src-tauri/target
         run: |
           npm ci
-          npm run tauri build -- --bundles ${{ matrix.bundles }}
+          npm run tauri build -- --bundles appimage,deb
 
       - name: Stage release files
         run: |
@@ -73,31 +57,21 @@ jobs:
           mkdir -p staging
 
           shopt -s nullglob
-          for f in "$root"/bundle/nsis/LogicPad_*_x64-setup.exe; do cp "$f" staging/; done
-          for f in "$root"/bundle/dmg/*.dmg; do cp "$f" staging/; done
           for f in "$root"/bundle/appimage/*.AppImage; do cp "$f" staging/; done
           for f in "$root"/bundle/deb/*.deb; do cp "$f" staging/; done
 
-          if [ -f "$root/LogicPad.exe" ]; then
-            cp "$root/LogicPad.exe" staging/LogicPad-windows-x64.exe
-          elif [ -f "$root/logicpad-app" ]; then
-            cp "$root/logicpad-app" staging/logicpad-app-linux
-          elif [ -f "$root/LogicPad" ]; then
-            cp "$root/LogicPad" staging/LogicPad-macos
-          fi
-
           ls -la staging/
 
-      - name: Upload platform artifacts
+      - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: logicpad-${{ matrix.artifact }}
+          name: logicpad-linux
           path: staging/
           if-no-files-found: error
 
   release:
-    needs: build
-    runs-on: ubuntu-latest
+    needs: build-linux
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout

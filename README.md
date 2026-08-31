@@ -90,7 +90,7 @@ STM32 HAL, CMSIS, and the ST USB device library in `03 Firmware/Firmware/Drivers
 
 ## Releases
 
-Push a **`v*`** tag to build **Windows, macOS, and Linux** packages in one Gitea Release ([`.gitea/workflows/release.yml`](.gitea/workflows/release.yml)). Runners: `windows-latest`, `macos-latest`, `ubuntu-22.04`.
+Push a **`v*`** tag to build **Windows, macOS, and Linux** packages in one Gitea Release ([`.gitea/workflows/release.yml`](.gitea/workflows/release.yml)). Install **act_runner on the Gitea server** (and optional Windows/Mac hosts)—see [`scripts/gitea-runners/README.md`](scripts/gitea-runners/README.md).
 
 Windows-only manual publish: [`scripts/Publish-Gitea-Release.ps1`](scripts/Publish-Gitea-Release.ps1). See [`CHANGELOG.md`](CHANGELOG.md).
 
