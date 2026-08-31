@@ -386,6 +386,26 @@ fn queue_showcase_flag(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn take_productivity_flag(app: AppHandle) -> bool {
+    let path = match app.path().app_config_dir() {
+        Ok(d) => d.join("apply-productivity.flag"),
+        Err(_) => return false,
+    };
+    if !path.is_file() {
+        return false;
+    }
+    let _ = std::fs::remove_file(&path);
+    true
+}
+
+#[tauri::command]
+fn queue_productivity_flag(app: AppHandle) -> Result<(), String> {
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("apply-productivity.flag"), b"1").map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn remove_switch_program(
     app: AppHandle,
     store: State<Arc<LaunchStore>>,
@@ -456,7 +476,9 @@ pub fn run() {
             save_text_file,
             load_text_file,
             take_showcase_flag,
-            queue_showcase_flag
+            queue_showcase_flag,
+            take_productivity_flag,
+            queue_productivity_flag
         ])
         .setup(|app| {
             let dir = app.path().app_config_dir().unwrap_or_else(|_| std::env::temp_dir());

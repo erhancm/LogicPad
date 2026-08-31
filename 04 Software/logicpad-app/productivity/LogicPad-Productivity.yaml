@@ -1,0 +1,693 @@
+# LogicPad setup pack (logicpadPack: 1)
+logicpadPack: 1
+exportedAt: 2026-08-31T08:08:37.800Z
+profiles:
+  - name: Office
+    lightMode: 1
+    bright: 7
+    dim: 3
+    keys:
+      - index: 0
+        label: Copy
+        led: 4
+        acts:
+          - type: 1
+            mods: 1
+            code: 6
+        text: ""
+      - index: 1
+        label: Paste
+        led: 3
+        acts:
+          - type: 1
+            mods: 1
+            code: 25
+        text: ""
+      - index: 2
+        label: Save
+        led: 1
+        acts:
+          - type: 1
+            mods: 1
+            code: 22
+        text: ""
+      - index: 3
+        label: Undo
+        led: 2
+        acts:
+          - type: 1
+            mods: 1
+            code: 29
+        text: ""
+      - index: 4
+        label: Bold
+        led: 1
+        acts:
+          - type: 1
+            mods: 2
+            code: 5
+        text: ""
+      - index: 5
+        label: Find
+        led: 4
+        acts:
+          - type: 1
+            mods: 1
+            code: 9
+        text: ""
+      - index: 6
+        label: Print
+        led: 0
+        acts:
+          - type: 1
+            mods: 1
+            code: 19
+        text: ""
+      - index: 7
+        label: Close
+        led: 0
+        acts:
+          - type: 1
+            mods: 1
+            code: 26
+        text: ""
+      - index: 8
+        label: Note
+        led: 1
+        acts:
+          - type: 8
+            mods: 0
+            code: 0
+        text: |
+          Notes:
+        launches: []
+  - name: Files
+    lightMode: 2
+    bright: 6
+    dim: 2
+    keys:
+      - index: 0
+        label: Copy
+        led: 4
+        acts:
+          - type: 1
+            mods: 1
+            code: 6
+        text: ""
+      - index: 1
+        label: Paste
+        led: 3
+        acts:
+          - type: 1
+            mods: 1
+            code: 25
+        text: ""
+      - index: 2
+        label: Ren
+        led: 1
+        acts:
+          - type: 1
+            mods: 1
+            code: 21
+        text: ""
+      - index: 3
+        label: Del
+        led: 2
+        acts:
+          - type: 1
+            mods: 0
+            code: 76
+        text: ""
+      - index: 4
+        label: New
+        led: 1
+        acts:
+          - type: 1
+            mods: 4
+            code: 17
+        text: ""
+      - index: 5
+        label: Up
+        led: 0
+        acts:
+          - type: 1
+            mods: 1
+            code: 82
+        text: ""
+      - index: 6
+        label: Sel
+        led: 4
+        acts:
+          - type: 1
+            mods: 1
+            code: 4
+        text: ""
+      - index: 7
+        label: Path
+        led: 1
+        acts:
+          - type: 8
+            mods: 0
+            code: 0
+        text: |
+          C:\Users\
+      - index: 8
+        label: Exp
+        led: 0
+        acts: []
+        text: ""
+        launches:
+          - path: explorer.exe
+            args: ""
+            slot: 0
+  - name: Browse
+    lightMode: 3
+    bright: 7
+    dim: 3
+    keys:
+      - index: 0
+        label: Tab
+        led: 1
+        acts:
+          - type: 1
+            mods: 1
+            code: 4
+        text: ""
+      - index: 1
+        label: Reload
+        led: 4
+        acts:
+          - type: 1
+            mods: 1
+            code: 21
+        text: ""
+      - index: 2
+        label: Back
+        led: 4
+        acts:
+          - type: 1
+            mods: 1
+            code: 80
+        text: ""
+      - index: 3
+        label: Fwd
+        led: 4
+        acts:
+          - type: 1
+            mods: 1
+            code: 79
+        text: ""
+      - index: 4
+        label: Find
+        led: 2
+        acts:
+          - type: 1
+            mods: 1
+            code: 9
+        text: ""
+      - index: 5
+        label: Home
+        led: 3
+        acts:
+          - type: 1
+            mods: 1
+            code: 14
+        text: ""
+      - index: 6
+        label: Full
+        led: 0
+        acts:
+          - type: 1
+            mods: 0
+            code: 67
+        text: ""
+      - index: 7
+        label: Close
+        led: 0
+        acts:
+          - type: 1
+            mods: 1
+            code: 26
+        text: ""
+      - index: 8
+        label: URL
+        led: 1
+        acts:
+          - type: 8
+            mods: 0
+            code: 0
+        text: |
+          https://
+        launches: []
+  - name: CAD
+    lightMode: 5
+    bright: 8
+    dim: 2
+    keys:
+      - index: 0
+        label: Save
+        led: 1
+        acts:
+          - type: 1
+            mods: 1
+            code: 22
+        text: ""
+      - index: 1
+        label: Undo
+        led: 2
+        acts:
+          - type: 1
+            mods: 1
+            code: 29
+        text: ""
+      - index: 2
+        label: Fit
+        led: 4
+        acts:
+          - type: 1
+            mods: 0
+            code: 15
+        text: ""
+      - index: 3
+        label: Build
+        led: 1
+        acts:
+          - type: 1
+            mods: 1
+            code: 5
+        text: ""
+      - index: 4
+        label: Front
+        led: 3
+        acts:
+          - type: 1
+            mods: 1
+            code: 30
+        text: ""
+      - index: 5
+        label: Iso
+        led: 2
+        acts:
+          - type: 1
+            mods: 1
+            code: 36
+        text: ""
+      - index: 6
+        label: Pan
+        led: 0
+        acts:
+          - type: 1
+            mods: 0
+            code: 44
+        text: ""
+      - index: 7
+        label: Close
+        led: 0
+        acts:
+          - type: 1
+            mods: 1
+            code: 26
+        text: ""
+      - index: 8
+        label: SW
+        led: 2
+        acts: []
+        text: ""
+        launches:
+          - path: SLDWORKS.exe
+            args: ""
+            slot: 0
+  - name: Outlook
+    lightMode: 1
+    bright: 6
+    dim: 2
+    keys:
+      - index: 0
+        label: Reply
+        led: 4
+        acts:
+          - type: 1
+            mods: 1
+            code: 21
+        text: ""
+      - index: 1
+        label: All
+        led: 3
+        acts:
+          - type: 1
+            mods: 3
+            code: 21
+        text: ""
+      - index: 2
+        label: Fwd
+        led: 1
+        acts:
+          - type: 1
+            mods: 1
+            code: 9
+        text: ""
+      - index: 3
+        label: Send
+        led: 1
+        acts:
+          - type: 1
+            mods: 1
+            code: 40
+        text: ""
+      - index: 4
+        label: Del
+        led: 2
+        acts:
+          - type: 1
+            mods: 0
+            code: 76
+        text: ""
+      - index: 5
+        label: Flag
+        led: 4
+        acts:
+          - type: 1
+            mods: 3
+            code: 10
+        text: ""
+      - index: 6
+        label: Mail
+        led: 0
+        acts:
+          - type: 1
+            mods: 1
+            code: 30
+        text: ""
+      - index: 7
+        label: Cal
+        led: 0
+        acts:
+          - type: 1
+            mods: 1
+            code: 31
+        text: ""
+      - index: 8
+        label: Mail
+        led: 1
+        acts: []
+        text: ""
+        launches:
+          - path: OUTLOOK.EXE
+            args: ""
+            slot: 0
+  - name: Teams
+    lightMode: 4
+    bright: 6
+    dim: 2
+    keys:
+      - index: 0
+        label: Mute
+        led: 2
+        acts:
+          - type: 1
+            mods: 3
+            code: 16
+        text: ""
+      - index: 1
+        label: Cam
+        led: 1
+        acts:
+          - type: 1
+            mods: 3
+            code: 18
+        text: ""
+      - index: 2
+        label: Share
+        led: 4
+        acts:
+          - type: 1
+            mods: 3
+            code: 8
+        text: ""
+      - index: 3
+        label: Leave
+        led: 2
+        acts:
+          - type: 1
+            mods: 3
+            code: 11
+        text: ""
+      - index: 4
+        label: Hand
+        led: 3
+        acts:
+          - type: 1
+            mods: 3
+            code: 14
+        text: ""
+      - index: 5
+        label: Chat
+        led: 4
+        acts:
+          - type: 1
+            mods: 2
+            code: 9
+        text: ""
+      - index: 6
+        label: Vol-
+        led: 0
+        acts:
+          - type: 6
+            mods: 0
+            code: 234
+        text: ""
+      - index: 7
+        label: Vol+
+        led: 0
+        acts:
+          - type: 6
+            mods: 0
+            code: 233
+        text: ""
+      - index: 8
+        label: Teams
+        led: 1
+        acts: []
+        text: ""
+        launches:
+          - path: Teams.exe
+            args: ""
+            slot: 0
+  - name: Media
+    lightMode: 7
+    bright: 8
+    dim: 2
+    keys:
+      - index: 0
+        label: Prev
+        led: 4
+        acts:
+          - type: 6
+            mods: 0
+            code: 182
+        text: ""
+      - index: 1
+        label: Play
+        led: 3
+        acts:
+          - type: 6
+            mods: 0
+            code: 205
+        text: ""
+      - index: 2
+        label: Next
+        led: 4
+        acts:
+          - type: 6
+            mods: 0
+            code: 181
+        text: ""
+      - index: 3
+        label: Vol+
+        led: 2
+        acts:
+          - type: 6
+            mods: 0
+            code: 233
+        text: ""
+      - index: 4
+        label: Vol-
+        led: 2
+        acts:
+          - type: 6
+            mods: 0
+            code: 234
+        text: ""
+      - index: 5
+        label: Mute
+        led: 1
+        acts:
+          - type: 6
+            mods: 0
+            code: 226
+        text: ""
+      - index: 6
+        label: Stop
+        led: 0
+        acts:
+          - type: 6
+            mods: 0
+            code: 183
+        text: ""
+      - index: 7
+        label: ""
+        led: 0
+        acts: []
+        text: ""
+      - index: 8
+        label: Spot
+        led: 3
+        acts: []
+        text: ""
+        launches:
+          - path: Spotify.exe
+            args: ""
+            slot: 0
+autoSwitch:
+  enabled: true
+  rules:
+    - exe: Teams.exe
+      profileName: Teams
+      profile: 5
+    - exe: OUTLOOK.EXE
+      profileName: Outlook
+      profile: 4
+    - exe: SLDWORKS.exe
+      profileName: CAD
+      profile: 3
+    - exe: chrome.exe
+      profileName: Browse
+      profile: 2
+    - exe: msedge.exe
+      profileName: Browse
+      profile: 2
+    - exe: explorer.exe
+      profileName: Files
+      profile: 1
+    - exe: WINWORD.EXE
+      profileName: Office
+      profile: 0
+    - exe: EXCEL.EXE
+      profileName: Office
+      profile: 0
+    - exe: POWERPNT.EXE
+      profileName: Office
+      profile: 0
+    - exe: ONENOTE.EXE
+      profileName: Office
+      profile: 0
+  graph:
+    nodes:
+      - kind: foreground
+        id: rule-teamsf
+        x: 48
+        y: 1122
+        programs:
+          - Teams.exe
+      - kind: setProfile
+        id: rule-teams
+        x: 528
+        y: 1408
+        profile: 5
+        priority: 0
+      - kind: foreground
+        id: rule-outlookf
+        x: 48
+        y: 946
+        programs:
+          - OUTLOOK.EXE
+      - kind: setProfile
+        id: rule-outlook
+        x: 528
+        y: 1166
+        profile: 4
+        priority: 1
+      - kind: foreground
+        id: rule-cadf
+        x: 48
+        y: 286
+        programs:
+          - SLDWORKS.exe
+      - kind: setProfile
+        id: rule-cad
+        x: 528
+        y: 506
+        profile: 3
+        priority: 2
+      - kind: foreground
+        id: rule-browsef
+        x: 48
+        y: 66
+        programs:
+          - chrome.exe
+          - msedge.exe
+      - kind: setProfile
+        id: rule-browse
+        x: 528
+        y: 286
+        profile: 2
+        priority: 3
+      - kind: foreground
+        id: rule-filesf
+        x: 48
+        y: 462
+        programs:
+          - explorer.exe
+      - kind: setProfile
+        id: rule-files
+        x: 528
+        y: 726
+        profile: 1
+        priority: 4
+      - kind: foreground
+        id: rule-officef
+        x: 48
+        y: 638
+        programs:
+          - WINWORD.EXE
+          - EXCEL.EXE
+          - POWERPNT.EXE
+          - ONENOTE.EXE
+      - kind: setProfile
+        id: rule-office
+        x: 528
+        y: 946
+        profile: 0
+        priority: 5
+      - kind: "true"
+        id: rule-media-true
+        x: 368
+        y: 110
+      - kind: setProfile
+        id: rule-media
+        x: 528
+        y: 66
+        profile: 6
+        priority: 6
+    edges:
+      - id: rule-teamse
+        from: rule-teamsf
+        to: rule-teams
+      - id: rule-outlooke
+        from: rule-outlookf
+        to: rule-outlook
+      - id: rule-cade
+        from: rule-cadf
+        to: rule-cad
+      - id: rule-browsee
+        from: rule-browsef
+        to: rule-browse
+      - id: rule-filese
+        from: rule-filesf
+        to: rule-files
+      - id: rule-officee
+        from: rule-officef
+        to: rule-office
+      - id: rule-mediae
+        from: rule-media-true
+        to: rule-media

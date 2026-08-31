@@ -52,4 +52,6 @@ export const api = {
   loadTextFile: () => invoke<[string, string] | null>("load_text_file"),
   takeShowcaseFlag: () => invoke<boolean>("take_showcase_flag"),
   queueShowcaseFlag: () => invoke<void>("queue_showcase_flag"),
+  takeProductivityFlag: () => invoke<boolean>("take_productivity_flag"),
+  queueProductivityFlag: () => invoke<void>("queue_productivity_flag"),
 };

@@ -33,6 +33,7 @@ import {
   type KeyMenuTarget,
 } from "./KeyContextMenu";
 import { applyShowcaseToPad } from "./showcaseApply";
+import { applyProductivityToPad } from "./productivityApply";
 import { ensureGraph, exeStem, listRuleCards, stemName as exeDisplayName } from "./switchGraph";
 import { SwitchEditor } from "./SwitchEditor";
 import { SyncBadge } from "./SyncBadge";
@@ -364,6 +365,7 @@ export default function App() {
   const [tab, setTab] = useState<AppTab>("keys");
   const [fwVer, setFwVer] = useState<string | null>(null);
   const showcaseOnce = useRef(false);
+  const productivityOnce = useRef(false);
   snapRef.current = snap;
   launchesRef.current = launches;
 
@@ -690,6 +692,36 @@ export default function App() {
         setBaseline(cloneSnap(result.snap));
         setTab("switch");
         setStatus("Showcase demo saved to your LogicPad");
+      } catch (e) {
+        if (!gone) setErr(String(e));
+      }
+    })();
+    return () => {
+      gone = true;
+    };
+  }, [snap, simulated, busy, launches, switchCfg]);
+
+  useEffect(() => {
+    if (!snap || busy || productivityOnce.current) return;
+    let gone = false;
+    void (async () => {
+      try {
+        if (!(await api.takeProductivityFlag())) return;
+        if (gone) return;
+        if (simulated) {
+          setErr("Productivity setup needs a USB LogicPad connected (not the virtual keypad).");
+          return;
+        }
+        productivityOnce.current = true;
+        setStatus("Applying productivity profiles…");
+        const result = await applyProductivityToPad(snap, launches, switchCfg);
+        if (gone) return;
+        takePad(result.snap);
+        setLaunches(result.launches);
+        setSwitchCfg(result.switchCfg);
+        setBaseline(cloneSnap(result.snap));
+        setTab("switch");
+        setStatus("Productivity profiles saved to your LogicPad");
       } catch (e) {
         if (!gone) setErr(String(e));
       }
