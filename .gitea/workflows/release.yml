@@ -50,6 +50,7 @@ jobs:
           CARGO_TARGET_DIR: ${{ github.workspace }}/04 Software/logicpad-app/src-tauri/target
         run: |
           npm ci
+          node generate-icons.mjs
           npm run tauri build -- --bundles appimage,deb
 
       - name: Stage release files

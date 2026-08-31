@@ -45,18 +45,19 @@ function inRoundRect(x, y, rx, ry, rw, rh, radius) {
 }
 
 function setPixel(pixels, w, x, y, color) {
-  if (x < 0 || y < 0 || x >= w || y >= pixels.length / (3 * w)) return;
-  const o = (y * w + x) * 3;
+  if (x < 0 || y < 0 || x >= w || y >= pixels.length / (4 * w)) return;
+  const o = (y * w + x) * 4;
   pixels[o] = color[0];
   pixels[o + 1] = color[1];
   pixels[o + 2] = color[2];
+  pixels[o + 3] = 255;
 }
 
 function fillRoundRect(pixels, w, x, y, rw, rh, radius, color) {
   const x0 = Math.max(0, Math.floor(x));
   const y0 = Math.max(0, Math.floor(y));
   const x1 = Math.min(w - 1, Math.ceil(x + rw - 1));
-  const y1 = Math.min(pixels.length / (3 * w) - 1, Math.ceil(y + rh - 1));
+  const y1 = Math.min(pixels.length / (4 * w) - 1, Math.ceil(y + rh - 1));
   for (let py = y0; py <= y1; py++) {
     for (let px = x0; px <= x1; px++) {
       if (inRoundRect(px, py, x, y, rw, rh, radius)) {
@@ -72,12 +73,13 @@ function strokeRoundRect(pixels, w, x, y, rw, rh, radius, color) {
 }
 
 function drawLogo(size) {
-  const pixels = Buffer.alloc(size * size * 3);
+  const pixels = Buffer.alloc(size * size * 4);
   for (let i = 0; i < size * size; i++) {
-    const o = i * 3;
+    const o = i * 4;
     pixels[o] = COLORS.bg[0];
     pixels[o + 1] = COLORS.bg[1];
     pixels[o + 2] = COLORS.bg[2];
+    pixels[o + 3] = 255;
   }
 
   const bodyPad = Math.max(1, Math.round(size * 0.047));
@@ -112,18 +114,18 @@ function drawLogo(size) {
   return pixels;
 }
 
-function pngFromRgb(w, h, rgb) {
-  const stride = w * 3 + 1;
+function pngFromRgba(w, h, rgba) {
+  const stride = w * 4 + 1;
   const raw = Buffer.alloc(stride * h);
   for (let y = 0; y < h; y++) {
     raw[y * stride] = 0;
-    rgb.copy(raw, y * stride + 1, y * w * 3, (y + 1) * w * 3);
+    rgba.copy(raw, y * stride + 1, y * w * 4, (y + 1) * w * 4);
   }
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(w, 0);
   ihdr.writeUInt32BE(h, 4);
   ihdr[8] = 8;
-  ihdr[9] = 2;
+  ihdr[9] = 6;
   return Buffer.concat([
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
     chunk("IHDR", ihdr),
@@ -150,8 +152,8 @@ const dir = join(dirname(fileURLToPath(import.meta.url)), "src-tauri", "icons");
 mkdirSync(dir, { recursive: true });
 
 for (const size of [32, 128, 256]) {
-  const rgb = drawLogo(size);
-  const png = pngFromRgb(size, size, rgb);
+  const rgba = drawLogo(size);
+  const png = pngFromRgba(size, size, rgba);
   if (size === 32) writeFileSync(join(dir, "32x32.png"), png);
   if (size === 128) writeFileSync(join(dir, "128x128.png"), png);
   if (size === 256) {
