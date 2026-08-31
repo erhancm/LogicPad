@@ -40,7 +40,9 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             patchelf \
-            libssl-dev
+            libssl-dev \
+            libudev-dev \
+            pkg-config
 
       - name: Build LogicPad (Linux)
         working-directory: 04 Software/logicpad-app
