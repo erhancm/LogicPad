@@ -1,4 +1,5 @@
-# Build LogicPad and publish a Gitea Release with installable assets.
+# Build LogicPad and publish a Gitea Release with installable assets (Windows only).
+# Cross-platform releases are built by .gitea/workflows/release.yml on v* tags.
 # Usage:
 #   $env:GITEA_TOKEN = "<personal access token with write:repository>"
 #   .\scripts\Publish-Gitea-Release.ps1 -Tag v0.1.0
@@ -83,7 +84,8 @@ function Upload-Asset($path) {
 }
 
 Upload-Asset $setup.FullName
-Upload-Asset $portableExe
+Copy-Item $portableExe (Join-Path $env:TEMP "LogicPad-windows-x64.exe")
+Upload-Asset (Join-Path $env:TEMP "LogicPad-windows-x64.exe")
 Upload-Asset $productivityYaml
 
 Write-Host ""

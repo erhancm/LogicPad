@@ -28,6 +28,13 @@ First public release.
 
 ### Downloads
 
-- **LogicPad_*_x64-setup.exe** — recommended Windows installer (per-user, no admin)
-- **LogicPad.exe** — portable build (same binary the installer deploys)
-- **LogicPad-Productivity.yaml** — example Office / Browse / CAD / Teams / Media profile pack
+| Platform | File | Notes |
+|----------|------|-------|
+| **Windows** | `LogicPad_*_x64-setup.exe` | Recommended NSIS installer (per-user, no admin) |
+| **Windows** | `LogicPad-windows-x64.exe` | Portable build |
+| **macOS** | `LogicPad_*_x64.dmg` | Drag **LogicPad** to Applications |
+| **Linux** | `LogicPad_*_amd64.AppImage` | `chmod +x` then run; udev rule still needed for USB |
+| **Linux** | `logicpad-app_*_amd64.deb` | Debian / Ubuntu package |
+| **All** | `LogicPad-Productivity.yaml` | Example profile pack (Import in the app) |
+
+Releases are built for **Windows, macOS, and Linux** when you push a `v*` tag (see `.gitea/workflows/release.yml`).

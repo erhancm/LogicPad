@@ -43,17 +43,21 @@ Details: [`03 Firmware/bootloader/README.md`](03%20Firmware/bootloader/README.md
 
 See [`04 Software/logicpad-app/README.md`](04%20Software/logicpad-app/README.md).
 
-### Install (Windows)
+### Install
 
 Download the latest release from **[Releases](https://git.erhancm.com/erhan/LogicPad/releases)** on Gitea:
 
-| Asset | Use |
-|-------|-----|
-| **LogicPad_*_x64-setup.exe** | Recommended installer — per-user, no admin |
-| **LogicPad.exe** | Portable copy of the same app |
-| **LogicPad-Productivity.yaml** | Example profile pack (Import in the app) |
+| Platform | Download | Install |
+|----------|----------|---------|
+| **Windows** | `LogicPad_*_x64-setup.exe` | Run the installer (per-user, no admin) |
+| **macOS** | `LogicPad_*_x64.dmg` | Open the DMG, drag LogicPad to Applications |
+| **Linux** | `LogicPad_*_amd64.AppImage` | `chmod +x LogicPad_*.AppImage && ./LogicPad_*.AppImage` |
+| **Linux** | `logicpad-app_*_amd64.deb` | `sudo apt install ./logicpad-app_*_amd64.deb` |
+| **All** | `LogicPad-Productivity.yaml` | Import in the app (**Import…**) |
 
-Run the installer, then start **LogicPad** from the Start menu. The pad itself needs no app for daily typing; the companion app adds editing, auto-switch, backups, and firmware updates.
+Linux still needs the [udev rule](04%20Software/logicpad-app/README.md#linux-udev) so the app can open the pad over USB.
+
+Run the Windows installer, then start **LogicPad** from the Start menu. On macOS or Linux, launch from Applications or the AppImage/deb. The pad itself needs no app for daily typing; the companion app adds editing, auto-switch, backups, and firmware updates.
 
 Build from source:
 
@@ -83,6 +87,12 @@ Current revision: **V0.2** (`02 Electronics/V0.2/`). MCU: STM32F103C8 (64 KB fla
 ## Third-party code
 
 STM32 HAL, CMSIS, and the ST USB device library in `03 Firmware/Firmware/Drivers/` remain under their upstream licenses.
+
+## Releases
+
+Push a **`v*`** tag to build **Windows, macOS, and Linux** packages in one Gitea Release ([`.gitea/workflows/release.yml`](.gitea/workflows/release.yml)). Runners: `windows-latest`, `macos-latest`, `ubuntu-22.04`.
+
+Windows-only manual publish: [`scripts/Publish-Gitea-Release.ps1`](scripts/Publish-Gitea-Release.ps1). See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Contributing
 

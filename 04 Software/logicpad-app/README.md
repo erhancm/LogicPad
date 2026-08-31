@@ -8,7 +8,7 @@ Licensed under [Apache 2.0](../LICENSE).
 
 ## Daily use (Windows)
 
-**Install from a [Gitea Release](https://git.erhancm.com/erhan/LogicPad/releases)** — download `LogicPad_*_x64-setup.exe`, run it, then start **LogicPad** from the Start menu or desktop shortcut.
+**Install from a [Gitea Release](https://git.erhancm.com/erhan/LogicPad/releases)** — pick the installer for your OS (Windows `.exe`, macOS `.dmg`, Linux `.AppImage` or `.deb`), then start **LogicPad**.
 
 Or build locally:
 
@@ -64,4 +64,4 @@ See [`01 Documentation/HID_PROTOCOL.md`](../../01%20Documentation/HID_PROTOCOL.m
 
 ## Releases
 
-Publish with [`scripts/Publish-Gitea-Release.ps1`](../../scripts/Publish-Gitea-Release.ps1) or push a **`v*`** tag to trigger [`.gitea/workflows/release.yml`](../../.gitea/workflows/release.yml).
+Publish with [`scripts/Publish-Gitea-Release.ps1`](../../scripts/Publish-Gitea-Release.ps1) (Windows only) or push a **`v*`** tag to trigger the cross-platform [`.gitea/workflows/release.yml`](../../.gitea/workflows/release.yml).
