@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LogicPad README screenshots</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #050608; font-family: "Segoe UI", system-ui, sans-serif; color: #e8e4d8; }
+  .shot { width: 960px; height: 600px; margin: 24px auto; background: #0e1014; display: grid; grid-template-columns: 212px 1fr; overflow: hidden; border-radius: 12px; border: 1px solid #2a2e38; }
+  .nav { background: #16181f; border-right: 1px solid #2a2e38; padding: 18px 0 12px; display: flex; flex-direction: column; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 0 16px 22px; }
+  .mark { width: 28px; height: 28px; border-radius: 6px; background: #12141a; border: 1px solid #2a2e38; position: relative; }
+  .mark i { position: absolute; width: 6px; height: 6px; border-radius: 1.5px; background: #f0d060; }
+  .brand h1 { font-size: 15px; letter-spacing: 0.16em; text-transform: uppercase; }
+  .brand p { font-size: 11px; color: #6b7380; margin-top: 2px; }
+  .tab { padding: 10px 16px; font-size: 13px; color: #8a9098; border-left: 3px solid transparent; }
+  .tab.on { color: #f0d060; background: #1c1f28; border-left-color: #f0d060; }
+  .main { padding: 18px 20px 20px; overflow: hidden; }
+  .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .toolbar h2 { font-size: 22px; font-weight: 600; }
+  .chip { font-size: 11px; color: #6b7380; background: #1c1f28; border: 1px solid #2a2e38; border-radius: 11px; padding: 4px 10px; margin-left: 10px; }
+  .btn { border: 1px solid #3a4150; background: #1c212c; color: #e8e4d8; border-radius: 8px; padding: 8px 14px; font-size: 12px; }
+  .btn.primary { background: #f0d060; border-color: #f0d060; color: #12141a; font-weight: 600; }
+  .hint { color: #6b7380; font-size: 12px; margin: 8px 0 12px; }
+  .prof-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .prof-row button { background: #1c212c; border: 1px solid #3a4150; border-radius: 6px; padding: 6px 12px; font-size: 12px; color: #e8e4d8; }
+  .prof-row button.on { background: #2a2618; border-color: #f0d060; color: #f0d060; }
+  .grid { display: grid; grid-template-columns: repeat(3, 108px); gap: 12px; }
+  .key { height: 108px; border-radius: 12px; background: #16181f; border: 1px solid #2a2e38; padding: 12px; display: flex; flex-direction: column; justify-content: space-between; text-align: left; }
+  .key.on { border-color: #f0d060; box-shadow: 0 0 0 1px #f0d060; }
+  .key strong { font-size: 14px; }
+  .key span { font-size: 10px; color: #6b7380; }
+  .side { margin-top: 4px; display: grid; grid-template-columns: 1fr 220px; gap: 16px; }
+  .panel { background: #16181f; border: 1px solid #2a2e38; border-radius: 10px; padding: 12px; }
+  .panel h3 { font-size: 10px; letter-spacing: 0.1em; color: #6b7380; margin-bottom: 8px; }
+  .step { background: #1c1f28; border: 1px solid #2a2e38; border-radius: 6px; padding: 8px 10px; font-size: 11px; margin-bottom: 6px; }
+  .profiles-layout { display: grid; grid-template-columns: 280px 1fr; gap: 16px; height: calc(100% - 8px); }
+  .card { background: #1c212c; border: 1px solid #3a4150; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+  .card.on { background: #2a2618; border-color: #f0d060; }
+  .card strong { font-size: 13px; display: block; }
+  .card.on strong { color: #f0d060; }
+  .card em { font-style: normal; font-size: 10px; color: #6b7380; text-transform: uppercase; letter-spacing: 0.06em; }
+  .mini-leds { display: grid; grid-template-columns: repeat(3, 8px); grid-template-rows: repeat(4, 8px); gap: 2px; }
+  .mini-leds i { width: 8px; height: 8px; border-radius: 1px; display: block; }
+  .mode-tiles { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+  .mode-tiles button { background: #1c212c; border: 1px solid #3a4150; border-radius: 6px; padding: 6px 10px; font-size: 12px; color: #e8e4d8; }
+  .mode-tiles button.on { background: #2a2618; border-color: #f0d060; color: #f0d060; }
+  .pad-leds { display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(4, 44px); gap: 8px; padding: 10px; background: #0c0e12; border: 1px solid #2a2e38; border-radius: 8px; width: fit-content; }
+  .led { border-radius: 6px; box-shadow: inset 0 0 10px rgba(0,0,0,.45); }
+  .led.sel { font-size: 9px; display: flex; align-items: center; justify-content: center; color: #6b7380; background: #1a1e28; }
+  .graph { position: relative; height: 420px; background: #0c0e12; border: 1px solid #2a2e38; border-radius: 10px; }
+  .node { position: absolute; background: #16181f; border: 1px solid #2a2e38; border-radius: 10px; padding: 12px 14px; min-width: 170px; }
+  .node.hot { border-color: #f0d060; }
+  .node label { display: block; font-size: 10px; letter-spacing: 0.08em; color: #6b7380; margin-bottom: 6px; }
+  .node b { font-size: 14px; font-weight: 600; }
+  .wire { position: absolute; background: #f0d060; height: 2px; transform-origin: left center; }
+  .gate { width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: #1c1f28; border: 1px solid #2a2e38; border-radius: 8px; color: #f0d060; font-weight: 700; font-size: 14px; }
+  .caption { text-align: center; color: #6b7380; font-size: 12px; margin-top: 8px; margin-bottom: 32px; }
+</style>
+</head>
+<body>
+
+<!-- KEYS -->
+<div class="shot" id="keys">
+  <aside class="nav">
+    <div class="brand">
+      <div class="mark"><i style="left:5px;top:5px"></i><i style="left:13px;top:5px"></i><i style="left:21px;top:5px"></i><i style="left:5px;top:13px"></i><i style="left:21px;top:13px"></i><i style="left:5px;top:21px"></i><i style="left:13px;top:21px;background:#e8e4d8"></i><i style="left:21px;top:21px"></i></div>
+      <div><h1>LogicPad</h1><p>Configurator</p></div>
+    </div>
+    <div class="tab on">Keys</div>
+    <div class="tab">Profiles</div>
+    <div class="tab">Auto-switch</div>
+  </aside>
+  <main class="main">
+    <div class="toolbar"><div><h2 style="display:inline">Keys</h2><span class="chip">LogicPad</span></div><button class="btn primary">Save</button></div>
+    <div class="prof-row"><button class="on">Media</button><button>Create</button><button>Stream</button><button>Meet</button><button class="btn">New profile</button></div>
+    <p class="hint">Click a key, then add a tap, chord, or typed text on the right.</p>
+    <div class="side">
+      <div class="grid">
+        <div class="key"><strong>Prev</strong><span>Media Prev</span></div>
+        <div class="key on"><strong>Play</strong><span>Media Play</span></div>
+        <div class="key"><strong>Next</strong><span>Media Next</span></div>
+        <div class="key"><strong>Vol-</strong><span>Media Vol-</span></div>
+        <div class="key"><strong>Mute</strong><span>Media Mute</span></div>
+        <div class="key"><strong>Vol+</strong><span>Media Vol+</span></div>
+        <div class="key"><strong>Stop</strong><span>Media Stop</span></div>
+        <div class="key"><strong>—</strong><span>Empty</span></div>
+        <div class="key"><strong>Spot</strong><span>Launch Spotify</span></div>
+      </div>
+      <div class="panel">
+        <h3>MACRO STEPS</h3>
+        <div class="step">1. Media Play</div>
+        <div class="step" style="color:#6b7380">+ Add step</div>
+        <h3 style="margin-top:14px">TYPE TEXT</h3>
+        <div class="step" style="height:48px;color:#6b7380">Optional string…</div>
+        <p class="hint" style="margin-top:10px">Drop an .exe onto a key to launch a PC program.</p>
+      </div>
+    </div>
+  </main>
+</div>
+<p class="caption">Keys — assign macros, chords, typed text, and PC launches</p>
+
+<!-- PROFILES -->
+<div class="shot" id="profiles">
+  <aside class="nav">
+    <div class="brand">
+      <div class="mark"><i style="left:5px;top:5px"></i><i style="left:13px;top:5px"></i><i style="left:21px;top:5px"></i><i style="left:5px;top:13px"></i><i style="left:21px;top:13px"></i><i style="left:5px;top:21px"></i><i style="left:13px;top:21px;background:#e8e4d8"></i><i style="left:21px;top:21px"></i></div>
+      <div><h1>LogicPad</h1><p>Configurator</p></div>
+    </div>
+    <div class="tab">Keys</div>
+    <div class="tab on">Profiles</div>
+    <div class="tab">Auto-switch</div>
+  </aside>
+  <main class="main">
+    <div class="toolbar"><div><h2 style="display:inline">Profiles</h2><span class="chip">LogicPad</span></div><button class="btn primary">Save</button></div>
+    <div class="profiles-layout">
+      <div>
+        <div class="card on"><div><strong>Media</strong><em>Wave · blue</em></div><div class="mini-leds"><i style="background:#3388ff"></i><i></i><i style="background:#3388ff"></i><i style="background:#ff3344"></i><i style="background:#33cc66"></i><i style="background:#3388ff"></i><i style="background:#ff3344"></i><i style="background:#33cc66"></i><i style="background:#3388ff"></i><i></i><i></i><i></i></div></div>
+        <div class="card"><div><strong>Create</strong><em>Solid · blue</em></div><div class="mini-leds"><i style="background:#3388ff"></i><i style="background:#3388ff"></i><i style="background:#3388ff"></i><i style="background:#3388ff"></i><i style="background:#3388ff"></i><i style="background:#3388ff"></i><i style="background:#3388ff"></i><i style="background:#3388ff"></i><i style="background:#3388ff"></i><i></i><i></i><i></i></div></div>
+        <div class="card"><div><strong>Stream</strong><em>Ripple · red</em></div><div class="mini-leds"><i style="background:#ff3344"></i><i style="background:#ff3344"></i><i style="background:#ff3344"></i><i style="background:#ff3344"></i><i style="background:#ff3344"></i><i style="background:#ff3344"></i><i style="background:#ff3344"></i><i style="background:#ff3344"></i><i style="background:#ff3344"></i><i></i><i></i><i></i></div></div>
+        <div class="card"><div><strong>Meet</strong><em>Breathe · green</em></div><div class="mini-leds"><i style="background:#33cc66"></i><i style="background:#33cc66"></i><i style="background:#33cc66"></i><i style="background:#33cc66"></i><i style="background:#33cc66"></i><i style="background:#33cc66"></i><i style="background:#33cc66"></i><i style="background:#33cc66"></i><i style="background:#33cc66"></i><i></i><i></i><i></i></div></div>
+        <div class="prof-row" style="margin-top:8px"><button class="btn">Duplicate</button><button class="btn">Reset</button><button class="btn">Delete</button></div>
+      </div>
+      <div>
+        <h3 style="font-size:10px;letter-spacing:.1em;color:#6b7380;margin-bottom:8px">LIGHTING</h3>
+        <div class="mode-tiles"><button class="on">Wave</button><button>Ripple</button><button>Breathe</button><button>Rain</button><button>Solid</button></div>
+        <div class="pad-leds">
+          <div class="led sel">SEL</div><div></div><div></div>
+          <div class="led" style="background:#ff3344"></div><div class="led" style="background:#33cc66"></div><div class="led" style="background:#3388ff"></div>
+          <div class="led" style="background:#ff3344"></div><div class="led" style="background:#33cc66"></div><div class="led" style="background:#3388ff"></div>
+          <div class="led"></div><div class="led"></div><div class="led"></div>
+        </div>
+        <h3 style="font-size:10px;letter-spacing:.1em;color:#6b7380;margin:16px 0 8px">OLED SCREEN</h3>
+        <div class="prof-row"><button class="btn">Contrast</button><button class="btn">Flip</button><button class="btn on">Sleep 30s</button></div>
+      </div>
+    </div>
+  </main>
+</div>
+<p class="caption">Profiles — lighting modes, per-key colours, and OLED settings</p>
+
+<!-- AUTO-SWITCH -->
+<div class="shot" id="autoswitch">
+  <aside class="nav">
+    <div class="brand">
+      <div class="mark"><i style="left:5px;top:5px"></i><i style="left:13px;top:5px"></i><i style="left:21px;top:5px"></i><i style="left:5px;top:13px"></i><i style="left:21px;top:13px"></i><i style="left:5px;top:21px"></i><i style="left:13px;top:21px;background:#e8e4d8"></i><i style="left:21px;top:21px"></i></div>
+      <div><h1>LogicPad</h1><p>Configurator</p></div>
+    </div>
+    <div class="tab">Keys</div>
+    <div class="tab">Profiles</div>
+    <div class="tab on">Auto-switch</div>
+  </aside>
+  <main class="main">
+    <div class="toolbar"><div><h2 style="display:inline">Auto-switch</h2><span class="chip">Enabled</span></div><button class="btn primary">Save</button></div>
+    <p class="hint">Profiles follow the apps you use — wire foreground and running checks into profile changes.</p>
+    <div class="graph">
+      <div class="node" style="left:24px;top:48px"><label>FOREGROUND IS</label><b>Cursor.exe</b></div>
+      <div class="gate" style="position:absolute;left:250px;top:62px">&amp;</div>
+      <div class="node" style="left:24px;top:170px"><label>FOREGROUND IS</label><b>obs64.exe</b></div>
+      <div class="gate" style="position:absolute;left:250px;top:184px">≥1</div>
+      <div class="node" style="left:330px;top:24px"><label>RUNNING IS</label><b>Discord.exe</b></div>
+      <div class="node hot" style="left:330px;top:110px"><label>SET PROFILE</label><b style="color:#f0d060">Create</b></div>
+      <div class="node" style="left:330px;top:232px"><label>SET PROFILE</label><b>Stream</b></div>
+      <div class="node" style="left:560px;top:140px;border-style:dashed"><label>ELSE</label><b style="color:#8a9098">Restore previous</b></div>
+      <div class="wire" style="left:194px;top:78px;width:56px"></div>
+      <div class="wire" style="left:194px;top:200px;width:56px"></div>
+      <div class="wire" style="left:298px;top:136px;width:32px"></div>
+      <div class="wire" style="left:298px;top:200px;width:32px"></div>
+      <div class="wire" style="left:500px;top:136px;width:60px;transform:rotate(0deg)"></div>
+    </div>
+  </main>
+</div>
+<p class="caption">Auto-switch — node graph with AND/OR, running checks, and fallback</p>
+
+</body>
+</html>

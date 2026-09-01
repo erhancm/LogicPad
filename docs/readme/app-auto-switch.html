@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="screenshot.css">
+<title>LogicPad Auto-switch</title>
+<style>body{margin:0;background:#0e1014}.shot{margin:0;width:960px;height:600px}.section{font-size:10px;letter-spacing:.1em;color:#6b7380;margin-bottom:8px}</style>
+</head>
+<body>
+<div class="shot">
+  <aside class="nav">
+    <div class="brand">
+      <div class="mark"><i style="left:5px;top:5px"></i><i style="left:13px;top:5px"></i><i style="left:21px;top:5px"></i><i style="left:5px;top:13px"></i><i style="left:21px;top:13px"></i><i style="left:5px;top:21px"></i><i style="left:13px;top:21px;background:#e8e4d8"></i><i style="left:21px;top:21px"></i></div>
+      <div><h1>LogicPad</h1><p>Configurator</p></div>
+    </div>
+    <div class="tab">Keys</div>
+    <div class="tab">Profiles</div>
+    <div class="tab on">Auto-switch</div>
+  </aside>
+  <main class="main">
+    <div class="toolbar"><div><h2 style="display:inline">Auto-switch</h2><span class="chip">Enabled</span></div><button class="btn primary">Save</button></div>
+    <p class="hint">Profiles follow the apps you use — wire foreground and running checks into profile changes.</p>
+    <div class="graph">
+      <div class="node" style="left:24px;top:48px"><label>FOREGROUND IS</label><b>Cursor.exe</b></div>
+      <div class="gate" style="left:250px;top:62px">&amp;</div>
+      <div class="node" style="left:24px;top:170px"><label>FOREGROUND IS</label><b>obs64.exe</b></div>
+      <div class="gate" style="left:250px;top:184px">≥1</div>
+      <div class="node" style="left:330px;top:24px"><label>RUNNING IS</label><b>Discord.exe</b></div>
+      <div class="node hot" style="left:330px;top:110px"><label>SET PROFILE</label><b style="color:#f0d060">Create</b></div>
+      <div class="node" style="left:330px;top:232px"><label>SET PROFILE</label><b>Stream</b></div>
+      <div class="node" style="left:560px;top:140px;border-style:dashed"><label>ELSE</label><b style="color:#8a9098">Restore previous</b></div>
+      <div class="wire" style="left:194px;top:78px;width:56px"></div>
+      <div class="wire" style="left:194px;top:200px;width:56px"></div>
+      <div class="wire" style="left:298px;top:136px;width:32px"></div>
+      <div class="wire" style="left:298px;top:200px;width:32px"></div>
+      <div class="wire" style="left:500px;top:136px;width:60px"></div>
+    </div>
+  </main>
+</div>
+</body>
+</html>
