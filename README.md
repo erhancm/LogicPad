@@ -6,14 +6,14 @@
 
 <p align="center">
   <strong>A programmable USB macro pad — and a desktop app that makes it yours.</strong><br>
-  Map keys, build profiles, auto-switch by app, back up setups, and update firmware over USB.
+  Assign macros, build lighting profiles, auto-switch layouts per app, back up your setups, and update firmware — all over USB.
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
   <a href="https://git.erhancm.com/erhan/LogicPad/releases"><img src="https://img.shields.io/badge/Download-Windows%20%7C%20macOS%20%7C%20Linux-f0d060.svg" alt="Download"></a>
   <img src="https://img.shields.io/badge/Update-via%20USB%20bootloader-3388ff.svg" alt="USB bootloader">
-  <img src="https://img.shields.io/badge/Hardware-Open%20KiCad%20V0.2-33cc66.svg" alt="Open hardware">
+  <img src="https://img.shields.io/badge/Hardware-KiCad-33cc66.svg" alt="Open hardware">
 </p>
 
 <p align="center">
@@ -28,7 +28,7 @@
 
 ## 💻 LogicPad configurator
 
-Free **Windows, macOS, and Linux** desktop app (Tauri 2). The pad works without it — plug in USB and type — but the configurator is where LogicPad shines: full-screen editing, YAML packs, app-aware profile switching, and **firmware updates over USB** through the on-board bootloader.
+LogicPad shows up as a standard USB keyboard when you plug it in, so it works without any software. The **Windows, macOS, and Linux** configurator app (built with Tauri 2) gives you a full-screen key editor, YAML profile packs, automatic profile switching based on which app you're using, and **firmware updates over USB**.
 
 <table>
   <tr>
@@ -49,25 +49,29 @@ Free **Windows, macOS, and Linux** desktop app (Tauri 2). The pad works without 
   </tr>
 </table>
 
+### Try it without hardware
+
+The app has a built-in simulated LogicPad so you can try everything without owning the physical board. Note that the software is still a work in progress — some features aren't implemented yet.
+
 ### Install the app
 
 Download from **[Releases](https://git.erhancm.com/erhan/LogicPad/releases)**:
 
 | Platform | Download | Install |
 |----------|----------|---------|
-| **Windows** | `LogicPad_*_x64-setup.exe` | Run the installer (per-user, no admin) |
+| **Windows** | `LogicPad_*_x64-setup.exe` | Run the installer |
 | **macOS** | `LogicPad_*_x64.dmg` | Open the DMG, drag LogicPad to Applications |
 | **Linux** | `LogicPad_*_amd64.AppImage` | `chmod +x LogicPad_*.AppImage && ./LogicPad_*.AppImage` |
 | **Linux** | `logicpad-app_*_amd64.deb` | `sudo apt install ./logicpad-app_*_amd64.deb` |
-| **All** | `LogicPad-Productivity.yaml` | Import in the app (**Import…**) |
+| **All** | `LogicPad-Productivity.yaml` | Import in the app (**Import…**) Example configuration |
 
-Linux needs the [udev rule](04%20Software/logicpad-app/README.md#linux-udev) so the app can open the pad over USB.
+**Linux note:** You'll need to install a [udev rule](04%20Software/logicpad-app/README.md#linux-udev) so the app has permission to communicate with the pad over USB. Without it, the app can't detect the device.
 
-Build from source: `cd "04 Software/logicpad-app" && npm install && npm run build:app`
+**Build from source:** `cd "04 Software/logicpad-app" && npm install && npm run build:app`
 
-Try the showcase demo: [`04 Software/logicpad-app/showcase/`](04%20Software/logicpad-app/showcase/) — five profiles, rich macros, and a complex auto-switch graph.
+**Showcase demo:** [`04 Software/logicpad-app/showcase/`](04%20Software/logicpad-app/showcase/) comes with five pre-built profiles.
 
-Full app docs: [`04 Software/logicpad-app/README.md`](04%20Software/logicpad-app/README.md)
+**Full app docs:** [`04 Software/logicpad-app/README.md`](04%20Software/logicpad-app/README.md)
 
 ---
 
@@ -75,14 +79,14 @@ Full app docs: [`04 Software/logicpad-app/README.md`](04%20Software/logicpad-app
 
 | | |
 |---|---|
-| **Keys** | 3×3 macro grid — keyboard, mouse, media, multi-step macros, typed strings (240 B/key), PC program launch |
-| **Profiles** | Unlimited profiles (flash permitting) · per-profile lighting modes · per-key RGB · OLED contrast, flip, sleep |
-| **Auto-switch** | Node graph: foreground / running checks, AND/OR gates, set profile or restore previous when apps change |
-| **YAML packs** | **Save as…** / **Import…** full setups — profiles, keys, and auto-switch rules |
-| **On-board bootloader** | 4 KB USB HID bootloader baked into every board — **Update firmware** in the app, no ST-Link needed after the first flash. Hold **SEL** on plug-in to recover |
-| **On-device OLED editor** | Configure everything from the pad itself when you don't have the app handy |
-| **Plug-and-play HID** | Standard USB keyboard + mouse + media — no custom driver on any OS |
-| **Open hardware** | KiCad V0.2 schematic, PCB, BOM, and Gerbers — build your own |
+| **Keys** | A 3×3 grid of macro keys. Each key can trigger a keyboard shortcut, mouse click, media control or typed string (up to 240 bytes per key). You can also launch a PC program directly from a key. |
+| **Profiles** | Create as many profiles as the internal flash allows. Each profile has its own lighting mode (wave, ripple, breathe, rain) or per-key RGB colours. |
+| **Auto-switch** | A visual node graph lets you define rules like "when Spotify is focused, switch to the Media profile." Supports foreground-app and running-app checks, AND/OR logic gates.
+| **YAML packs** | Export your entire setup — profiles, key mappings, and auto-switch rules — to a single YAML file. Import it later or share it with others. Use **Save as…** / **Import…** in the app. |
+| **On-board bootloader** | Every board has a 4 KB USB HID bootloader. After the first flash, you can update firmware straight from the app — no ST-Link or disassembly needed. If something goes wrong, hold **SEL** while plugging in to enter recovery mode. |
+| **On-device OLED editor** | Don't have the app? You can configure keys, profiles, and settings entirely from the pad's OLED screen using the selector and the nine keys as a d-pad. |
+| **Plug-and-play HID** | LogicPad appears as a standard USB keyboard, mouse, and media device. No custom drivers needed on Windows, macOS, or Linux. |
+| **Open hardware** | Full KiCad schematic and PCB layout. |
 
 ---
 
@@ -98,25 +102,27 @@ Full app docs: [`04 Software/logicpad-app/README.md`](04%20Software/logicpad-app
 
 | Spec | Detail |
 |------|--------|
-| MCU | STM32F103C8 — 64 KB flash, 20 KB RAM |
-| Keys | 9 macro keys + selector |
-| Display | 0.96″ SSD1306 OLED (128×64, I²C) |
-| Lighting | Per-key RGB (2020 LEDs) |
-| USB | Custom HID (keyboard + mouse + media + vendor) |
-| Flash map | **4 KB bootloader** · 52 KB app · 8 KB config store |
+| MCU | STM32F103C8 (ARM Cortex-M3) — 64 KB flash, 20 KB RAM |
+| Keys | 9 macro keys + 1 selector button |
+| Display | 0.96″ SSD1306 OLED, 128×64 pixels, connected over I²C |
+| Lighting | Per-key RGB using 2020-size LEDs |
+| USB | Composite HID device — keyboard + mouse + media controls + vendor-specific reports for app communication |
+| Flash map | **4 KB** bootloader · **52 KB** application · **8 KB** persistent config store |
 
-Current revision: **V0.2** in [`02 Electronics/V0.2/`](02%20Electronics/V0.2/).
+Current hardware revision: **V0.2** in [`02 Electronics/V0.2/`](02%20Electronics/V0.2/).
 
 ### Firmware updates
 
-LogicPad ships with an **on-board USB HID bootloader**. After the initial factory flash:
+Every LogicPad board has a **4 KB USB HID bootloader** baked into flash. Once the board has been programmed for the first time, all future firmware updates happen over a regular USB cable — no ST-Link, no SWD debugger, and no need to open the enclosure.
 
-1. Build firmware — CMake preset `Release` in [`03 Firmware/Firmware/`](03%20Firmware/Firmware/).
-2. Open the configurator and click **Update firmware** with `LogicPad.bin`.
+**Updating firmware:**
 
-No ST-Link, no SWD, no disassembly — just USB. Recovery: hold **SEL** while plugging in to enter boot mode.
+1. Build the application firmware with the `Release` CMake preset in [`03 Firmware/Firmware/`](03%20Firmware/Firmware/).
+2. Open the configurator app, click **Update firmware**, and select your `LogicPad.bin` file. The app communicates with the bootloader over USB HID and flashes the new image.
 
-First-time programming still needs ST-Link once (`LogicPad_factory.hex` includes bootloader + app). Details: [`03 Firmware/bootloader/README.md`](03%20Firmware/bootloader/README.md).
+**Recovery:** If a firmware update fails or the app won't boot, hold the **SEL** button while plugging in the USB cable. This forces the board into bootloader mode so you can re-flash.
+
+**First-time programming** still requires an ST-Link programmer (one-time only). The factory image `LogicPad_factory.hex` bundles both the bootloader and the application. See [`03 Firmware/bootloader/README.md`](03%20Firmware/bootloader/README.md) for details.
 
 ---
 
@@ -124,68 +130,96 @@ First-time programming still needs ST-Link once (`LogicPad_factory.hex` includes
 
 ### Daily use (no app needed)
 
-1. **Plug in USB.** The host OS sees a standard HID keyboard (plus mouse/media when configured).
-2. **Selector short** opens the menu. In menus the nine keys act as a d-pad:
+1. **Plug in USB.** The host OS recognises LogicPad as a standard HID keyboard (plus mouse and media controls if you've configured them). No drivers, no pairing — it just works.
 
-   | Key | Action |
-   |-----|--------|
-   | 1 | Up |
-   | 7 | Down |
-   | 3 | Left |
-   | 5 | OK |
-   | 4 | Right |
+2. **Navigate the OLED menus.** A short press on the **selector** (SEL) button opens the on-device menu. Inside menus, the nine keys double as a d-pad for navigation:
 
-   **SEL short** = back · **SEL long** = home
+   <table>
+     <tr>
+       <td width="55%">
+         <table>
+           <tr><th>Key</th><th>Action</th></tr>
+           <tr><td>2</td><td>Up</td></tr>
+           <tr><td>8</td><td>Down</td></tr>
+           <tr><td>4</td><td>Left</td></tr>
+           <tr><td>6</td><td>Right</td></tr>
+           <tr><td>5</td><td>OK (select)</td></tr>
+         </table>
+         <p><strong>Short press SEL</strong> = go back one level. 
+       </td>
+       <td width="45%" align="center">
+         <img src="docs/readme/keypad.png" alt="LogicPad keypad layout" width="100%">
+       </td>
+     </tr>
+   </table>
 
-3. Factory keys ship **empty** — assign macros on the OLED or with the configurator.
+3. **Assign your macros.** Factory boards ship with empty key slots. You can assign macros either from the OLED menu (no PC required) or from the app. The app has more options.
 
 ### Build firmware from source
 
-1. Bootloader — CMake preset `Release` in [`03 Firmware/bootloader/`](03%20Firmware/bootloader/).
-2. Application — CMake preset `Release` in [`03 Firmware/Firmware/`](03%20Firmware/Firmware/).
-3. **First flash** — `LogicPad_factory.hex` via ST-Link.
-4. **All later updates** — **Update firmware** in the app with `LogicPad.bin`.
+You'll need an ARM GCC toolchain and CMake. Both the bootloader and application firmware use CMake presets.
+
+1. **Build the bootloader** — open [`03 Firmware/bootloader/`](03%20Firmware/bootloader/) and build with the `Release` CMake preset.
+2. **Build the application** — open [`03 Firmware/Firmware/`](03%20Firmware/Firmware/) and build with the `Release` CMake preset.
+3. **First-time flash** — combine bootloader + app into `LogicPad_factory.hex` and flash it via ST-Link (this is the only time you need ST-Link).
+4. **All later updates** — just click **Update firmware** in the configurator app and point it at your new `LogicPad.bin`. The on-board bootloader handles the rest over USB.
 
 ---
 
 ## 📁 Repository layout
 
+The repo is organised by discipline, numbered so it sorts in a logical order:
+
 | Path | Contents |
 |------|----------|
-| [`04 Software/logicpad-app/`](04%20Software/logicpad-app/) | Desktop configurator (Tauri 2) |
-| [`03 Firmware/Firmware/`](03%20Firmware/Firmware/) | Production firmware (CMake) |
-| [`03 Firmware/bootloader/`](03%20Firmware/bootloader/) | On-board USB HID bootloader |
-| [`02 Electronics/V0.2/`](02%20Electronics/V0.2/) | KiCad board, BOM, Gerbers |
-| [`01 Documentation/`](01%20Documentation/) | Pinout, HID protocol, OLED UI |
-| [`docs/readme/`](docs/readme/) | README images |
+| [`04 Software/logicpad-app/`](04%20Software/logicpad-app/) | Desktop configurator app — Tauri 2 (Rust + web frontend). Handles key editing, profile management, auto-switch rules, YAML import/export, and firmware updates. |
+| [`03 Firmware/Firmware/`](03%20Firmware/Firmware/) | Production firmware for the STM32F103. CMake-based build with ARM GCC. Handles USB HID, key scanning, OLED display, RGB lighting, and config storage. |
+| [`03 Firmware/bootloader/`](03%20Firmware/bootloader/) | On-board USB HID bootloader. Occupies the first 4 KB of flash and allows firmware updates over USB without a debugger. |
+| [`02 Electronics/V0.2/`](02%20Electronics/V0.2/) | KiCad schematic and PCB layout for the current board revision, plus BOM and Gerber files for manufacturing. |
+| [`01 Documentation/`](01%20Documentation/) | Hardware and protocol docs — MCU pinout, HID report format, OLED menu structure, and C4 architecture diagrams. |
+| [`docs/readme/`](docs/readme/) | Images used in this README. |
 
 ---
 
 ## 📖 Documentation
 
-- [Pinout](01%20Documentation/Pinout.md) — MCU pins, matrix, OLED, RGB
-- [HID protocol](01%20Documentation/HID_PROTOCOL.md) — reports and vendor commands
-- [OLED UI](01%20Documentation/OLED_UI.md) — on-device menus
-- [C4 architecture](01%20Documentation/C4_MODEL.md) — system overview
-
----
-
-## 📦 Releases
-
-Push a **`v*`** tag to build **Windows, macOS, and Linux** packages in one Gitea Release ([`.gitea/workflows/release.yml`](.gitea/workflows/release.yml)).
-
-Windows-only manual publish: [`scripts/Publish-Gitea-Release.ps1`](scripts/Publish-Gitea-Release.ps1). See [`CHANGELOG.md`](CHANGELOG.md).
+- [Pinout](01%20Documentation/Pinout.md) — MCU pin assignments, key matrix wiring, OLED connections, and RGB data lines
+- [HID protocol](01%20Documentation/HID_PROTOCOL.md) — USB HID report format and vendor-specific commands used by the configurator app
+- [OLED UI](01%20Documentation/OLED_UI.md) — on-device menu structure and navigation flow
+- [C4 architecture](01%20Documentation/C4_MODEL.md) — high-level system overview in C4 model notation
 
 ---
 
 ## 🤝 Contributing
 
-Issues and pull requests are welcome. By contributing, you agree your contributions are licensed under [Apache 2.0](LICENSE).
+Contributions are welcome — whether it's a bug report, a feature request, or a pull request. If you're planning a larger change, it's worth opening an issue first to discuss the approach. By contributing, you agree that your contributions will be licensed under [Apache 2.0](LICENSE).
+
+---
+
+## 🐛 Known issues
+
+| Issue | Type | Status | Notes |
+|-------|------|--------|-------|
+| OLED contrast drifts after长时间 idle | Hardware | Open | Contrast slowly degrades when the display enters sleep and wakes again |
+| Auto-switch graph loses nodes on import | Software | Open | YAML import drops AND/OR gate nodes that have no connections |
+| RGB ripple animation stutters on rapid key presses | Firmware | Open | Pressing multiple keys quickly causes the ripple to skip frames |
+| Linux AppImage doesn't detect pad without udev rule | Software | Open | Needs a better error message instead of silently failing |
+| Firmware update fails if bootloader is in recovery mode | Firmware | Open | The app should detect recovery mode and prompt the user |
+
+---
+
+## 📝 To-do
+
+- [ ] Custom scripting assignable to each button (e.g. Python/Lua scripts. TBD)
+- [ ] Mouse and keyboard recording — record input sequences and replay them from a key
+- [ ] OCR-based automation — use image recognition to trigger actions based on what's on screen
+- [ ] Long press functions — different actions for short vs. long key presses
+- [ ] Profile hotkeys — assign a key to cycle through or jump to specific profiles instead of going through the on-board menu
 
 ---
 
 ## 📄 License
 
-Licensed under the [Apache License 2.0](LICENSE).
+This project is licensed under the [Apache License 2.0](LICENSE).
 
-STM32 HAL, CMSIS, and the ST USB device library in `03 Firmware/Firmware/Drivers/` remain under their upstream licenses.
+The third-party libraries bundled in `03 Firmware/Firmware/Drivers/` — namely the STM32 HAL, CMSIS, and ST's USB device library — are not covered by this license. They remain under their respective upstream licenses from STMicroelectronics and ARM.
