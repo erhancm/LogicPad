@@ -218,6 +218,20 @@ Contributions are welcome — whether it's a bug report, a feature request, or a
 | Long press functions | Software + Firmware | Planned | Different actions for short vs. long key presses |
 | Profile hotkeys | Firmware | Planned | Assign a key to cycle through or jump to specific profiles instead of going through the on-board menu (temporarily override auto-switch condition) |
 
+### Hardware V0.3
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Upgrade MCU to STM32F4 or RP2040 | Planned | More flash and RAM for larger configs, scripting support, and faster USB |
+| USB-C connector | Planned | Replace the current Micro-USB with USB-C for better durability and reversibility |
+| Hot-swap key sockets | Planned | Swap switches without soldering |
+| Per-key addressable LEDs (WS2812B) | Planned | Remove the 1/9 scanning limitation and allow full brightness on all keys simultaneously |
+| Larger OLED display | Planned | Upgrade from 0.96″ to 1.3″ for more readable menus and more info on screen |
+| Rotary encoder | Planned | Add a clickable rotary encoder for volume control, scrolling, or menu navigation |
+| Slider potentiometer | Planned | Linear slider for volume, brightness, or other continuous control |
+| External flash storage | Planned | Dedicated flash chip or SD card slot — TBD. Would allow storing more profiles, macros, and recorded scripts on-device |
+| Temperature and humidity sensor | Planned | Environmental sensor for ambient readings displayed on the OLED or used in automation rules. Including support for logging |
+
 ---
 
 ## 📄 License
