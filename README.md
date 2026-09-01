@@ -200,21 +200,23 @@ Contributions are welcome — whether it's a bug report, a feature request, or a
 
 | Issue | Type | Status | Notes |
 |-------|------|--------|-------|
-| OLED contrast drifts after长时间 idle | Hardware | Open | Contrast slowly degrades when the display enters sleep and wakes again |
-| Auto-switch graph loses nodes on import | Software | Open | YAML import drops AND/OR gate nodes that have no connections |
-| RGB ripple animation stutters on rapid key presses | Firmware | Open | Pressing multiple keys quickly causes the ripple to skip frames |
-| Linux AppImage doesn't detect pad without udev rule | Software | Open | Needs a better error message instead of silently failing |
-| Firmware update fails if bootloader is in recovery mode | Firmware | Open | The app should detect recovery mode and prompt the user |
+| Sometimes you can't pan across the node editor when clicking on an empty area and dragging the mouse | Software | Open | Needs more investigation |
+| OLED flicker or banding when taking pictures with camera| Software | Open | To do with refresh rate |
+| Standby Clock setting is not persistant | Firmware | Open | When powering the unit off and on, the standby clock is reset to the default setting |
+| Not all standby clock styles work | Software + Firmware | Open | Needs more investigation |
+| LEDs can't reach full brightness in custom lighting modes | Hardware | Open | The LEDs are scanned one key at a time (1/9 duty cycle), so each LED is only actually on for a fraction of the time — the rest just looks lit because of persistence of vision. The STM32F103's GPIO pins can't source enough current to drive all 27 LEDs (9 keys × 3 colours) at once, so the per-LED brightness is capped by the scan rate. |
 
 ---
 
 ## 📝 To-do
 
-- [ ] Custom scripting assignable to each button (e.g. Python/Lua scripts. TBD)
-- [ ] Mouse and keyboard recording — record input sequences and replay them from a key
-- [ ] OCR-based automation — use image recognition to trigger actions based on what's on screen
-- [ ] Long press functions — different actions for short vs. long key presses
-- [ ] Profile hotkeys — assign a key to cycle through or jump to specific profiles instead of going through the on-board menu
+| Feature | Type | Status | Notes |
+|---------|------|--------|-------|
+| Custom scripting assignable to each button | Software | Planned | Python/Lua scripts — TBD |
+| Mouse and keyboard recording | Software | Planned | Record input sequences and replay them from a key |
+| OCR-based automation | Software | Planned | Use image recognition to perform actions based on what's on screen |
+| Long press functions | Software + Firmware | Planned | Different actions for short vs. long key presses |
+| Profile hotkeys | Firmware | Planned | Assign a key to cycle through or jump to specific profiles instead of going through the on-board menu (temporarily override auto-switch condition) |
 
 ---
 
