@@ -1,4 +1,4 @@
-# LogicPad release — Linux AppImage + deb attached to a GitHub Release.
+# LogicPad release — Linux, Windows, macOS builds attached to a GitHub Release.
 # Push a v* tag to trigger.
 
 name: Release
@@ -72,24 +72,104 @@ jobs:
           path: staging/
           if-no-files-found: error
 
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: 04 Software/logicpad-app/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build LogicPad (Windows)
+        working-directory: 04 Software/logicpad-app
+        run: |
+          npm ci
+          node generate-icons.mjs
+          npm run tauri build -- --bundles msi,nsis
+
+      - name: Stage release files
+        shell: pwsh
+        run: |
+          $root = "04 Software/logicpad-app/src-tauri/target/release/bundle"
+          New-Item -ItemType Directory -Force -Path staging
+          Get-ChildItem -Path "$root/msi/*.msi" -ErrorAction SilentlyContinue | Copy-Item -Destination staging/
+          Get-ChildItem -Path "$root/nsis/*.exe" -ErrorAction SilentlyContinue | Copy-Item -Destination staging/
+          Get-ChildItem staging/
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: logicpad-windows
+          path: staging/
+          if-no-files-found: error
+
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: 04 Software/logicpad-app/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build LogicPad (macOS)
+        working-directory: 04 Software/logicpad-app
+        run: |
+          npm ci
+          node generate-icons.mjs
+          npm run tauri build -- --bundles dmg
+
+      - name: Stage release files
+        run: |
+          set -euo pipefail
+          root="04 Software/logicpad-app/src-tauri/target/release/bundle"
+          mkdir -p staging
+          cp "$root/dmg/"*.dmg staging/ 2>/dev/null || true
+          ls -la staging/
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: logicpad-macos
+          path: staging/
+          if-no-files-found: error
+
   release:
-    needs: build-linux
+    needs: [build-linux, build-windows, build-macos]
     runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download build artifacts
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          name: logicpad-linux
           path: release-assets
 
-      - name: Add shared assets
+      - name: Flatten and add shared assets
         run: |
-          cp "04 Software/logicpad-app/productivity/LogicPad-Productivity.yaml" release-assets/
-          ls -la release-assets/
+          mkdir -p flat
+          find release-assets -type f -exec cp {} flat/ \;
+          cp "04 Software/logicpad-app/productivity/LogicPad-Productivity.yaml" flat/
+          ls -la flat/
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
@@ -97,4 +177,4 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: LogicPad ${{ github.ref_name }}
           body_path: CHANGELOG.md
-          files: release-assets/*
+          files: flat/*
