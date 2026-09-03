@@ -1,0 +1,260 @@
+.pane-profiles {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  gap: 16px;
+  padding: 16px 20px 24px;
+  overflow: auto;
+  height: 100%;
+  align-items: start;
+}
+
+.prof-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.prof-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: #1c212c;
+  border: 1px solid #3a4150;
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.prof-card:hover:not(:disabled) {
+  border-color: #f0d060;
+}
+
+.prof-card.on {
+  background: #2a2618;
+  border-color: #f0d060;
+}
+
+.prof-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.prof-card-text strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e8e4d8;
+}
+
+.prof-card.on .prof-card-text strong {
+  color: #f0d060;
+}
+
+.prof-card-text em {
+  font-style: normal;
+  font-size: 11px;
+  color: #6b7380;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.prof-mini-leds {
+  display: grid;
+  grid-template-columns: repeat(3, 8px);
+  grid-template-rows: repeat(4, 8px);
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.prof-mini-leds i {
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  display: block;
+}
+
+.prof-mini-leds i.skip {
+  visibility: hidden;
+}
+
+.prof-actions {
+  flex-wrap: wrap;
+}
+
+.mode-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 10px;
+}
+
+.mode-tiles button {
+  background: #1c212c;
+  border: 1px solid #3a4150;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mode-tiles button:hover:not(:disabled) {
+  border-color: #f0d060;
+}
+
+.mode-tiles button.on {
+  background: #2a2618;
+  border-color: #f0d060;
+  color: #f0d060;
+}
+
+.pane-profiles .light-grid.pad-leds {
+  display: grid;
+  grid-template-columns: repeat(3, 44px);
+  grid-template-rows: repeat(4, 44px);
+  gap: 8px;
+  margin-top: 8px;
+  width: fit-content;
+  padding: 10px;
+  background: #0c0e12;
+  border: 1px solid #2a2e38;
+  border-radius: 8px;
+}
+
+.pane-profiles .light-cell {
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.45);
+}
+
+.pane-profiles .light-cell.sel {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+}
+
+.pane-profiles .light-skip {
+  display: block;
+}
+
+.led-helpers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+.led-palette {
+  display: flex;
+  gap: 4px;
+}
+
+.light-cell.swatch {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+}
+
+.light-cell.swatch.on {
+  outline: 2px solid #f0d060;
+  outline-offset: 1px;
+}
+
+.copy-lights {
+  flex: 1 1 160px;
+  margin: 0;
+}
+
+.pad-screen,
+.pad-clock {
+  grid-column: 1 / -1;
+  background: #181b22;
+  border: 1px solid #2a2e38;
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.pad-screen h2,
+.pad-clock h2 {
+  margin: 0 0 4px;
+}
+
+.pad-screen-controls {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto minmax(140px, 200px);
+  gap: 12px 20px;
+  align-items: end;
+  margin-top: 8px;
+}
+
+.pad-clock-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 20px 28px;
+  margin-top: 10px;
+}
+
+.pad-clock-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  flex: 1 1 280px;
+}
+
+.pad-clock-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #a8adb8;
+}
+
+.pad-clock-controls select {
+  min-width: 120px;
+}
+
+.pad-screen-controls > label {
+  margin: 0;
+}
+
+.pad-screen-controls select,
+.pad-screen-controls .flip-btn {
+  height: 32px;
+  padding: 0 12px;
+  box-sizing: border-box;
+}
+
+.flip-btn {
+  background: #1c212c;
+  border: 1px solid #3a4150;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.flip-btn:hover:not(:disabled) {
+  border-color: #f0d060;
+}
+
+.flip-btn.on {
+  background: #2a2618;
+  border-color: #f0d060;
+  color: #f0d060;
+}
+
+@media (max-width: 900px) {
+  .pane-profiles {
+    grid-template-columns: 1fr;
+  }
+
+  .pad-screen-controls {
+    grid-template-columns: 1fr;
+  }
+}

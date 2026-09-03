@@ -1,0 +1,164 @@
+direction: down
+
+title: {
+  label: "Firmware Application — Components"
+  near: top-center
+  style: {
+    font-size: 28
+    bold: true
+  }
+}
+
+fw: "Firmware Application (0x08001000)" {
+  style: {
+    fill: "#e3f2fd"
+    stroke: "#1565C0"
+    border-radius: 12
+    font-size: 18
+    bold: true
+  }
+
+  main: "Main Loop" {
+    shape: rectangle
+    style: {
+      fill: "#1565C0"
+      stroke: "#0D47A1"
+      font-color: white
+      font-size: 14
+      border-radius: 6
+      bold: true
+    }
+    label: "Main Loop\nmain.c\nCatch-up tick loop\nui_tick per ms, then\nhid_tick + macro_tick"
+  }
+
+  ui: "OLED UI" {
+    shape: rectangle
+    style: {
+      fill: "#bbdefb"
+      stroke: "#1976D2"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "OLED UI\nui.c + ssd1306.c\nMenus, clock home\nd-pad navigation"
+  }
+
+  keypad: "Keypad Scanner" {
+    shape: rectangle
+    style: {
+      fill: "#bbdefb"
+      stroke: "#1976D2"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "Keypad Scanner\nkeypad.c\n3x3 matrix\nPB3-5 cols, PB12-14 rows\nSEL on PB15"
+  }
+
+  macro: "Macro Engine" {
+    shape: rectangle
+    style: {
+      fill: "#bbdefb"
+      stroke: "#1976D2"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "Macro Engine\nmacro.c\nUp to 12 actions/key\nTaps, delays, mouse\nconsumer, ACT_TEXT"
+  }
+
+  hid: "HID Reports" {
+    shape: rectangle
+    style: {
+      fill: "#bbdefb"
+      stroke: "#1976D2"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "HID Reports\nhid_reports.c\nReport IDs 1–4\nVendor commands\nKEY_EVENT"
+  }
+
+  leds: "RGB LED Mux" {
+    shape: rectangle
+    style: {
+      fill: "#bbdefb"
+      stroke: "#1976D2"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "RGB LED Mux\nled_mux.c\nTIM2 soft-PWM\nPA0-8 anodes\nPB8-10 color sinks"
+  }
+
+  clock: "Wall Clock" {
+    shape: rectangle
+    style: {
+      fill: "#bbdefb"
+      stroke: "#1976D2"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "Wall Clock\nclock.c\nSTM32 RTC\n8 MHz HSE crystal\nFlash snapshot"
+  }
+
+  storage: "Storage" {
+    shape: cylinder
+    style: {
+      fill: "#bbdefb"
+      stroke: "#1976D2"
+      font-size: 14
+    }
+    label: "Storage\nstorage.c\nPing-pong flash + CRC\nPacked profiles\nClock snapshot"
+  }
+
+  usbdIf: "Custom HID IF" {
+    shape: rectangle
+    style: {
+      fill: "#e8eaf6"
+      stroke: "#3949AB"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "Custom HID IF\nusbd_custom_hid_if.c\nReport descriptor\nkbd, mouse, consumer\nvendor 0xFF00"
+  }
+
+  usbd: "ST USB Device" {
+    shape: rectangle
+    style: {
+      fill: "#e8eaf6"
+      stroke: "#3949AB"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "ST USB Device\nUSBD Core + CustomHID\nEP IN/OUT 64 B\n1 ms poll"
+  }
+
+  hal: "STM32 HAL / CMSIS" {
+    shape: rectangle
+    style: {
+      fill: "#fff3e0"
+      stroke: "#E65100"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "STM32 HAL / CMSIS\nGPIO, I2C1, USB PCD\nRTC, TIM2\nCubeMX-generated"
+  }
+
+  main -> ui: "ui_tick (incl. keypad scan)" {style: {font-size: 12}}
+  main -> macro: "macro_tick" {style: {font-size: 12}}
+  main -> hid: "hid_tick" {style: {font-size: 12}}
+
+  keypad -> ui: "Key events" {style: {font-size: 12}}
+  ui -> macro: "Play actions" {style: {font-size: 12}}
+  ui -> hid: "hid_notify_key" {style: {font-size: 12}}
+  macro -> hid: "kbd / mouse / consumer" {style: {font-size: 12}}
+
+  hid -> usbdIf: "SendReport" {style: {font-size: 12}}
+  usbdIf -> usbd: "Class callbacks" {style: {font-size: 12}}
+  usbd -> hal: "PCD driver" {style: {font-size: 12}}
+
+  ui -> storage: "Read / write g_store" {style: {font-size: 12}}
+  hid -> storage: "GET/SET key, SAVE" {style: {font-size: 12}}
+  leds -> storage: "Profile lights + key LED" {style: {font-size: 12}}
+  clock -> storage: "Time snapshot" {style: {font-size: 12}}
+  storage -> hal: "Flash unlock / erase" {style: {font-size: 12}}
+
+  ui -> clock: "HH:MM:SS" {style: {font-size: 12}}
+  ui -> hal: "I2C1 SSD1306" {style: {font-size: 12}}
+}

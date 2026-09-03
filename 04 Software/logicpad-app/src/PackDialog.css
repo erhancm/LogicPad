@@ -1,0 +1,185 @@
+.pack-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(8, 10, 14, 0.72);
+}
+
+.pack-dialog {
+  width: min(440px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  background: #181b22;
+  border: 1px solid #2a2e38;
+  border-radius: 10px;
+  padding: 16px 18px 14px;
+  color: #e8e4d8;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+.pack-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #8aa0b8;
+}
+
+.pack-dialog .hint {
+  margin: 0 0 10px;
+  color: #6b7380;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.pack-target {
+  margin: 0 0 12px;
+  color: #c8d0bc;
+  font-size: 12px;
+}
+
+.pack-target strong {
+  color: #e8e4d8;
+}
+
+.pack-warn {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  background: #2a2418;
+  border: 1px solid #5a4a28;
+  border-radius: 6px;
+  color: #e0c878;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.pack-block {
+  margin: 12px 0 4px;
+}
+
+.pack-block h3 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #6b7380;
+  font-weight: 600;
+}
+
+.pack-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pack-dialog .pack-check {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #e8e4d8;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.pack-dialog .pack-check input {
+  margin: 0;
+  accent-color: #f0d060;
+}
+
+.pack-dialog .pack-check.is-off {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pack-profiles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 160px;
+  overflow: auto;
+  padding: 2px 0;
+}
+
+.pack-profile-bar {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+
+.pack-profile-bar button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #8aa0b8;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.pack-profile-bar button:hover {
+  color: #f0d060;
+}
+
+.pack-preview {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  background: #12141a;
+  border: 1px solid #2a2e38;
+  border-radius: 6px;
+  color: #9aa3b0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.pack-preview strong {
+  color: #e8e4d8;
+  font-weight: 600;
+}
+
+.pack-dialog .bar {
+  margin-top: 16px;
+  justify-content: flex-end;
+}
+
+.pack-dialog .bar button {
+  background: #1c212c;
+  border: 1px solid #3a4150;
+  border-radius: 6px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.pack-dialog .bar button:hover:not(:disabled) {
+  border-color: #f0d060;
+}
+
+.pack-dialog .bar button.primary {
+  background: #f0d060;
+  color: #12141a;
+  border: none;
+  font-weight: 600;
+}
+
+.pack-dialog .bar button.primary:hover:not(:disabled) {
+  border: none;
+  filter: brightness(1.05);
+}
+
+.pack-dialog .bar button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pack-dialog .bar button:disabled:hover {
+  border-color: #3a4150;
+  filter: none;
+}

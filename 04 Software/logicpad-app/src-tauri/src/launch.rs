@@ -1,0 +1,464 @@
+use crate::sim::SIM_ID;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+const LEGACY_PAD: &str = "__legacy__";
+
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchEntry {
+    #[serde(default)]
+    pub id: String,
+    pub profile: u8,
+    pub key: u8,
+    pub path: String,
+    pub args: String,
+    #[serde(default)]
+    pub slot: u8,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct LaunchFile {
+    #[serde(default)]
+    pads: HashMap<String, Vec<LaunchEntry>>,
+    #[serde(default)]
+    entries: Vec<LaunchEntry>,
+}
+
+pub struct LaunchStore {
+    file: PathBuf,
+    pads: Mutex<HashMap<String, Vec<LaunchEntry>>>,
+    active_pad: Mutex<String>,
+}
+
+fn new_launch_id() -> String {
+    static SEQ: AtomicU64 = AtomicU64::new(1);
+    let n = SEQ.fetch_add(1, Ordering::Relaxed);
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    format!("l{t:012x}-{n:04x}")
+}
+
+fn ensure_id(entry: &mut LaunchEntry, used: &mut HashSet<String>) {
+    if entry.id.trim().is_empty() || used.contains(&entry.id) {
+        loop {
+            let id = new_launch_id();
+            if !used.contains(&id) {
+                entry.id = id;
+                break;
+            }
+        }
+    }
+    used.insert(entry.id.clone());
+}
+
+fn ensure_ids(entries: &mut [LaunchEntry]) {
+    let mut used = HashSet::new();
+    for e in entries.iter_mut() {
+        ensure_id(e, &mut used);
+    }
+}
+
+fn load_launch_pads(file: &Path) -> HashMap<String, Vec<LaunchEntry>> {
+    let mut pads = HashMap::new();
+    let Ok(raw) = fs::read_to_string(file) else {
+        return pads;
+    };
+    let Ok(parsed) = serde_json::from_str::<LaunchFile>(&raw) else {
+        return pads;
+    };
+    if !parsed.pads.is_empty() {
+        for (id, mut entries) in parsed.pads {
+            ensure_ids(&mut entries);
+            pads.insert(id, entries);
+        }
+        return pads;
+    }
+    if !parsed.entries.is_empty() {
+        let mut entries = parsed.entries;
+        ensure_ids(&mut entries);
+        pads.insert(LEGACY_PAD.to_string(), entries);
+    }
+    pads
+}
+
+impl LaunchStore {
+    pub fn load(file: PathBuf) -> Self {
+        let pads = load_launch_pads(&file);
+        Self {
+            file,
+            pads: Mutex::new(pads),
+            active_pad: Mutex::new(String::new()),
+        }
+    }
+
+    pub fn set_active_pad(&self, id: &str) {
+        if let Ok(mut active) = self.active_pad.lock() {
+            if *active == id {
+                return;
+            }
+            *active = id.to_string();
+        }
+        let Ok(mut pads) = self.pads.lock() else {
+            return;
+        };
+        if pads.contains_key(id) {
+            return;
+        }
+        if id == SIM_ID {
+            pads.insert(id.to_string(), Vec::new());
+            return;
+        }
+        if let Some(legacy) = pads.remove(LEGACY_PAD) {
+            pads.insert(id.to_string(), legacy);
+        } else {
+            pads.insert(id.to_string(), Vec::new());
+        }
+    }
+
+    fn active_entries(&self) -> Result<Vec<LaunchEntry>, String> {
+        let id = self
+            .active_pad
+            .lock()
+            .map_err(|_| "lock".to_string())?
+            .clone();
+        if id.is_empty() {
+            return Ok(Vec::new());
+        }
+        let pads = self.pads.lock().map_err(|_| "lock".to_string())?;
+        Ok(pads.get(&id).cloned().unwrap_or_default())
+    }
+
+    fn persist_all(&self, pads: &HashMap<String, Vec<LaunchEntry>>) -> Result<(), String> {
+        if let Some(dir) = self.file.parent() {
+            fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        let file = LaunchFile {
+            pads: pads.clone(),
+            entries: Vec::new(),
+        };
+        fs::write(
+            &self.file,
+            serde_json::to_string_pretty(&file).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())
+    }
+
+    fn with_active<F>(&self, f: F) -> Result<(), String>
+    where
+        F: FnOnce(&mut Vec<LaunchEntry>) -> Result<(), String>,
+    {
+        let id = self
+            .active_pad
+            .lock()
+            .map_err(|_| "lock".to_string())?
+            .clone();
+        if id.is_empty() {
+            return Ok(());
+        }
+        let mut pads = self.pads.lock().map_err(|_| "lock".to_string())?;
+        let entries = pads.entry(id).or_default();
+        f(entries)?;
+        self.persist_all(&pads)
+    }
+
+    pub fn list(&self) -> Vec<LaunchEntry> {
+        self.active_entries().unwrap_or_default()
+    }
+
+    pub fn has_launches(&self) -> bool {
+        self.pads
+            .lock()
+            .map(|g| {
+                g.values()
+                    .flatten()
+                    .any(|e| !e.path.trim().is_empty())
+            })
+            .unwrap_or(false)
+    }
+
+    pub fn set(&self, mut entry: LaunchEntry) -> Result<(), String> {
+        self.with_active(|entries| {
+            if entry.path.trim().is_empty() {
+                if entry.id.trim().is_empty() {
+                    return Ok(());
+                }
+                entries.retain(|e| e.id != entry.id);
+                return Ok(());
+            }
+            if entry.id.trim().is_empty() {
+                entry.id = new_launch_id();
+            }
+            if let Some(i) = entries.iter().position(|e| e.id == entry.id) {
+                entries[i] = entry;
+            } else {
+                entries.push(entry);
+            }
+            Ok(())
+        })
+    }
+
+    pub fn shift_after_delete(&self, idx: u8) -> Result<(), String> {
+        self.with_active(|entries| {
+            entries.retain(|e| e.profile != idx);
+            for e in entries.iter_mut() {
+                if e.profile > idx {
+                    e.profile -= 1;
+                }
+            }
+            Ok(())
+        })
+    }
+
+    pub fn launch(&self, profile: u8, key: u8) -> Result<(), String> {
+        let batch: Vec<LaunchEntry> = {
+            let entries = self.active_entries()?;
+            let mut v: Vec<LaunchEntry> = entries
+                .iter()
+                .filter(|e| e.profile == profile && e.key == key && !e.path.trim().is_empty())
+                .cloned()
+                .collect();
+            v.sort_by(|a, b| a.slot.cmp(&b.slot).then_with(|| a.id.cmp(&b.id)));
+            v
+        };
+        let mut first_err = None;
+        for e in batch {
+            let resolved = resolve_program(&e.path);
+            let path = if Path::new(&resolved.path).exists() {
+                &resolved.path
+            } else {
+                &e.path
+            };
+            let args = if e.args.trim().is_empty() {
+                &resolved.args
+            } else {
+                &e.args
+            };
+            if let Err(err) = spawn(path, args) {
+                if first_err.is_none() {
+                    first_err = Some(err);
+                }
+            }
+        }
+        match first_err {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedProgram {
+    pub path: String,
+    pub args: String,
+}
+
+pub fn pick_program() -> Option<String> {
+    rfd::FileDialog::new()
+        .add_filter("Programs", &["exe", "bat", "cmd", "lnk", "com"])
+        .add_filter("All files", &["*"])
+        .pick_file()
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+pub fn resolve_program(path: &str) -> ResolvedProgram {
+    let path = path.trim();
+    if path.is_empty() {
+        return ResolvedProgram {
+            path: String::new(),
+            args: String::new(),
+        };
+    }
+    #[cfg(windows)]
+    if is_lnk(path) {
+        if let Some((target, args)) = resolve_lnk(Path::new(path)) {
+            return ResolvedProgram { path: target, args };
+        }
+    }
+    if Path::new(path).exists() {
+        return ResolvedProgram {
+            path: path.to_string(),
+            args: String::new(),
+        };
+    }
+    #[cfg(windows)]
+    if let Some(found) = find_exe_on_windows(path) {
+        return ResolvedProgram {
+            path: found,
+            args: String::new(),
+        };
+    }
+    ResolvedProgram {
+        path: path.to_string(),
+        args: String::new(),
+    }
+}
+
+#[cfg(windows)]
+fn find_exe_on_windows(path: &str) -> Option<String> {
+    let base = Path::new(path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(path)
+        .trim();
+    if base.is_empty() {
+        return None;
+    }
+    if let Ok(out) = Command::new("where").arg(base).output() {
+        if out.status.success() {
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                let hit = line.trim();
+                if !hit.is_empty() && Path::new(hit).exists() {
+                    return Some(hit.to_string());
+                }
+            }
+        }
+    }
+    let local = std::env::var("LOCALAPPDATA").ok()?;
+    let pf = std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".into());
+    let pfx86 = std::env::var("ProgramFiles(x86)").unwrap_or_else(|_| "C:\\Program Files (x86)".into());
+    let base_lower = base.to_ascii_lowercase();
+    let mut candidates: Vec<String> = vec![
+        format!(r"{local}\Programs\cursor\{base}"),
+        format!(r"{local}\Microsoft\WindowsApps\{base}"),
+        format!(r"{pf}\obs-studio\bin\64bit\{base}"),
+        format!(r"{pf}\Microsoft\Teams\current\{base}"),
+        format!(r"{pf}\Google\Chrome\Application\{base}"),
+        format!(r"{pf}\Mozilla Firefox\{base}"),
+        format!(r"{pf}\Figma\{base}"),
+        format!(r"{local}\Discord\{base}"),
+        format!(r"{local}\Programs\Microsoft VS Code\{base}"),
+    ];
+    if base_lower == "teams.exe" {
+        candidates.push(format!(r"{pfx86}\Microsoft\Teams\current\{base}"));
+    }
+    if base_lower == "spotify.exe" {
+        candidates.push(format!(r"{local}\Microsoft\WindowsApps\{base}"));
+        candidates.push(format!(r"{local}\Programs\Spotify\{base}"));
+    }
+    for c in candidates {
+        if Path::new(&c).exists() {
+            return Some(c);
+        }
+    }
+    None
+}
+
+fn is_lnk(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("lnk"))
+}
+
+#[cfg(windows)]
+fn from_wide(buf: &[u16]) -> String {
+    let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    String::from_utf16_lossy(&buf[..len])
+}
+
+#[cfg(windows)]
+fn to_wide(path: &Path) -> Vec<u16> {
+    path.as_os_str().encode_wide().chain(Some(0)).collect()
+}
+
+/// Resolve a `.lnk` via `IShellLink` on a dedicated STA thread.
+#[cfg(windows)]
+fn resolve_lnk(path: &Path) -> Option<(String, String)> {
+    let path = path.to_path_buf();
+    std::thread::scope(|s| s.spawn(|| resolve_lnk_sta(&path)).join().ok().flatten())
+}
+
+#[cfg(windows)]
+fn resolve_lnk_sta(path: &Path) -> Option<(String, String)> {
+    use windows::core::{Interface, PCWSTR};
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
+        COINIT_APARTMENTTHREADED, IPersistFile, STGM_READ,
+    };
+    use windows::Win32::UI::Shell::{IShellLinkW, ShellLink, SLR_NO_UI};
+
+    let wide = to_wide(path);
+    unsafe {
+        let initialized = CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok();
+        let result = (|| {
+            let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).ok()?;
+            let persist: IPersistFile = link.cast().ok()?;
+            persist.Load(PCWSTR(wide.as_ptr()), STGM_READ).ok()?;
+            let _ = link.Resolve(HWND::default(), SLR_NO_UI.0 as u32);
+            let mut target = [0u16; 1024];
+            link.GetPath(&mut target, std::ptr::null_mut(), 0)
+                .ok()?;
+            let target = from_wide(&target);
+            if target.is_empty() {
+                return None;
+            }
+            let mut args = [0u16; 1024];
+            let args = if link.GetArguments(&mut args).is_ok() {
+                from_wide(&args)
+            } else {
+                String::new()
+            };
+            Some((target, args))
+        })();
+        if initialized {
+            CoUninitialize();
+        }
+        result
+    }
+}
+
+fn spawn(path: &str, args: &str) -> Result<(), String> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Ok(());
+    }
+    if !Path::new(path).exists() {
+        return Err(format!("not found: {path}"));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let mut cmd = Command::new("cmd");
+        cmd.arg("/C").arg("start").arg("").arg(path);
+        for a in args.split_whitespace() {
+            cmd.arg(a);
+        }
+        cmd.spawn().map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let mut cmd = Command::new("open");
+        cmd.arg(path);
+        if !args.trim().is_empty() {
+            cmd.arg("--args");
+            for a in args.split_whitespace() {
+                cmd.arg(a);
+            }
+        }
+        cmd.spawn().map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let mut cmd = Command::new(path);
+        for a in args.split_whitespace() {
+            cmd.arg(a);
+        }
+        cmd.spawn().map_err(|e| e.to_string())?;
+        Ok(())
+    }
+}

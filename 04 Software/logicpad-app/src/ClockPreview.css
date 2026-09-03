@@ -1,0 +1,28 @@
+.clock-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.clock-preview canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  border: 1px solid #3a4150;
+  border-radius: 4px;
+  background: #000;
+}
+
+.clock-preview.flip canvas {
+  transform: rotate(180deg);
+}
+
+.clock-preview .hint {
+  margin: 0;
+  font-size: 11px;
+  color: #6b7380;
+}
+
+.clock-preview.pad-live .hint {
+  color: #7ec8ff;
+}

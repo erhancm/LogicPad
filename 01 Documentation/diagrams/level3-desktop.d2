@@ -1,0 +1,189 @@
+direction: down
+
+title: {
+  label: "Desktop Configurator — Components"
+  near: top-center
+  style: {
+    font-size: 28
+    bold: true
+  }
+}
+
+app: "LogicPad.exe (Tauri 2)" {
+  style: {
+    fill: "#f3e5f5"
+    stroke: "#7B1FA2"
+    border-radius: 12
+    font-size: 18
+    bold: true
+  }
+
+  react: "Editor UI" {
+    shape: rectangle
+    style: {
+      fill: "#ce93d8"
+      stroke: "#8E24AA"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "Editor UI\nApp.tsx + 20 modules\nProfile editor, key grid\nmacros, lights, firmware picker"
+  }
+
+  api: "Invoke Wrapper" {
+    shape: rectangle
+    style: {
+      fill: "#e1bee7"
+      stroke: "#8E24AA"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "Invoke Wrapper\napi.ts\nTyped Tauri commands"
+  }
+
+  cmds: "Tauri Commands" {
+    shape: rectangle
+    style: {
+      fill: "#e1bee7"
+      stroke: "#8E24AA"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "Tauri Commands\nlib.rs\n30+ commands\nconnect, save, flash, etc."
+  }
+
+  hidWorker: "HID Worker" {
+    shape: rectangle
+    style: {
+      fill: "#e1bee7"
+      stroke: "#8E24AA"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "HID Worker\nhid.rs\nhidapi thread\nRPC + KEY_EVENT\nBootloader flash"
+  }
+
+  launch: "Launch Store" {
+    shape: cylinder
+    style: {
+      fill: "#e1bee7"
+      stroke: "#8E24AA"
+      font-size: 14
+    }
+    label: "Launch Store\nlaunch.rs\nlaunches.json\nSpawn host programs"
+  }
+
+  switchStore: "Profile Switcher" {
+    shape: rectangle
+    style: {
+      fill: "#e1bee7"
+      stroke: "#8E24AA"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "Profile Switcher\nprofile_switch.rs\nprofile-rules.json\nAuto-switch by focused app"
+  }
+
+  switchGraph: "Switch Graph" {
+    shape: rectangle
+    style: {
+      fill: "#e1bee7"
+      stroke: "#8E24AA"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "Switch Graph\nswitch_graph.rs\nGraph-based rule eval\nFallback rules"
+  }
+
+  focus: "Focus Detector" {
+    shape: rectangle
+    style: {
+      fill: "#e1bee7"
+      stroke: "#8E24AA"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "Focus Detector\nfocus.rs\nForeground window\nOpen programs list"
+  }
+
+  host: "Host Session" {
+    shape: rectangle
+    style: {
+      fill: "#e1bee7"
+      stroke: "#8E24AA"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "Host Session\nhost.rs\nLock/unlock detect\nSET_HOST to pad"
+  }
+
+  sim: "Simulated Pad" {
+    shape: rectangle
+    style: {
+      fill: "#e1bee7"
+      stroke: "#8E24AA"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "Simulated Pad\nsim.rs\nIn-memory pad\nNo hardware needed"
+  }
+
+  preview: "Window Preview" {
+    shape: rectangle
+    style: {
+      fill: "#e1bee7"
+      stroke: "#8E24AA"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "Window Preview\npreview.rs\nLive thumbnails\nWindows.Graphics.Capture"
+  }
+
+  react -> api: "Typed calls" {style: {font-size: 12}}
+  api -> cmds: "Tauri invoke" {style: {font-size: 12}}
+  cmds -> hidWorker: "Pad methods" {style: {font-size: 12}}
+  cmds -> launch: "Get / set" {style: {font-size: 12}}
+  cmds -> switchStore: "Switch rules" {style: {font-size: 12}}
+
+  hidWorker -> launch: "KEY_EVENT launch" {style: {font-size: 12}}
+  hidWorker -> switchStore: "KEY_EVENT poll" {style: {font-size: 12}}
+  switchStore -> focus: "Query foreground" {style: {font-size: 12}}
+  switchStore -> switchGraph: "Evaluate rules" {style: {font-size: 12}}
+  host -> hidWorker: "SET_HOST" {style: {font-size: 12}}
+}
+
+hidapi: "hidapi Library" {
+  shape: rectangle
+  style: {
+    fill: "#f5f5f5"
+    stroke: "#9e9e9e"
+    font-size: 14
+    border-radius: 6
+  }
+  label: "hidapi\nWindows: hid.dll\nLinux: hidraw\nmacOS: IOHIDFamily"
+}
+
+padDevice: "LogicPad Hardware" {
+  shape: rectangle
+  style: {
+    fill: "#e8f4fd"
+    stroke: "#2196F3"
+    font-size: 14
+    border-radius: 6
+  }
+  label: "LogicPad Hardware\nPID 5750 (app)\nPID 5751 (boot)"
+}
+
+json: "Config Files" {
+  shape: cylinder
+  style: {
+    fill: "#f5f5f5"
+    stroke: "#9e9e9e"
+    font-size: 14
+  }
+  label: "launches.json\n+ profile-rules.json"
+}
+
+app.hidWorker -> hidapi: "Open vendor FF00" {style: {font-size: 12}}
+hidapi -> padDevice: "Report 4 IN/OUT" {style: {font-size: 12}}
+app.launch -> json: "Persist" {style: {font-size: 12}}
+app.switchStore -> json: "Persist" {style: {font-size: 12}}

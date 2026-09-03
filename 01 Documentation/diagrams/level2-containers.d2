@@ -1,0 +1,155 @@
+direction: down
+
+title: {
+  label: "LogicPad — Containers"
+  near: top-center
+  style: {
+    font-size: 28
+    bold: true
+  }
+}
+
+operator: "Operator" {
+  shape: person
+  style: {
+    font-size: 16
+  }
+  label: "Operator"
+}
+
+device: "LogicPad STM32F103C8" {
+  style: {
+    fill: "#e3f2fd"
+    stroke: "#1565C0"
+    border-radius: 12
+    font-size: 18
+    bold: true
+  }
+
+  boot: "HID Bootloader" {
+    shape: rectangle
+    style: {
+      fill: "#bbdefb"
+      stroke: "#1976D2"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "HID Bootloader\n\nC, bare-metal USB, 4 KB\n0x08000000, PID 0x5751\nWrites app flash"
+  }
+
+  fw: "Firmware Application" {
+    shape: rectangle
+    style: {
+      fill: "#bbdefb"
+      stroke: "#1976D2"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "Firmware Application\n\nC, Cube HAL, 52 KB\n0x08001000, PID 0x5750\n1 ms loop: scan, UI, macros, HID, RGB"
+  }
+
+  store: "Config Store" {
+    shape: cylinder
+    style: {
+      fill: "#bbdefb"
+      stroke: "#1976D2"
+      font-size: 14
+    }
+    label: "Config Store\n\nFlash ping-pong 8 KB\n0x0800E000\nProfiles, keys, text pool"
+  }
+
+  fw -> store: "Load / CRC save" {style: {font-size: 12}}
+  boot -> fw: "Jump to 0x08001000" {style: {font-size: 12}}
+}
+
+host: "Host Computer" {
+  style: {
+    fill: "#f3e5f5"
+    stroke: "#7B1FA2"
+    border-radius: 12
+    font-size: 18
+    bold: true
+  }
+
+  osHid: "OS HID Class Drivers" {
+    shape: rectangle
+    style: {
+      fill: "#e1bee7"
+      stroke: "#8E24AA"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "OS HID Drivers\n\nInbox hidclass / usbhid\nKeyboard, mouse, consumer"
+  }
+
+  ui: "Configurator Frontend" {
+    shape: rectangle
+    style: {
+      fill: "#e1bee7"
+      stroke: "#8E24AA"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "Configurator Frontend\n\nReact + TypeScript, WebView2\nProfile editor, key grid,\nmacros, lights, firmware picker"
+  }
+
+  rust: "Configurator Backend" {
+    shape: rectangle
+    style: {
+      fill: "#e1bee7"
+      stroke: "#8E24AA"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "Configurator Backend\n\nRust, Tauri 2, hidapi\nReport 4 RPC, KEY_EVENT\nAuto-switch, host session, sim pad"
+  }
+
+  launches: "launches.json" {
+    shape: cylinder
+    style: {
+      fill: "#e1bee7"
+      stroke: "#8E24AA"
+      font-size: 14
+    }
+    label: "launches.json\n\nHost program paths\nper profile/key"
+  }
+
+  switchRules: "profile-rules.json" {
+    shape: cylinder
+    style: {
+      fill: "#e1bee7"
+      stroke: "#8E24AA"
+      font-size: 14
+    }
+    label: "profile-rules.json\n\nAuto-switch rules\nper-pad config"
+  }
+
+  hostApps: "Focused Applications" {
+    shape: rectangle
+    style: {
+      fill: "#f5f5f5"
+      stroke: "#9e9e9e"
+      font-size: 14
+      border-radius: 6
+    }
+    label: "Focused Applications"
+  }
+
+  ui -> rust: "Tauri invoke" {style: {font-size: 12}}
+  rust -> launches: "Read / write" {style: {font-size: 12}}
+  rust -> switchRules: "Read / write" {style: {font-size: 12}}
+  rust -> osHid: "via hidapi" {style: {font-size: 12}}
+  osHid -> hostApps: "Input events" {style: {font-size: 12}}
+}
+
+operator -> device.fw: "Physical keys and OLED" {style: {font-size: 12}}
+operator -> host.ui: "Desktop editor (optional)" {
+  style: {
+    font-size: 12
+    stroke-dash: 4
+  }
+}
+host.rust -> device.fw: "Report 4 commands\nPING, GET/SET key, SAVE" {style: {font-size: 12}}
+device.fw -> host.rust: "KEY_EVENT 0x0D\nlive key down/up" {style: {font-size: 12}}
+device.fw -> host.osHid: "Reports 1–3" {style: {font-size: 12}}
+host.rust -> host.hostApps: "Launch mapped .exe" {style: {font-size: 12}}
