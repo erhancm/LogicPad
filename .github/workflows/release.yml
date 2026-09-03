@@ -1,5 +1,5 @@
-# LogicPad release — Linux via Unraid act_runner; Windows via Publish-Gitea-Release.ps1 until a Windows runner exists.
-# Push a v* tag to build Linux AppImage + deb and attach to a Gitea Release.
+# LogicPad release — Linux AppImage + deb attached to a GitHub Release.
+# Push a v* tag to trigger.
 
 name: Release
 
@@ -66,7 +66,7 @@ jobs:
           ls -la staging/
 
       - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: logicpad-linux
           path: staging/
@@ -81,7 +81,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: logicpad-linux
           path: release-assets
@@ -91,12 +91,10 @@ jobs:
           cp "04 Software/logicpad-app/productivity/LogicPad-Productivity.yaml" release-assets/
           ls -la release-assets/
 
-      - name: Publish Gitea release
-        uses: https://gitea.com/actions/gitea-release-action@v1
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          tag: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
           name: LogicPad ${{ github.ref_name }}
           body_path: CHANGELOG.md
-          files: |
-            release-assets/*
+          files: release-assets/*
